@@ -48,12 +48,60 @@ ToolSearch: select:AskUserQuestion,mcp__plugin_github_github__create_pull_reques
 
 ## 手順
 
+### 0. marketplace.json の整合性チェック
+
+`packages/` 配下のディレクトリと `.claude-plugin/marketplace.json` の `plugins[].name` を突き合わせ、未登録パッケージがないか確認する。
+
+```bash
+ls -d packages/*/ | xargs -n1 basename
+```
+
+未登録パッケージの扱いはリリース対象との関係で分岐する:
+
+| 状況 | 対応 |
+|---|---|
+| 全パッケージが登録済み | そのまま手順 1 へ進む |
+| 未登録パッケージを **今回リリースする** | 同期は不要。リリース PR（手順 6）で `marketplace.json` 追記を同梱する |
+| 未登録パッケージを **今回リリースしない** | 先に **marketplace 同期 PR** を作成・マージしてから手順 1 へ進む |
+
+未登録パッケージが見つかった場合は、`.claude-plugin/plugin.json` が存在することを事前確認する。存在しなければリリース対象として未準備のため、ユーザーに通知して中断する。
+
+#### 同期 PR の手順（リリース対象外の未登録パッケージがある場合のみ）
+
+このフェーズは main/master ブランチから開始する。作業ブランチにいる場合はユーザーに状況確認してから進める。
+
+```bash
+git checkout main && git pull origin main
+git checkout -b chore/sync-marketplace-$(date +%Y%m%d)
+```
+
+ブランチ名は CLAUDE.md のルール (`chore/<説明>-YYYYMMDD`) に従う。`.claude-plugin/marketplace.json` の `plugins` 配列に未登録パッケージのエントリを追加する（`name` + `source` のみ）:
+
+```json
+{ "name": "<package-name>", "source": "./packages/<package-name>" }
+```
+
+コミットメッセージ:
+
+```
+📦 chore: add <package-names> to marketplace
+```
+
+`create_pull_request` で PR 作成 → `issue_write` でアサイン → `merge_pull_request`（squash）でマージ。マージ後は main を pull し、リモートブランチを削除してから手順 1 に進む:
+
+```bash
+git checkout main && git pull origin main
+git push origin --delete chore/sync-marketplace-<date>
+```
+
 ### 1. 対象パッケージの特定
 
 `packages/` 配下の各プラグインの `.claude-plugin/plugin.json` を読み取り、登録されているパッケージ一覧を取得する。
 
 - パッケージが1つだけ → そのパッケージを対象とする
 - 複数パッケージがある → ユーザーに対象を確認する（`-p` で指定があればそれに従う）
+
+新規追加パッケージ（手順 0 で marketplace に追加したもの）が含まれる場合、初回リリースとなるため手順 2 でユーザーにバージョン指定を促す。
 
 ### 2. 前回バージョンの特定
 
@@ -104,6 +152,8 @@ release/<package-name>-v<version>
 ### 6. plugin.json の更新
 
 対象パッケージの `.claude-plugin/plugin.json` の `version` フィールドを新バージョンに更新する。
+
+**初回リリースで `marketplace.json` 未登録の場合**: 同じコミットで `.claude-plugin/marketplace.json` の `plugins` 配列にもエントリを追加する（`{ "name": "<package-name>", "source": "./packages/<package-name>" }`）。
 
 ### 7. コミット
 
@@ -167,4 +217,5 @@ git push origin <package-name>@<version>
 - main への直接コミットはしない（必ず PR 経由）
 - `--no-verify` は使わない
 - force push はしない（タグは squash merge 後に main 上で作成するため不要）
-- plugin.json 以外のファイルは変更しない（ソースコードの変更は事前にコミット済みであること）
+- リリース PR では `plugin.json` 以外のファイルは変更しない（ソースコードの変更は事前にコミット済みであること）。ただし**初回リリースに限り**、`marketplace.json` への登録追記を同梱可
+- 今回リリース対象外の未登録パッケージがある場合は、先に marketplace 同期 PR を分離してマージする
