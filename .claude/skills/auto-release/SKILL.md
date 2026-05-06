@@ -15,14 +15,28 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 
 ## バージョン体系
 
-パッケージごとに独立したバージョンを管理する。
+リリース対象は **claude package** と **codex plugin** の2種類。両者は独立したバージョンを持つが、`skills-sources/` に差分がある場合は同じ PR で同時リリースする。
+
+### claude package
 
 - **タグ形式**: `<package-name>@<semver>`（例: `mjc-git-workflow-tools@1.1.0`）
-- **バージョン格納先**: 各プラグインの `.claude-plugin/plugin.json` の `version` フィールド
+- **バージョン格納先**: `packages/<plugin>/.claude-plugin/plugin.json` の `version`
+- **判定基準**: 前回タグからの `packages/` 配下の差分
+
+### codex plugin
+
+`.codex-plugin/` に存在する単一プラグイン（全 skills を内包）。
+
+- **タグ形式**: `mjcreativelab-claude-plugins@<semver>`（例: `mjcreativelab-claude-plugins@0.2.0`）
+- **バージョン格納先**: `.codex-plugin/plugin.json` の `version`
+- **判定基準**: 前回タグからの `skills-sources/` 配下の差分
+- **リリース条件**: 前回 codex タグから `skills-sources/` に変更があれば claude package と同じ PR で同時バンプ。差分がなければスキップ
 
 ### バージョンバンプルール
 
-前回タグからの差分を分析し、以下のルールで自動判定する:
+前回タグからの差分を分析し、以下のルールで自動判定する。複数の変更種別が混在する場合は、最も大きいバンプを適用する。
+
+#### claude package（`packages/` の差分）
 
 | 変更内容 | バンプ | 例 |
 |----------|--------|-----|
@@ -30,7 +44,15 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 | 既存パッケージに新しいスキルが追加された（`skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
 | 既存コードの修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
 
-複数の変更種別が混在する場合は、最も大きいバンプを適用する。
+#### codex plugin（`skills-sources/` の差分）
+
+`skills-sources/<package>/<skill>/` の **skill ディレクトリ単位**（depth 2）で判定する。`skills-sources/<package>/`（depth 1 の package ディレクトリ）の追加・削除自体ではバンプ対象としない（その配下に skill が無ければ codex 配布物に変化なし）。
+
+| 変更内容 | バンプ | 例 |
+|----------|--------|-----|
+| `skills-sources/<package>/<skill>/` が削除された（既存 skill の削除） | **メジャー** | 1.0.0 → 2.0.0 |
+| `skills-sources/<package>/<skill>/` が追加された（既存 package への新 skill、または新 package + skill のいずれも該当） | **マイナー** | 0.1.0 → 0.2.0 |
+| 既存 skill 配下のファイル（`SKILL.md` / `assets/` / `references/` / `README.md` 等）の修正 | **パッチ** | 0.1.0 → 0.1.1 |
 
 ## ツール選択
 
@@ -48,7 +70,20 @@ ToolSearch: select:AskUserQuestion,mcp__plugin_github_github__create_pull_reques
 
 ## 手順
 
-### 0. marketplace.json の整合性チェック
+### 0. 事前整合性チェック
+
+#### 0-1. skill-sync の同期確認
+
+`skills-sources/` と各配布先（`packages/<pkg>/skills/<skill>/` および `.codex-plugin/skills/<skill>/`）が同期されているかを検証する:
+
+```bash
+python3 tools/sync_skill_sources.py --check
+```
+
+- exit 0（差分なし）→ 続行
+- exit 1（差分あり）→ ユーザーに通知して中断。`/skill-sync` 実行 → 別 PR で main にマージしてから再度 auto-release を起動するよう案内する
+
+#### 0-2. marketplace.json の整合性チェック
 
 `packages/` 配下のディレクトリと `.claude-plugin/marketplace.json` の `plugins[].name` を突き合わせ、未登録パッケージがないか確認する。
 
@@ -101,41 +136,71 @@ git push origin --delete chore/sync-marketplace-<date>
 - パッケージが1つだけ → そのパッケージを対象とする
 - 複数パッケージがある → ユーザーに対象を確認する（`-p` で指定があればそれに従う）
 
-新規追加パッケージ（手順 0 で marketplace に追加したもの）が含まれる場合、初回リリースとなるため手順 2 でユーザーにバージョン指定を促す。
+新規追加パッケージ（手順 0-2 で marketplace に追加したもの）が含まれる場合、初回リリースとなるため手順 2 でユーザーにバージョン指定を促す。
+
+codex plugin（`.codex-plugin/`）は claude package とは別軸の対象として、後段で差分判定する（手順 3）。
 
 ### 2. 前回バージョンの特定
 
-対象パッケージの既存タグを検索する:
+対象 claude package の既存タグを検索する:
 
 ```bash
 git tag --list '<package-name>@*' --sort=-v:refname | head -1
 ```
 
-- **タグが存在する** → そのバージョンを前回バージョンとして使用（例: `mjc-git-workflow-tools@1.0.0` → `1.0.0`）
+codex plugin の既存タグも合わせて検索する:
+
+```bash
+git tag --list 'mjcreativelab-claude-plugins@*' --sort=-v:refname | head -1
+```
+
+- **タグが存在する** → そのバージョンを前回バージョンとして使用
 - **タグが存在しない（初回リリース）** → ユーザーにバージョンを手動指定してもらう（`-p` で指定があればそれに従う）
 
 ### 3. 差分分析とバージョン判定
 
-前回タグから HEAD までの差分を分析する:
+#### claude package
+
+前回タグから HEAD までの `packages/` 配下の差分を分析する:
 
 ```bash
-git diff --name-only <package-name>@<version>..HEAD -- packages/
+git diff --name-only <package-name>@<version>..HEAD -- packages/<package-name>/
 ```
 
-差分を「バージョンバンプルール」に照らして判定する。判定結果をユーザーに提示する:
+#### codex plugin
+
+前回 codex タグから HEAD までの `skills-sources/` 配下の差分を分析する:
+
+```bash
+git diff --name-only mjcreativelab-claude-plugins@<version>..HEAD -- skills-sources/
+```
+
+**差分が空の場合は codex plugin をリリース対象から除外**する。差分がある場合のみバンプ判定の対象とする。
+
+#### 結果提示
+
+それぞれを「バージョンバンプルール」に照らして判定し、ユーザーに提示する:
 
 ```
-対象: mjc-git-workflow-tools
-現在: 1.0.0
-変更: skills/auto-release/ を追加（新スキル追加 → マイナーバンプ）
-次版: 1.1.0
+claude package:
+  対象: mjc-git-workflow-tools
+  現在: 1.0.0 → 次版: 1.1.0 (新スキル追加 → マイナー)
+
+codex plugin:
+  現在: 0.1.0 → 次版: 0.2.0 (skills-sources/ に新スキル追加 → マイナー)
 ```
 
-初回リリースの場合はこのステップをスキップし、ユーザー指定のバージョンをそのまま使う。
+codex plugin に差分がない場合は claude package のみ表示し、その旨を明記する:
+
+```
+codex plugin: skills-sources/ に変更なし → スキップ
+```
+
+初回リリースの場合は差分分析をスキップし、ユーザー指定のバージョンをそのまま使う。
 
 ### 4. ユーザー確認
 
-バージョン番号と変更内容の要約を提示し、承認を得る。ユーザーが別のバージョンを指定した場合はそれに従う。
+両方のバージョン（または claude package のみ）と変更内容の要約を提示し、承認を得る。ユーザーが別のバージョンを指定した場合はそれに従う。
 
 ### 5. リリースブランチの作成
 
@@ -151,16 +216,26 @@ release/<package-name>-v<version>
 
 ### 6. plugin.json の更新
 
-対象パッケージの `.claude-plugin/plugin.json` の `version` フィールドを新バージョンに更新する。
+対象 claude package の `packages/<package-name>/.claude-plugin/plugin.json` の `version` を新バージョンに更新する。
+
+**codex plugin もリリース対象の場合**: 同じコミットで `.codex-plugin/plugin.json` の `version` も新バージョンに更新する。
 
 **初回リリースで `marketplace.json` 未登録の場合**: 同じコミットで `.claude-plugin/marketplace.json` の `plugins` 配列にもエントリを追加する（`{ "name": "<package-name>", "source": "./packages/<package-name>" }`）。
 
 ### 7. コミット
 
-変更をコミットする:
+変更をコミットする。
+
+claude package のみ:
 
 ```
 🔖 release(<package-name>): v<version>
+```
+
+claude package + codex plugin（同時リリース時）:
+
+```
+🔖 release: <package-name> v<version>, codex v<codex-version>
 ```
 
 `Co-Authored-By` トレーラーは付けない。`--no-verify` は使わない。
@@ -177,9 +252,12 @@ git push -u origin <branch>
 
 GitHub MCP ツール (`create_pull_request`) で PR を作成する。
 
-**タイトル**: `release(<package-name>): v<version>`
+**タイトル**:
 
-**本文**: [assets/release-pr-template.md](assets/release-pr-template.md) を使用。
+- claude package のみ: `release(<package-name>): v<version>`
+- claude package + codex plugin: `release: <package-name> v<version>, codex v<codex-version>`
+
+**本文**: [assets/release-pr-template.md](assets/release-pr-template.md) を使用。codex plugin もリリース対象の場合は両方のバージョン情報・差分・バンプ理由を併記する。
 
 PR 作成後、`issue_write` でアサインとラベル（`release` があれば付与）を設定する（GitHub API では PR も Issue 番号で操作可能）。
 
@@ -191,7 +269,7 @@ CI チェックが設定されていない場合はそのままマージする�
 
 ### 11. タグ付け
 
-squash merge 後、main 上の新しいコミットにタグを付ける:
+squash merge 後、main 上の新しいコミットに対象分のタグを付ける:
 
 ```bash
 git checkout main
@@ -200,15 +278,26 @@ git tag <package-name>@<version>
 git push origin <package-name>@<version>
 ```
 
+codex plugin もリリース対象の場合、同じコミットに codex タグも付ける:
+
+```bash
+git tag mjcreativelab-claude-plugins@<codex-version>
+git push origin mjcreativelab-claude-plugins@<codex-version>
+```
+
 ### 12. 結果報告
 
 以下を表示して完了:
 
 ```
 リリース完了:
-  パッケージ: <package-name>
-  バージョン: <old-version> → <version>
-  タグ: <package-name>@<version>
+  claude package:
+    パッケージ: <package-name>
+    バージョン: <old-version> → <version>
+    タグ: <package-name>@<version>
+  codex plugin: <skip または以下を表示>
+    バージョン: <old-codex-version> → <codex-version>
+    タグ: mjcreativelab-claude-plugins@<codex-version>
   PR: <pr-url>
 ```
 
@@ -219,3 +308,5 @@ git push origin <package-name>@<version>
 - force push はしない（タグは squash merge 後に main 上で作成するため不要）
 - リリース PR では `plugin.json` 以外のファイルは変更しない（ソースコードの変更は事前にコミット済みであること）。ただし**初回リリースに限り**、`marketplace.json` への登録追記を同梱可
 - 今回リリース対象外の未登録パッケージがある場合は、先に marketplace 同期 PR を分離してマージする
+- codex plugin のバンプ判定は `skills-sources/` 配下の差分のみで行う（同期は手順 0-1 で検証済み）
+- codex plugin の前回タグが存在しない（初回リリース）場合、`skills-sources/` の現在状態をそのまま初回バージョンとしてユーザーに確認する
