@@ -15,7 +15,7 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 
 ## バージョン体系
 
-リリース対象は **claude package** と **codex plugin** の2種類。両者は独立したバージョンを持つが、`skills-sources/` に差分がある場合は同じ PR で同時リリースする。
+リリース対象は **claude package** と **codex plugin** の2種類。両者は独立したバージョンを持つが、rendered 出力（`packages/` および `skills/`）の双方に差分があれば同じ PR で同時リリースする。
 
 ### claude package
 
@@ -29,8 +29,9 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 
 - **タグ形式**: `mjcreativelab-claude-plugins@<semver>`（例: `mjcreativelab-claude-plugins@0.2.0`）
 - **バージョン格納先**: `.codex-plugin/plugin.json` の `version`
-- **判定基準**: 前回タグからの `skills-sources/` 配下の差分
-- **リリース条件**: 前回 codex タグから `skills-sources/` に変更があれば claude package と同じ PR で同時バンプ。差分がなければスキップ
+- **判定基準**: 前回タグからの `skills/`（rendered codex 配布）配下の差分
+- **リリース条件**: 前回 codex タグから `skills/` に変更があれば claude package と同じ PR で同時バンプ。差分がなければスキップ
+- **前提**: 手順 0-1 で `/skill-sync --check` が通っていること（`skills/` が最新の rendered 状態）
 
 ### バージョンバンプルール
 
@@ -44,15 +45,15 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 | 既存パッケージに新しいスキルが追加された（`skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
 | 既存コードの修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
 
-#### codex plugin（`skills-sources/` の差分）
+#### codex plugin（`skills/` の差分）
 
-`skills-sources/<package>/<skill>/` の **skill ディレクトリ単位**（depth 2）で判定する。`skills-sources/<package>/`（depth 1 の package ディレクトリ）の追加・削除自体ではバンプ対象としない（その配下に skill が無ければ codex 配布物に変化なし）。
+rendered 出力 `skills/<skill>/` の **skill ディレクトリ単位**で判定する。source（`skills-sources/`）の変更は `/skill-sync` 後に `skills/` へ反映され、その差分のみがバンプ対象となる。
 
 | 変更内容 | バンプ | 例 |
 |----------|--------|-----|
-| `skills-sources/<package>/<skill>/` が削除された（既存 skill の削除） | **メジャー** | 1.0.0 → 2.0.0 |
-| `skills-sources/<package>/<skill>/` が追加された（既存 package への新 skill、または新 package + skill のいずれも該当） | **マイナー** | 0.1.0 → 0.2.0 |
-| 既存 skill 配下のファイル（`SKILL.md` / `assets/` / `references/` / `README.md` 等）の修正 | **パッチ** | 0.1.0 → 0.1.1 |
+| `skills/<skill>/` が削除された（skill 自体の削除、または `skill-sync.yaml` で `codex.enabled: false` 化） | **メジャー** | 1.0.0 → 2.0.0 |
+| `skills/<skill>/` が追加された（新 skill、または `codex.enabled: true` 化） | **マイナー** | 0.1.0 → 0.2.0 |
+| 既存 `skills/<skill>/` 配下のファイル修正（共通変更・`codex/` override 追加・正規化結果の変化など） | **パッチ** | 0.1.0 → 0.1.1 |
 
 ## ツール選択
 
@@ -169,10 +170,10 @@ git diff --name-only <package-name>@<version>..HEAD -- packages/<package-name>/
 
 #### codex plugin
 
-前回 codex タグから HEAD までの `skills-sources/` 配下の差分を分析する:
+前回 codex タグから HEAD までの `skills/` 配下の差分を分析する:
 
 ```bash
-git diff --name-only mjcreativelab-claude-plugins@<version>..HEAD -- skills-sources/
+git diff --name-only mjcreativelab-claude-plugins@<version>..HEAD -- skills/
 ```
 
 **差分が空の場合は codex plugin をリリース対象から除外**する。差分がある場合のみバンプ判定の対象とする。
@@ -187,13 +188,13 @@ claude package:
   現在: 1.0.0 → 次版: 1.1.0 (新スキル追加 → マイナー)
 
 codex plugin:
-  現在: 0.1.0 → 次版: 0.2.0 (skills-sources/ に新スキル追加 → マイナー)
+  現在: 0.1.0 → 次版: 0.2.0 (skills/ に新 skill 追加 → マイナー)
 ```
 
 codex plugin に差分がない場合は claude package のみ表示し、その旨を明記する:
 
 ```
-codex plugin: skills-sources/ に変更なし → スキップ
+codex plugin: skills/ に変更なし → スキップ
 ```
 
 初回リリースの場合は差分分析をスキップし、ユーザー指定のバージョンをそのまま使う。
@@ -308,5 +309,5 @@ git push origin mjcreativelab-claude-plugins@<codex-version>
 - force push はしない（タグは squash merge 後に main 上で作成するため不要）
 - リリース PR では `plugin.json` 以外のファイルは変更しない（ソースコードの変更は事前にコミット済みであること）。ただし**初回リリースに限り**、`marketplace.json` への登録追記を同梱可
 - 今回リリース対象外の未登録パッケージがある場合は、先に marketplace 同期 PR を分離してマージする
-- codex plugin のバンプ判定は `skills-sources/` 配下の差分のみで行う（同期は手順 0-1 で検証済み）
-- codex plugin の前回タグが存在しない（初回リリース）場合、`skills-sources/` の現在状態をそのまま初回バージョンとしてユーザーに確認する
+- codex plugin のバンプ判定は `skills/`（rendered codex 配布）配下の差分で行う。`skill-sync.yaml` の変更が codex 配布物に与える影響も `skills/` の diff で正しく捉えられる
+- codex plugin の前回タグが存在しない（初回リリース）場合、`skills/` の現在状態をそのまま初回バージョンとしてユーザーに確認する

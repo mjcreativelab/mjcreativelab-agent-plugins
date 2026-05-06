@@ -1,6 +1,6 @@
 # mjcreativelab-claude-plugins
 
-Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monorepo で管理し、両エージェントへ同じ skill を配布する。
+Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monorepo で管理し、`skills-sources/` から各エージェント向けに render して配布する。
 
 ## パッケージ一覧
 
@@ -32,7 +32,7 @@ Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monore
 
 このリポジトリ自体が Codex プラグイン（`name: mjcreativelab-claude-plugins`）として機能する。`.codex-plugin/plugin.json` がマニフェスト、ルート直下の [skills/](skills/) が skill 配置先。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
 
-Codex 側はパッケージ階層を平坦化し、全 skill を `skills/<skill>/` 直下に配置する。
+Codex 側はパッケージ階層を平坦化し、Codex target が有効な skill を `skills/<skill>/` 直下に配置する。Claude 専用 skill は Codex 配布から除外される。
 
 ## ライセンス
 
