@@ -12,7 +12,9 @@ argument-hint: "[skill-name|--check]"
 | 配布先 | パス | レイアウト |
 |---|---|---|
 | claude package | `packages/<package>/skills/<skill>/` | package 階層を保持 |
-| codex plugin | `.codex-plugin/skills/<skill>/` | package を平坦化 |
+| codex plugin | `skills/<skill>/`（ルート直下、`.codex-plugin/plugin.json` の `"skills": "./skills/"` 参照先） | package を平坦化 |
+
+`.codex-plugin/` ディレクトリは plugin metadata（`plugin.json`）専用で、skill 本体はリポジトリルートの `skills/` に配置する。
 
 ミラーは**完全同期**で、source に無いファイルは target から削除される（orphan 削除）。これにより `${CLAUDE_SKILL_DIR}/assets/...` など skill 内の相対参照が両配布先で同じ構造で解決される。
 
@@ -53,7 +55,7 @@ skills-sources/<package>/<skill>/ 配下を編集
 
 ## 重要な前提
 
-- **正本は `skills-sources/`**。`packages/<pkg>/skills/<skill>/` と `.codex-plugin/skills/<skill>/` の中身は generated。直接編集しても次回 sync で上書き・削除される
+- **正本は `skills-sources/`**。`packages/<pkg>/skills/<skill>/` と `skills/<skill>/`（ルート直下） の中身は generated。直接編集しても次回 sync で上書き・削除される
 - skill 単位で完全同期するため、source に無いファイルは target から削除される
 
 ## 対応スキル一覧
@@ -64,7 +66,7 @@ skills-sources/<package>/<skill>/ 配下を編集
 
 1. `skills-sources/<package>/<new-skill>/SKILL.md` を作成
 2. 必要なら `skills-sources/<package>/<new-skill>/assets/` `references/` `README.md` も配置
-3. `/skill-sync` を実行 → `packages/<package>/skills/<new-skill>/` と `.codex-plugin/skills/<new-skill>/` の両方が自動作成される
+3. `/skill-sync` を実行 → `packages/<package>/skills/<new-skill>/` と `skills/<new-skill>/` の両方が自動作成される
 
 ### 新規 package + 新規スキル追加
 

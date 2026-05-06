@@ -122,7 +122,9 @@ claude package と codex plugin で配布する skill 一式（`SKILL.md` + `ass
 `tools/sync_skill_sources.py`（`/skill-sync`）で以下に **skill ディレクトリ全体**を完全ミラー（orphan 削除あり）する:
 
 - claude: `packages/<package>/skills/<skill>/`（package 階層を保持）
-- codex: `.codex-plugin/skills/<skill>/`（package を平坦化）
+- codex: `skills/<skill>/`（リポジトリルート直下に平坦化。`.codex-plugin/plugin.json` の `"skills": "./skills/"` が指す先）
+
+> **注意**: `.codex-plugin/` ディレクトリは plugin metadata（`plugin.json`）専用。skill 本体はルートの `skills/` に配置する。`.codex-plugin/skills/` には何も置かない。
 
 配布先の中身は generated。直接編集しても次回 sync で上書き・削除される。配布先に symlink を作成しない。`.claude/skills/`（プロジェクトローカルスキル）はこの同期処理の対象外。
 

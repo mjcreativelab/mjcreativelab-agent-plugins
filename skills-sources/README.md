@@ -23,7 +23,7 @@ skills-sources/
 | 配布先 | パス | レイアウト |
 |---|---|---|
 | claude package | `packages/<package>/skills/<skill>/` | package 階層を保持 |
-| codex plugin | `.codex-plugin/skills/<skill>/` | package を平坦化 |
+| codex plugin | `skills/<skill>/`（ルート直下） | package を平坦化 |
 
 両配布先は skills-sources の **完全ミラー**（orphan 削除あり）。配布先の中身を直接編集しても次回 sync で上書き・削除される。
 

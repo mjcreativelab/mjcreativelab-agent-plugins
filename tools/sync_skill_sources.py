@@ -3,12 +3,15 @@
 
 配布先:
 - claude: packages/<package>/skills/<skill>/  （package 階層を保持）
-- codex:  .codex-plugin/skills/<skill>/       （package を平坦化）
+- codex:  skills/<skill>/                     （package を平坦化、ルート直下）
+
+codex の skill 配置はルート `skills/` 直下（`.codex-plugin/plugin.json` の `"skills": "./skills/"` 参照先）。
+`.codex-plugin/` 自体は plugin metadata 専用で skill 本体は置かない。
 
 各配布先は source skill ディレクトリの完全ミラー:
 - SKILL.md / assets/ / references/ など全ファイルを source から実体コピー
 - target に存在し source に無いファイルは削除（orphan 削除）
-- skills-sources/ が唯一の正本（packages/<pkg>/skills/<skill>/ の中身は generated）
+- skills-sources/ が唯一の正本（配布先の中身は generated）
 """
 
 from __future__ import annotations
@@ -23,7 +26,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES_DIR = ROOT / "skills-sources"
 PACKAGES_DIR = ROOT / "packages"
-CODEX_PLUGIN_DIR = ROOT / ".codex-plugin"
+CODEX_PLUGIN_DIR = ROOT / ".codex-plugin"  # plugin.json の有無で codex 配布対象かを判定
+CODEX_SKILLS_DIR = ROOT / "skills"          # 実際の codex skill 配置先（ルート直下）
 
 
 def discover_skills() -> list[tuple[str, str]]:
@@ -60,10 +64,10 @@ def source_dir(package: str, skill: str) -> Path:
 
 
 def target_dirs(package: str, skill: str) -> list[Path]:
-    """ミラー先ディレクトリのリスト。.codex-plugin/ が存在する時のみ codex 側を含める。"""
+    """ミラー先ディレクトリのリスト。.codex-plugin/plugin.json が存在する時のみ codex 側を含める。"""
     paths = [PACKAGES_DIR / package / "skills" / skill]
-    if CODEX_PLUGIN_DIR.is_dir():
-        paths.append(CODEX_PLUGIN_DIR / "skills" / skill)
+    if (CODEX_PLUGIN_DIR / "plugin.json").is_file():
+        paths.append(CODEX_SKILLS_DIR / skill)
     return paths
 
 

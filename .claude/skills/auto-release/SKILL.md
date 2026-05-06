@@ -74,7 +74,7 @@ ToolSearch: select:AskUserQuestion,mcp__plugin_github_github__create_pull_reques
 
 #### 0-1. skill-sync の同期確認
 
-`skills-sources/` と各配布先（`packages/<pkg>/skills/<skill>/` および `.codex-plugin/skills/<skill>/`）が同期されているかを検証する:
+`skills-sources/` と各配布先（`packages/<pkg>/skills/<skill>/` および ルート `skills/<skill>/`）が同期されているかを検証する:
 
 ```bash
 python3 tools/sync_skill_sources.py --check

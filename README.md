@@ -30,9 +30,9 @@ Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monore
 
 ## Codex でのインストール
 
-このリポジトリの [.codex-plugin/](.codex-plugin/) が Codex 用のプラグイン配布ディレクトリ（`name: mjcreativelab-claude-plugins`）。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
+このリポジトリ自体が Codex プラグイン（`name: mjcreativelab-claude-plugins`）として機能する。`.codex-plugin/plugin.json` がマニフェスト、ルート直下の [skills/](skills/) が skill 配置先。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
 
-Codex 側はパッケージ階層を平坦化し、全 skill を `.codex-plugin/skills/<skill>/` 直下に配置する。
+Codex 側はパッケージ階層を平坦化し、全 skill を `skills/<skill>/` 直下に配置する。
 
 ## ライセンス
 
