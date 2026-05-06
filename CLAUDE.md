@@ -10,6 +10,8 @@ Claude Code 用プラグイン（skills, hooks, rules）の開発リポジトリ
 - **すべての変更は PR を作成する** — レビューなしで main に直接 push しない
 - Commit messages: 日本語 OK、conventional commits を推奨
 
+**特例**: `/smart-pr` や `/smart-commit` に `main にコミット` という引数が渡された場合は、main に直接コミット・push してよい。
+
 ### ブランチ命名規則
 
 フォーマット: `{type}/issue-{番号}-{簡潔な説明}`
@@ -58,6 +60,16 @@ bash -n packages/<plugin>/skills/<skill-name>/assets/<name>.sh
 # SKILL.md frontmatter 確認
 head -5 packages/<plugin>/skills/<skill-name>/SKILL.md
 
+
+# skills-sources の SKILL.md を packages 配下にコピー（全スキル）
+/skill-sync
+
+# 特定スキルのみコピー
+/skill-sync <skill-name>
+
+# 差分確認のみ（コピーしない）
+/skill-sync --check
+
 # リリース（plugin.json のバージョンバンプ + タグ + リリース PR）
 /auto-release
 ```
@@ -101,6 +113,20 @@ packages/
   skills/
     auto-release/                # バージョン更新・タグ付け・リリース（プロジェクトローカル）
 ```
+
+
+### skills-sources/（スキル共通本体）
+
+claude package と codex plugin で配布する skill 一式（`SKILL.md` + `assets/` + `references/` + 任意の `README.md`）の正本を置く。配置は `skills-sources/<package-name>/<skill-name>/`（ディレクトリ階層が claude package 所属を表現する）。
+
+`tools/sync_skill_sources.py`（`/skill-sync`）で以下に **skill ディレクトリ全体**を完全ミラー（orphan 削除あり）する:
+
+- claude: `packages/<package>/skills/<skill>/`（package 階層を保持）
+- codex: `.codex-plugin/skills/<skill>/`（package を平坦化）
+
+配布先の中身は generated。直接編集しても次回 sync で上書き・削除される。配布先に symlink を作成しない。`.claude/skills/`（プロジェクトローカルスキル）はこの同期処理の対象外。
+
+新規 skill・新規 package 追加時もスクリプト編集は不要（自動検出される）。codex 側はフラット配置のため **skill 名はリポジトリ全体で一意**である必要がある。
 
 ## プラグイン構造
 
