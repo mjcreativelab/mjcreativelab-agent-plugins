@@ -1,4 +1,4 @@
-# skills-sources
+# skill-sources
 
 claude package と codex plugin で配布する skill 一式の **正本**を置くディレクトリ。
 配布先へは単純コピーではなく、target ごとの render で書き出す。
@@ -6,7 +6,7 @@ claude package と codex plugin で配布する skill 一式の **正本**を置
 ## 階層
 
 ```
-skills-sources/
+skill-sources/
 └── <package-name>/
     └── <skill-name>/
         ├── SKILL.md       # 必須

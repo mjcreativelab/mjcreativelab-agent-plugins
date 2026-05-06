@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render skill directories from skills-sources/<package>/<skill>/ to distribution targets.
+"""Render skill directories from skill-sources/<package>/<skill>/ to distribution targets.
 
 配布先:
 - claude: packages/<package>/skills/<skill>/  （package 階層を保持）
@@ -13,7 +13,7 @@ codex の skill 配置はルート `skills/` 直下（`.codex-plugin/plugin.json
 - skill-sync.yaml / skill-sync.json で target の有効/無効、除外ファイルを制御できる
 - Codex 向け SKILL.md は Codex validator に合わせて frontmatter を正規化する
 - target に存在し render 結果に無いファイルは削除（orphan 削除）
-- skills-sources/ が唯一の正本（配布先の中身は generated）
+- skill-sources/ が唯一の正本（配布先の中身は generated）
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES_DIR = ROOT / "skills-sources"
+SOURCES_DIR = ROOT / "skill-sources"
 PACKAGES_DIR = ROOT / "packages"
 CODEX_PLUGIN_DIR = ROOT / ".codex-plugin"  # plugin.json の有無で codex 配布対象かを判定
 CODEX_SKILLS_DIR = ROOT / "skills"          # 実際の codex skill 配置先（ルート直下）
@@ -51,7 +51,7 @@ class TargetSpec:
 
 
 def discover_skills() -> list[tuple[str, str]]:
-    """skills-sources/<package>/<skill>/SKILL.md を走査して (package, skill) のリストを返す。
+    """skill-sources/<package>/<skill>/SKILL.md を走査して (package, skill) のリストを返す。
 
     codex 側はフラット配置のため、skill 名がリポジトリ全体で一意であることを検証する。
     """
@@ -436,7 +436,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "skills",
         nargs="*",
-        help="Skill names to sync. Defaults to all skills found in skills-sources/.",
+        help="Skill names to sync. Defaults to all skills found in skill-sources/.",
     )
     parser.add_argument(
         "--check",
