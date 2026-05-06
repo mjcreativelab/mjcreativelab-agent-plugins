@@ -27,7 +27,7 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 
 `.codex-plugin/` に存在する単一プラグイン（全 skills を内包）。
 
-- **タグ形式**: `mjcreativelab-claude-plugins@<semver>`（例: `mjcreativelab-claude-plugins@0.2.0`）
+- **タグ形式**: `mjcreativelab-agent-plugins@<semver>`（例: `mjcreativelab-agent-plugins@0.2.0`）
 - **バージョン格納先**: `.codex-plugin/plugin.json` の `version`
 - **判定基準**: 前回タグからの `skills/`（rendered codex 配布）配下の差分
 - **リリース条件**: 前回 codex タグから `skills/` に変更があれば claude package と同じ PR で同時バンプ。差分がなければスキップ
@@ -152,7 +152,7 @@ git tag --list '<package-name>@*' --sort=-v:refname | head -1
 codex plugin の既存タグも合わせて検索する:
 
 ```bash
-git tag --list 'mjcreativelab-claude-plugins@*' --sort=-v:refname | head -1
+git tag --list 'mjcreativelab-agent-plugins@*' --sort=-v:refname | head -1
 ```
 
 - **タグが存在する** → そのバージョンを前回バージョンとして使用
@@ -173,7 +173,7 @@ git diff --name-only <package-name>@<version>..HEAD -- packages/<package-name>/
 前回 codex タグから HEAD までの `skills/` 配下の差分を分析する:
 
 ```bash
-git diff --name-only mjcreativelab-claude-plugins@<version>..HEAD -- skills/
+git diff --name-only mjcreativelab-agent-plugins@<version>..HEAD -- skills/
 ```
 
 **差分が空の場合は codex plugin をリリース対象から除外**する。差分がある場合のみバンプ判定の対象とする。
@@ -282,8 +282,8 @@ git push origin <package-name>@<version>
 codex plugin もリリース対象の場合、同じコミットに codex タグも付ける:
 
 ```bash
-git tag mjcreativelab-claude-plugins@<codex-version>
-git push origin mjcreativelab-claude-plugins@<codex-version>
+git tag mjcreativelab-agent-plugins@<codex-version>
+git push origin mjcreativelab-agent-plugins@<codex-version>
 ```
 
 ### 12. 結果報告
@@ -298,7 +298,7 @@ git push origin mjcreativelab-claude-plugins@<codex-version>
     タグ: <package-name>@<version>
   codex plugin: <skip または以下を表示>
     バージョン: <old-codex-version> → <codex-version>
-    タグ: mjcreativelab-claude-plugins@<codex-version>
+    タグ: mjcreativelab-agent-plugins@<codex-version>
   PR: <pr-url>
 ```
 

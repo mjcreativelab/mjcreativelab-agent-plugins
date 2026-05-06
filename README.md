@@ -1,4 +1,4 @@
-# mjcreativelab-claude-plugins
+# mjcreativelab-agent-plugins
 
 Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monorepo で管理し、`skills-sources/` から各エージェント向けに render して配布する。
 
@@ -14,23 +14,23 @@ Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monore
 
 ```
 # 1. marketplace として登録
-/plugin marketplace add mjcreativelab/mjcreativelab-claude-plugins
+/plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
 
 # 2. プラグインをインストール
-/plugin install <package-name>@mjcreativelab-claude-plugins
+/plugin install <package-name>@mjcreativelab-agent-plugins
 ```
 
 例:
 
 ```
-/plugin install mjc-git-workflow-tools@mjcreativelab-claude-plugins
-/plugin install mjc-claude-improver-tools@mjcreativelab-claude-plugins
-/plugin install mjc-code-develop-tools@mjcreativelab-claude-plugins
+/plugin install mjc-git-workflow-tools@mjcreativelab-agent-plugins
+/plugin install mjc-claude-improver-tools@mjcreativelab-agent-plugins
+/plugin install mjc-code-develop-tools@mjcreativelab-agent-plugins
 ```
 
 ## Codex でのインストール
 
-このリポジトリ自体が Codex プラグイン（`name: mjcreativelab-claude-plugins`）として機能する。`.codex-plugin/plugin.json` がマニフェスト、ルート直下の [skills/](skills/) が skill 配置先。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
+このリポジトリ自体が Codex プラグイン（`name: mjcreativelab-agent-plugins`）として機能する。`.codex-plugin/plugin.json` がマニフェスト、ルート直下の [skills/](skills/) が skill 配置先。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
 
 Codex 側はパッケージ階層を平坦化し、Codex target が有効な skill を `skills/<skill>/` 直下に配置する。Claude 専用 skill は Codex 配布から除外される。
 
