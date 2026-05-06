@@ -47,7 +47,7 @@ description: パッケージのバージョン更新・タグ付け・リリー�
 
 #### codex plugin（`skills/` の差分）
 
-rendered 出力 `skills/<skill>/` の **skill ディレクトリ単位**で判定する。source（`skills-sources/`）の変更は `/skill-sync` 後に `skills/` へ反映され、その差分のみがバンプ対象となる。
+rendered 出力 `skills/<skill>/` の **skill ディレクトリ単位**で判定する。source（`skill-sources/`）の変更は `/skill-sync` 後に `skills/` へ反映され、その差分のみがバンプ対象となる。
 
 | 変更内容 | バンプ | 例 |
 |----------|--------|-----|
@@ -75,7 +75,7 @@ ToolSearch: select:AskUserQuestion,mcp__plugin_github_github__create_pull_reques
 
 #### 0-1. skill-sync の同期確認
 
-`skills-sources/` と各配布先（`packages/<pkg>/skills/<skill>/` および ルート `skills/<skill>/`）が同期されているかを検証する:
+`skill-sources/` と各配布先（`packages/<pkg>/skills/<skill>/` および ルート `skills/<skill>/`）が同期されているかを検証する:
 
 ```bash
 python3 tools/sync_skill_sources.py --check

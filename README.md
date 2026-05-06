@@ -1,6 +1,6 @@
 # mjcreativelab-agent-plugins
 
-Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monorepo で管理し、`skills-sources/` から各エージェント向けに render して配布する。
+Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monorepo で管理し、`skill-sources/` から各エージェント向けに render して配布する。
 
 ## パッケージ一覧
 
