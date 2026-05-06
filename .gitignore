@@ -6,3 +6,4 @@ node_modules/
 docs/temp/*
 !docs/temp/.gitkeep
 docs/superpowers/
+.serena/

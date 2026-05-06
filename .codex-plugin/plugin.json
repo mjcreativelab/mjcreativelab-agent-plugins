@@ -1,0 +1,6 @@
+{
+  "name": "mjcreativelab-claude-plugins",
+  "version": "1.0.0",
+  "description": "Codex plugin distribution for MJC reusable skills.",
+  "skills": "./skills/"
+}
