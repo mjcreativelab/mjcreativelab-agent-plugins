@@ -99,8 +99,8 @@ PR レビュー元の場合はコメントへの返信も行う。
 
 ```
 # 1. marketplace として登録
-/plugin marketplace add mjcreativelab/mjcreativelab-claude-plugins
+/plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
 
 # 2. mjc-git-workflow-tools プラグインをインストール
-/plugin install mjc-git-workflow-tools@mjcreativelab-claude-plugins
+/plugin install mjc-git-workflow-tools@mjcreativelab-agent-plugins
 ```

@@ -219,10 +219,10 @@ target 差分の扱い:
 
 ```bash
 # marketplace として登録
-/plugin marketplace add mjcreativelab/mjcreativelab-claude-plugins
+/plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
 
 # プラグインをインストール
-/plugin install <plugin-name>@mjcreativelab-claude-plugins
+/plugin install <plugin-name>@mjcreativelab-agent-plugins
 ```
 
 ### キャッシュの注意
@@ -346,3 +346,4 @@ Git タグは変更不可 — 旧タグは旧名のまま残る。新リリー�
 
 - `mjc-git-workflow` → `mjc-git-workflow-tools`（旧タグ: `mjc-git-workflow@1.1.4` まで）
 - `mjc-claude-skill-tool` → `mjc-claude-improver-tools`（旧タグ: `mjc-claude-skill-tool@1.2.1` まで）
+- `mjcreativelab-claude-plugins` → `mjcreativelab-agent-plugins`（リポジトリ名・marketplace 名・codex plugin 名を一括リネーム。旧 codex タグ: `mjcreativelab-claude-plugins@1.0.0` まで）
