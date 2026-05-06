@@ -32,7 +32,19 @@ Claude Code と Codex 用のプラグイン集。skills, hooks, rules を monore
 
 このリポジトリ自体が Codex プラグイン（`name: mjcreativelab-agent-plugins`）として機能する。`.codex-plugin/plugin.json` がマニフェスト、ルート直下の [skills/](skills/) が skill 配置先。Codex CLI のプラグイン取り込み機能でリポジトリを指定して導入する。
 
+Codex CLI では marketplace として登録できる:
+
+```bash
+codex plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
+```
+
 Codex 側はパッケージ階層を平坦化し、Codex target が有効な skill を `skills/<skill>/` 直下に配置する。Claude 専用 skill は Codex 配布から除外される。
+
+インストール時の tips:
+
+- Codex のプラグイン名は `.codex-plugin/plugin.json` の `name`（`mjcreativelab-agent-plugins`）を参照する。
+- `skills/` は generated なので直接編集しない。スキルを変更する場合は `skill-sources/` を編集して `/skill-sync` で render する。
+- Codex 向けに出す skill は `skill-sources/<package>/<skill>/skill-sync.yaml` の `targets.codex.enabled` で制御できる。
 
 ## ライセンス
 
