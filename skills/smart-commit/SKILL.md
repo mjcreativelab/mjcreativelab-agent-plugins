@@ -6,9 +6,6 @@ description: >
   「コミットして」「差分をコミット」「変更をまとめて」「作業区切りたい」「一旦コミット」
   「今の状態を保存」「ここまでの変更を記録」等で起動する。
   コードレビュー（smart-review）や PR 作成（smart-pr）とは別物。
-argument-hint: "[-p <フィルタ指示>]"
-disable-model-invocation: true
-allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion
 ---
 
 # Smart Commit

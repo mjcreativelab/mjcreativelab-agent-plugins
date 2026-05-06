@@ -5,9 +5,6 @@ description: >
   Issue コメントまたは新規 Issue として投稿する。
   ユーザーが「計画立てて」「実装計画」「設計して」「#123 の計画」「/smart-issue-plan #123」と言ったら起動する。
   smart-issue-resolve（実装着手）とは別物。計画だけ作りたいときに使う。
-disable-model-invocation: true
-argument-hint: "#issue-number [-p 追加指示]"
-allowed-tools: Read, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # Smart Issue Plan

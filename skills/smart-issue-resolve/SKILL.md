@@ -6,9 +6,6 @@ description: >
   作業完了後に smart-commit の使用を提案する（勝手にコミット・push はしない）。
   ユーザーが「Issue やって」「#123 に取り掛かる」「/smart-issue-resolve #123」と言ったら起動する。
   smart-issue-plan（計画のみ作成）とは別物。実装まで踏み込むときに使う。
-disable-model-invocation: true
-argument-hint: "#issue-number [-p 追加指示]"
-allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion
 ---
 
 # Smart Issue Resolve

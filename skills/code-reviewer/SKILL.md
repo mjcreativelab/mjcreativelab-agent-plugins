@@ -1,8 +1,6 @@
 ---
 name: code-reviewer
 description: 実装されたコードを仕様整合・設計適合・可読性の観点でレビューする。PR / 変更差分のレビュー、コミット前のセルフレビューに使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。重要変更は Codex クロスチェックを推奨する。
-argument-hint: "[<PR番号|branch|ref..ref|path>]"
-disable-model-invocation: true
 ---
 
 # コードレビュー

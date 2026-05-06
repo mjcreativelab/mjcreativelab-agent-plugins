@@ -1,8 +1,6 @@
 ---
 name: smart-review
 description: ローカル変更をデフォルトブランチと比較してセルフレビューする。Issue 番号があれば要件適合もチェックする。ユーザーが「レビューして」「変更確認して」「/smart-review」「/smart-review #123」と言ったら起動する。
-disable-model-invocation: true
-allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 
 # Smart Review

@@ -5,9 +5,6 @@ description: >
   必要に応じてデフォルトブランチを現在のブランチへマージしてから push する（副作用あり）。
   「PR 作って」「プルリク作成」「PR 更新して」「/smart-pr」と言ったら起動する。
   コミット（smart-commit）やレビュー（smart-review）とは別物。
-disable-model-invocation: true
-allowed-tools: Read, Bash, Glob, Grep, AskUserQuestion
-argument-hint: "[-p <prompt>]"
 ---
 
 # Smart PR

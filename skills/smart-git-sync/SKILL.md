@@ -1,9 +1,6 @@
 ---
 name: smart-git-sync
 description: デフォルトブランチ（develop or main）にチェックアウトし、fetch/pull してマージ済みブランチを削除する。ユーザーが「同期して」「ブランチ整理」「/smart-git-sync」と言ったら起動する。
-disable-model-invocation: true
-allowed-tools: Read, Bash
-model: claude-sonnet-4-6
 ---
 
 # Smart Git Sync
