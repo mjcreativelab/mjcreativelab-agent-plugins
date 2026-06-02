@@ -25,7 +25,7 @@ agent 向けテキスト指示（skill / slash command / タスクプロンプ�
 ### 例
 
 ```
-/empirical-prompt-tuning packages/mjc-git-workflow-tools/skills/smart-commit/SKILL.md
+/empirical-prompt-tuning skills/smart-commit/SKILL.md
 /empirical-prompt-tuning CLAUDE.md の「AI Agent Role Assignment」節
 ```
 

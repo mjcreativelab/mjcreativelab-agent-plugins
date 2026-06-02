@@ -147,7 +147,7 @@ Claude Code のバージョンアップ後に、最新の公式推奨手法と�
 /mjc-claude-improver-tools:skill-improver .claude/skills/my-skill
 
 # skill-improver: プロンプト付き（改善の意図を skill-creator に直接伝える）
-/mjc-claude-improver-tools:skill-improver packages/mjc-git-workflow-tools/skills/smart-commit -p "コンテキスト管理を重点的に改善して"
+/mjc-claude-improver-tools:skill-improver skills/smart-commit -p "コンテキスト管理を重点的に改善して"
 /mjc-claude-improver-tools:skill-improver .claude/skills/deploy -p "eval は不要、一緒に対話的に改善したい"
 
 # claude-code-update-review: 基本
@@ -157,7 +157,7 @@ Claude Code のバージョンアップ後に、最新の公式推奨手法と�
 /mjc-claude-improver-tools:claude-code-update-review -p "hooks の活用を重点的に"
 
 # empirical-prompt-tuning: 対象を明示
-/mjc-claude-improver-tools:empirical-prompt-tuning packages/mjc-git-workflow-tools/skills/smart-commit/SKILL.md
+/mjc-claude-improver-tools:empirical-prompt-tuning skills/smart-commit/SKILL.md
 
 # empirical-prompt-tuning: 対象をフリーテキストで
 /mjc-claude-improver-tools:empirical-prompt-tuning CLAUDE.md の「AI Agent Role Assignment」節
