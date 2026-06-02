@@ -22,8 +22,9 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
   本メモが優先する（Phase 2 の sync 単一化は「skill-sources 全廃」で代替済み）。
 - **タグ運用を確定**: repo-level `v<X.Y.Z>`（npx pin 用・初回 `v1.0.0`）+ per-package `<package>@<semver>`
   （Claude marketplace 用）の併用。`v2.0.0` は marketplace 撤去（Phase 4）に予約。
-- **内部 skill の npx 除外を確定**: プロジェクトローカルの `auto-release` に `metadata.internal: true` を付与し、
-  `npx skills` の探索対象から除外（`--skill '*'` でも配布対象のみ）。
+- **内部 skill の扱い**: `auto-release` に `metadata.internal: true` を付与（`npx skills ... --list` の表示から隠す）。
+  ただし**このバージョンの npx は `--skill '*'` から internal を除外しない**ため、wildcard install には含まれる。
+  クリーンな配布は `--skill <name>` の名前指定で行う（要追跡: npx 側の wildcard 除外手段 / auto-release の配置）。
 
 > ⚠️ **以降（§1〜§9）は実装前の当初ドラフト（2026-05 時点・履歴）**。`skill-sources/` / `/skill-sync` /
 > `tools/sync_skill_sources.py` / ルート `skills/` / `packages/*/skills/` 削除 などに言及する箇所は、

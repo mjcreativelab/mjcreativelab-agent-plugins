@@ -53,7 +53,8 @@ npx skills update
 
 - 推奨は **グローバル install（`-g`）+ タグ pin（`@v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
 - **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v1.0.0`）。タグ無しは HEAD 追従の「お試し」用途。なお Claude Code marketplace 用の per-package タグ（`<package>@<semver>`）は別軸で継続する。
-- skill は名前で個別指定する（`--skill <name>`）。本リポジトリ運用用の内部 skill（例: `auto-release`）は `metadata.internal: true` で npx 配布から除外済みのため、`--skill '*'` でも配布対象の skill のみが入る。
+- skill は名前で個別指定する（`--skill <name>`）。全 skill を一括で入れるなら `--skill '*'`（zsh はクォート必須）。
+- 内部 skill `auto-release` は `metadata.internal: true` で `npx skills ... --list` の表示からは隠れるが、**`--skill '*'` では install される**（このバージョンの `npx skills` は wildcard から internal を除外しない）。`auto-release` は本リポジトリ専用のため他環境では不要。配布対象だけをクリーンに入れたい場合は `--skill <name>` を列挙する。
 
 ## ライセンス
 
