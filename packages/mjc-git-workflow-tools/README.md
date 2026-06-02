@@ -104,6 +104,6 @@ PR レビュー元の場合はコメントへの返信も行う。
 npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
 
 # 個別 install（推奨: グローバル + タグ pin）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -g
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-pr -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 --skill smart-commit -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 --skill smart-pr -g
 ```

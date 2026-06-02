@@ -1,12 +1,12 @@
 # Agent Skills Monorepo
 
-Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキル集（skills, hooks, rules）の開発リポジトリ。`packages/<group>/skills/<skill>/` を直接正本とし、[vercel-labs/skills](https://github.com/vercel-labs/skills) の **`npx skills`** で配布する（クロスツール単一経路。render 工程・中間正本・plugin マニフェストは持たない）。
+Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキル集（skills, hooks, rules）の開発リポジトリ。`skills/<skill>/` を直接正本とし、[vercel-labs/skills](https://github.com/vercel-labs/skills) の **`npx skills`** で配布する（クロスツール単一経路。render 工程・中間正本・plugin マニフェストは持たない）。
 
 > **v2.0.0 で配布を `npx skills` に一本化**。旧 Claude Code marketplace（`.claude-plugin/`）と旧 Codex 単一プラグイン配布は撤去済み。
 
 ## 標準ワークフロー
 
-1. `packages/<group>/skills/<skill>/` を直接編集（SKILL.md / assets / references）
+1. `skills/<skill>/` を直接編集（SKILL.md / assets / references）
 2. `npx skills add ./ --list` で検出を確認（必要に応じてローカル install で動作確認）
 3. PR 経由で main にマージ（`/smart-commit main にコミット` で直接コミット可）
 4. `/auto-release` で repo-level `v<X.Y.Z>` タグを発行（GitHub Release 作成）
@@ -61,10 +61,10 @@ npx skills add ./ --list
 npx skills add ./ --skill <skill-name>
 
 # assets/ 内のシェルスクリプト構文チェック
-bash -n packages/<group>/skills/<skill-name>/assets/<name>.sh
+bash -n skills/<skill-name>/assets/<name>.sh
 
 # SKILL.md frontmatter 確認
-head -5 packages/<group>/skills/<skill-name>/SKILL.md
+head -5 skills/<skill-name>/SKILL.md
 
 # リリース（repo-level v<X.Y.Z> タグの発行 + GitHub Release）
 /auto-release
@@ -73,57 +73,56 @@ head -5 packages/<group>/skills/<skill-name>/SKILL.md
 ## リポジトリ構造
 
 ```
-packages/
-  mjc-git-workflow-tools/        # Git ワークフロー系スキル群
-    skills/                      # 正本（直接編集）。npx skills が探索
-      smart-commit/              # 差分を作業単位で分割コミット
-      smart-pr/                  # PR 作成・更新の自動化
-      smart-git-sync/            # ブランチ同期・整理
-      smart-issue-resolve/       # Issue からブランチ作成〜実装
-      smart-issue-plan/          # Issue の実装計画を作成・更新
-      smart-review/              # ローカル変更のセルフレビュー
-      smart-review-apply/        # レビューフィードバックの適用
-    README.md
-  mjc-claude-improver-tools/       # スキル品質改善・環境構成レビュー
-    skills/
-      skill-improver/              # skill-creator 連携 + コンテキスト管理・静的チェック
-      empirical-prompt-tuning/     # 新規 subagent 実行でプロンプト・skill を反復チューニング
-      claude-code-update-review/   # Claude Code バージョンアップ後の構成レビュー
-    README.md
-  mjc-code-develop-tools/          # コード開発ライフサイクル支援（設計/レビュー/セキュリティ監査）
-    skills/
-      software-architect/          # 要件・スペックから「あるべき設計」を言語化
-      code-reviewer/               # 仕様整合・設計適合・可読性の観点でレビュー
-      code-reviewer-adversarial/   # Breaker (Claude) × Judge (Codex) の敵対的レビュー
-      security-auditor/            # STRIDE・認可・データフロー等の設計セキュリティ監査
-    README.md
-  mjc-design-tools/                # デザイン領域（UI / UX）の専門知識ロード
-    skills/
-      game-ui-design/              # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
-    README.md
-.claude/
-  skills/
-    auto-release/                # repo-level タグ発行（プロジェクトローカル・配布対象外・metadata.internal）
+skills/                          # 配布 skill の正本（直接編集・npx 標準探索場所）
+  # Git ワークフロー系
+  smart-commit/                  # 差分を作業単位で分割コミット
+  smart-pr/                      # PR 作成・更新の自動化
+  smart-git-sync/                # ブランチ同期・整理
+  smart-issue-resolve/           # Issue からブランチ作成〜実装
+  smart-issue-plan/              # Issue の実装計画を作成・更新
+  smart-review/                  # ローカル変更のセルフレビュー
+  smart-review-apply/            # レビューフィードバックの適用
+  # スキル品質改善・環境構成レビュー
+  skill-improver/                # skill-creator 連携 + コンテキスト管理・静的チェック
+  empirical-prompt-tuning/       # 新規 subagent 実行でプロンプト・skill を反復チューニング
+  claude-code-update-review/     # Claude Code バージョンアップ後の構成レビュー
+  # コード開発ライフサイクル支援
+  software-architect/            # 要件・スペックから「あるべき設計」を言語化
+  code-reviewer/                 # 仕様整合・設計適合・可読性の観点でレビュー
+  code-reviewer-adversarial/     # Breaker (Claude) × Judge (Codex) の敵対的レビュー
+  security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
+  # デザイン
+  game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
+  # 内部（配布対象外・metadata.internal で --list 非表示）
+  auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
+packages/                        # スキル群のドキュメント（README のみ・plugin マニフェストは持たない）
+  mjc-git-workflow-tools/README.md
+  mjc-claude-improver-tools/README.md
+  mjc-code-develop-tools/README.md
+  mjc-design-tools/README.md
+docs/                            # 設計・移行ドキュメント（migration-npx-skills.md 等）
 ```
 
-`packages/<group>/` は skill のグルーピング（ドキュメント単位）で、plugin マニフェストは持たない。`packages/<group>/README.md` がそのグループの skill 一覧・使い方を説明する。
+`skills/<skill>/` が配布 skill の唯一の正本（直接編集）。skill 名はリポジトリ全体で一意。`packages/<group>/` は skill 群の説明ドキュメント（README）置き場で、plugin マニフェストは持たない（旧 marketplace 撤去後もグループ説明として保持）。
 
 ### 配布の仕組み（単一正本・npx skills）
 
-`packages/<group>/skills/<skill>/` が skill の唯一の正本（generated な中間物・render 工程は無い）。配布は `npx skills`（[vercel-labs/skills](https://github.com/vercel-labs/skills)・git tree-SHA ベース）:
+`skills/<skill>/` が skill の唯一の正本（generated な中間物・render 工程は無い）。配布は `npx skills`（[vercel-labs/skills](https://github.com/vercel-labs/skills)・git tree-SHA ベース）:
 
 - `npx skills add mjcreativelab/mjcreativelab-agent-plugins@v<X.Y.Z> --skill <name> -g` で各エージェントへ install。skill は `.agents/skills/<skill>/` に配置され Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開される。
 - frontmatter は逐語コピーされる（`allowed-tools` 等は標準仕様、`argument-hint` / `disable-model-invocation` は Claude 拡張で他エージェントは無視）。
 
 注意点:
 
-- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示からは隠れる。ただし**このバージョンの `npx skills` は `--skill '*'`（wildcard install）から internal を除外しない**ため `--skill '*'` には含まれる。配布対象だけクリーンに入れるには `--skill <name>` を名前指定する。
+- 内部 skill（リポジトリ自身の運用用。例: `auto-release`）も **`skills/<skill>/` に置く**。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示から隠れる（ただし `--skill '*'` には含まれる。配布対象だけクリーンに入れるには `--skill <name>` を名前指定）。
+  - **`.claude/skills/` には置かない**: npx のリモート探索は浅い標準ルートを 1 つ見つけると深い探索をしない。`.claude/skills/` に skill があると `skills/` をシャドウし、配布 skill が発見されなくなる（v2.0.0→2.0.1 でこれを踏んだ）。
+  - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./ --skill auto-release -g`（internal なので明示指定で導入）で global install して呼ぶ。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
-- 新規 skill・新規グループ追加時に同期スクリプト・マニフェストは不要（`packages/` を直接編集するだけ）。
+- 新規 skill 追加時に同期スクリプト・マニフェストは不要（`skills/<skill>/` を直接追加するだけ）。
 
 ### タグ運用
 
-- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add <repo>@v2.0.0 ...`）。`/auto-release` が `packages/*/skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
+- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add <repo>@v2.0.0 ...`）。`/auto-release` が `skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
 - 旧タグ（per-package `<package>@<semver>`・旧 codex `mjcreativelab-claude-plugins@1.0.0`）は不変で残る（履歴）。これらは廃止済みの旧配布経路のもの。
 
 ## スキルファイル形式
@@ -222,14 +221,14 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 
 ## 新規スキル追加手順
 
-1. `packages/<group>/skills/<skill-name>/` ディレクトリを作成
+1. `skills/<skill-name>/` ディレクトリを作成
 2. `SKILL.md` を作成（frontmatter: `name`〔ディレクトリ名と一致〕 + `description`）
 3. `packages/<group>/README.md` にスキルの説明・使用例を追加
 4. この `CLAUDE.md` のリポジトリ構造セクションにスキルを追記
 5. `npx skills add ./ --list` で検出されることを確認
 6. リリースは `/auto-release`（新 skill 追加 → マイナーバンプ）
 
-新規グループを足す場合も `packages/<new-group>/skills/` を作るだけ（マニフェスト不要）。
+グループ説明を足す場合は `packages/<group>/README.md` を追加する（任意・ドキュメントのみ。マニフェスト不要）。
 
 ## パッケージ（グループ）リネーム時の注意
 

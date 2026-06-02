@@ -8,7 +8,7 @@ metadata:
 # Auto Release
 
 `npx skills` 配布のために repo-level の `v<X.Y.Z>` タグを発行する。skill 本体は
-`packages/<plugin>/skills/` が正本で、配布は `npx skills`（git tree-SHA ベース）。
+`skills/<skill>/` が正本で、配布は `npx skills`（git tree-SHA ベース）。
 利用者は `npx skills add <repo>@v<X.Y.Z> ...` でバージョンを pin できる。
 
 > Claude marketplace（`.claude-plugin/marketplace.json` / per-package `plugin.json` /
@@ -22,7 +22,7 @@ metadata:
 
 - **形式**: repo-level SemVer タグ `v<X.Y.Z>`（例: `v1.0.0`, `v2.0.0`）
 - **格納先**: git タグのみ（バージョンファイル・plugin.json は持たない）
-- **判定基準**: 前回 `v*` タグから HEAD までの **`packages/*/skills/` 配下**の差分（配布対象 skill の変化）
+- **判定基準**: 前回 `v*` タグから HEAD までの **`skills/` 配下**の差分（配布対象 skill の変化）
 
 ### バンプルール
 
@@ -30,13 +30,13 @@ metadata:
 
 | 変更内容 | バンプ | 例 |
 |----------|--------|-----|
-| 配布 skill の削除・リネーム・互換性破壊（`packages/*/skills/` 差分に現れる） | **メジャー** | 1.2.0 → 2.0.0 |
-| 配布 skill の新規追加（`packages/*/skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
+| 配布 skill の削除・リネーム・互換性破壊（`skills/` 差分に現れる） | **メジャー** | 1.2.0 → 2.0.0 |
+| 配布 skill の新規追加（`skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
 | 既存 skill の修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
 
-- 内部 skill（`.claude/skills/`・`metadata.internal: true`）の変更は配布物に影響しないためバンプ対象外。
+- 内部 skill（`metadata.internal: true`。例: 本 `auto-release`）の変更は配布物に影響しないためバンプ対象外。
 - ドキュメントのみ（README / CLAUDE.md / docs）の変更も配布 skill 不変ならバンプ不要（必要なら `-p` で明示）。
-- リポジトリ構造・配布経路の**一度きりの破壊的変更**（例: v2.0.0 の marketplace 撤去）は `packages/*/skills/` 差分に現れないため自動判定の対象外。`-p` で明示的に major を指定してリリースする。
+- リポジトリ構造・配布経路の**一度きりの破壊的変更**（例: v2.0.0 の marketplace 撤去）は `skills/` 差分に現れないため自動判定の対象外。`-p` で明示的に major を指定してリリースする。
 
 ## ツール選択
 
@@ -68,7 +68,7 @@ git tag --list 'v*' --sort=-v:refname | head -1
 **前回タグがある場合のみ**差分分析する（初回リリース＝前回タグ無しは本手順をスキップし、手順 3 でユーザー指定のバージョンをそのまま使う）:
 
 ```bash
-git diff --name-status <v-prev>..HEAD -- packages/*/skills/
+git diff --name-status <v-prev>..HEAD -- skills/
 ```
 
 skill ディレクトリ単位で追加（`A`）/ 削除（`D`）/ リネーム（`R`）/ 修正（`M`）を集計し、「バンプルール」で判定する。差分が無ければ「リリース不要」と報告して終了（`-p` で強制指定があれば従う）。
@@ -80,8 +80,8 @@ skill ディレクトリ単位で追加（`A`）/ 削除（`D`）/ リネーム�
 ```
 前回: v1.1.0 → 次版: v1.2.0 (新 skill 追加 → マイナー)
 配布 skill 差分:
-  A packages/mjc-design-tools/skills/<new-skill>/SKILL.md
-  M packages/mjc-git-workflow-tools/skills/smart-commit/SKILL.md
+  A skills/<new-skill>/SKILL.md
+  M skills/smart-commit/SKILL.md
 ```
 
 ユーザーが別バージョンを指定した場合（破壊的変更で major にするなど）はそれに従う。

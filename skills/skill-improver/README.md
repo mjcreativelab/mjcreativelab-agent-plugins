@@ -26,7 +26,7 @@
 
 ```
 /skill-improver .claude/skills/my-skill
-/skill-improver packages/mjc-git-workflow-tools/skills/smart-commit -p "コンテキスト管理を重点的に"
+/skill-improver skills/smart-commit -p "コンテキスト管理を重点的に"
 /skill-improver .claude/skills/deploy -p "eval は不要、対話的に改善したい"
 ```
 
