@@ -165,7 +165,7 @@ Claude Code のバージョンアップ後に、最新の公式推奨手法と�
 
 ## 前提条件
 
-`skill-improver` は skill-creator プラグインがインストール済みであること。
+`skill-improver` は skill-creator プラグインがインストール済みであること。これは Anthropic 公式マーケットプレイス（`claude-plugins-official`）の**外部プラグイン**であり、本リポジトリの（v2.0.0 で撤去した）旧 marketplace とは無関係。Claude Code でのみ利用する依存。
 
 ```bash
 /plugin install skill-creator@claude-plugins-official

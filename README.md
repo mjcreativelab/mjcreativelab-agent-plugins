@@ -39,6 +39,17 @@ npx skills update
 - **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v2.0.0`）。タグ無しは HEAD 追従の「お試し」用途。
 - 内部 skill `auto-release` は `metadata.internal: true` で `npx skills ... --list` の表示からは隠れるが、**`--skill '*'` では install される**（このバージョンの `npx skills` は wildcard から internal を除外しない）。`auto-release` は本リポジトリ専用のため他環境では不要。配布対象だけをクリーンに入れたい場合は `--skill <name>` を列挙する。
 
+### 旧 marketplace からの移行
+
+旧 `/plugin install` は**パッケージ単位**、新 `npx skills` は**skill 単位**。旧パッケージに含まれていた skill を `--skill` で指定し直す:
+
+| 旧（廃止） | 新（`npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 ... -g`） |
+|---|---|
+| `/plugin install mjc-git-workflow-tools@…` | `--skill smart-commit --skill smart-pr --skill smart-git-sync --skill smart-issue-resolve --skill smart-issue-plan --skill smart-review --skill smart-review-apply` |
+| `/plugin install mjc-claude-improver-tools@…` | `--skill skill-improver --skill empirical-prompt-tuning --skill claude-code-update-review` |
+| `/plugin install mjc-code-develop-tools@…` | `--skill software-architect --skill code-reviewer --skill code-reviewer-adversarial --skill security-auditor` |
+| `/plugin install mjc-design-tools@…` | `--skill game-ui-design` |
+
 ## ライセンス
 
 [MIT](LICENSE)
