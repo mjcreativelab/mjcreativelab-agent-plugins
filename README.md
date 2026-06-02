@@ -42,7 +42,7 @@ npx skills update
 - 推奨は **グローバル install（`-g`）+ タグ pin（`#v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
 - **バージョン pin** は fragment 構文 `#v<X.Y.Z>` で指定する（例: `'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1'`）。**`@<名前>` は ref ではなく skill フィルタ**（`owner/repo@smart-commit` = `--skill smart-commit` 相当）。タグ無しは default branch 追従の「お試し」用途。
 - pin した install は lock に ref が記録され、`npx skills update` も pin に従う（タグ pin は据え置き）。新しいタグへ上げるときは `#v<新タグ>` で再 add する。
-- 内部 skill `auto-release` は `metadata.internal: true` で `npx skills ... --list` の表示からは隠れるが、**`--skill '*'` では install される**（このバージョンの `npx skills` は wildcard から internal を除外しない）。`auto-release` は本リポジトリ専用のため他環境では不要。配布対象だけをクリーンに入れたい場合は `--skill <name>` を列挙する。
+- 内部 skill `auto-release`（本リポジトリ専用のリリース用）は `internal/` 配下にあり配布対象外（リモート探索・`--skill '*'` のいずれにも含まれない）。
 
 ### 旧 marketplace からの移行
 

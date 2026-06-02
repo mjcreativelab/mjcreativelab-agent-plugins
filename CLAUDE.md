@@ -97,7 +97,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   # デザイン
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
-  # 内部（配布対象外・metadata.internal で --list 非表示）
+internal/                        # 内部 skill（npx 標準探索ルート外・配布対象外）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
 ```
@@ -113,9 +113,9 @@ docs/                            # 設計・移行ドキュメント（migration
 
 注意点:
 
-- 内部 skill（リポジトリ自身の運用用。例: `auto-release`）も **`skills/<skill>/` に置く**。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示から隠れる（ただし `--skill '*'` には含まれる。配布対象だけクリーンに入れるには `--skill <name>` を名前指定）。
-  - **`.claude/skills/` には置かない**: npx のリモート探索は浅い標準ルートを 1 つ見つけると深い探索をしない。`.claude/skills/` に skill があると `skills/` をシャドウし、配布 skill が発見されなくなる（v2.0.0→2.0.1 でこれを踏んだ）。
-  - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./ --skill auto-release -g`（internal なので明示指定で導入）で global install して呼ぶ。
+- 内部 skill（リポジトリ自身の運用用。例: `auto-release`）は **`internal/<skill>/` に置く**（npx の標準探索ルート外のため、リモート探索にも `--skill '*'` にも含まれない）。保険として frontmatter に `metadata.internal: true` も付ける（標準ルートに置かれても `--list` から隠れる）。
+  - **`skills/` や `.claude/skills/` には置かない**: どちらも npx リモート探索の優先ルートで、internal flag があっても `--skill '*'` で install されてしまう（v2.0.1〜v2.0.2 の間は `skills/` に置いていた）。
+  - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./internal/auto-release --skill auto-release -g` で global install して呼ぶ（auto-release 改修時は同コマンドで再 add）。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - npx のデフォルト探索は浅い（全階層走査は `--full-depth`）。
 - **`@` は ref ではなく skill フィルタ**: `owner/repo@X` の `@X` は `--skill X` 相当（CLI v1.5.9 の source-parser で確認）。バージョン pin は fragment 構文 **`owner/repo#v<X.Y.Z>`**（zsh ではソース全体を引用符で囲む。`#ref@skill` の複合も可）。`#ref` は探索・install に効き、lock（skills-lock.json）に `ref` が記録され `npx skills update` も pin に従う。ただし blob fast path（skills.sh download API）が ref を渡さない既知問題があり（[vercel-labs/skills#1123](https://github.com/vercel-labs/skills/pull/1123) で修正中）、ref の中身の権威確認は `git ls-tree -r origin/<ref> --name-only` で行う。
@@ -243,4 +243,4 @@ Git タグは変更不可 — 旧タグは旧名のまま残る。グループ�
 
 - ~v1.x: Claude Code marketplace（per-package `.claude-plugin/plugin.json` + `<package>@<semver>` タグ）+ 旧 Codex 単一プラグイン配布（ルート `skills/` + `.codex-plugin/`）。
 - v2.0.0〜: `npx skills` 一本化（repo-level `v<X.Y.Z>` タグ）。marketplace・per-package plugin.json・per-package タグ運用は撤去。
-- v2.0.2〜: `packages/`（グループ README）を解体。スキル説明は per-skill `skills/<skill>/README.md` に一本化、チューニング記録は `docs/empirical-tuning/` へ移設。
+- v2.0.2〜: `packages/`（グループ README）を解体。スキル説明は per-skill `skills/<skill>/README.md` に一本化、チューニング記録は `docs/empirical-tuning/` へ移設。内部 skill `auto-release` は `skills/` から `internal/` へ移設（リモート探索・`--skill '*'` からの除外）。
