@@ -20,6 +20,10 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
 - `auto-release` は claude package 単一バージョニングへ簡素化済み。
 - 以下の Phase 記述のうち「`skill-sources/` 維持」「`packages/<plugin>/skills/` 削除」を前提とする箇所は
   本メモが優先する（Phase 2 の sync 単一化は「skill-sources 全廃」で代替済み）。
+- **タグ運用を確定**: repo-level `v<X.Y.Z>`（npx pin 用・初回 `v1.0.0`）+ per-package `<package>@<semver>`
+  （Claude marketplace 用）の併用。`v2.0.0` は marketplace 撤去（Phase 4）に予約。
+- **内部 skill の npx 除外を確定**: プロジェクトローカルの `auto-release` に `metadata.internal: true` を付与し、
+  `npx skills` の探索対象から除外（`--skill '*'` でも配布対象のみ）。
 
 > ⚠️ **以降（§1〜§9）は実装前の当初ドラフト（2026-05 時点・履歴）**。`skill-sources/` / `/skill-sync` /
 > `tools/sync_skill_sources.py` / ルート `skills/` / `packages/*/skills/` 削除 などに言及する箇所は、

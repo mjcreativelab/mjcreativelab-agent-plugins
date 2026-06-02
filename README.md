@@ -40,20 +40,20 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 # 利用可能な skill 一覧
 npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
 
-# 推奨: グローバル install（更新は npx skills update で完結）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins --skill smart-commit -g
+# 推奨: グローバル install + タグ pin（更新は npx skills update で完結）
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v1.0.0 --skill smart-commit -g
 
 # エージェント指定（例: Codex）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins --skill smart-commit -a codex -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v1.0.0 --skill smart-commit -a codex -g
 
 # 更新確認 / 取り込み（global）
 npx skills check
 npx skills update
 ```
 
-- 推奨は **グローバル install（`-g`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
-- バージョン pin 用の repo-level タグ（`v<X.Y.Z>`）発行は整備中（移行計画 Phase 1）。pin する場合は `mjcreativelab/mjcreativelab-agent-plugins@<tag>` の形で付与する。なお claude package の per-package タグ（`<package>@<semver>`）は別軸で継続する。
-- skill は名前で個別指定する（`--skill <name>`）。`--skill '*'` は本リポジトリ運用用の内部 skill（例: `auto-release`）も含むため、配布対象を絞りたい場合は名前指定を推奨。
+- 推奨は **グローバル install（`-g`）+ タグ pin（`@v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
+- **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v1.0.0`）。タグ無しは HEAD 追従の「お試し」用途。なお Claude Code marketplace 用の per-package タグ（`<package>@<semver>`）は別軸で継続する。
+- skill は名前で個別指定する（`--skill <name>`）。本リポジトリ運用用の内部 skill（例: `auto-release`）は `metadata.internal: true` で npx 配布から除外済みのため、`--skill '*'` でも配布対象の skill のみが入る。
 
 ## ライセンス
 

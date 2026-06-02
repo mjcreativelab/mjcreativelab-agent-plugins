@@ -1,6 +1,8 @@
 ---
 name: auto-release
 description: パッケージのバージョン更新・タグ付け・リリース PR の作成・マージを一括で行う。ユーザーが「リリースして」「バージョン上げて」「/auto-release」と言ったら起動する。
+metadata:
+  internal: true
 ---
 
 # Auto Release
