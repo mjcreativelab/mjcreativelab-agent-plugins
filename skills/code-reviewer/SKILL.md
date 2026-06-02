@@ -26,7 +26,7 @@ disable-model-invocation: true
 - `/code-reviewer` — 現在の未コミット変更を対象
 - `/code-reviewer 42` — PR #42
 - `/code-reviewer main..HEAD` — 現在ブランチの全コミット
-- `/code-reviewer packages/mjc-git-workflow-tools/` — 特定パス
+- `/code-reviewer src/api/` — 特定パス
 
 複数 PR / 0 件 / GitHub MCP 未接続などの失敗ケースの挙動は `## PR 書き出しモード` の「フォールバック」を参照。
 

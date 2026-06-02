@@ -1,6 +1,6 @@
 # smart-issue-resolve — Empirical Tuning 設計書
 
-対象: `packages/mjc-git-workflow/skills/smart-issue-resolve/SKILL.md`
+対象: `skills/smart-issue-resolve/SKILL.md`
 
 ## Iteration 0 状態
 

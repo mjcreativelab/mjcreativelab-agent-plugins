@@ -19,8 +19,8 @@
 ## 使い方
 
 1. 新しい Claude Code セッションを起動
-2. 当該設計書をコンテキストとして読ませる（例: `@packages/mjc-git-workflow/docs/empirical-tuning/smart-commit.md を参照しつつ empirical-prompt-tuning を実施して`）
-3. `/mjc-claude-skill-tool:empirical-prompt-tuning` を呼ぶ
+2. 当該設計書をコンテキストとして読ませる（例: `@docs/empirical-tuning/smart-commit.md を参照しつつ empirical-prompt-tuning を実施して`）
+3. `/empirical-prompt-tuning` を呼ぶ
 4. skill が設計書のシナリオ・要件チェックリストを使って subagent dispatch を開始
 
 ## iter 0 状態
@@ -52,7 +52,7 @@
 あなたは <skill 名> を白紙で読む実行者です。
 
 ## 対象プロンプト
-Read: packages/mjc-git-workflow/skills/<skill>/SKILL.md
+Read: skills/<skill>/SKILL.md
 
 ## シナリオ
 <シナリオ本文>
