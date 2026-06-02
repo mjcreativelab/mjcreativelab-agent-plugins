@@ -34,7 +34,7 @@ metadata:
 | 配布 skill の新規追加（`skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
 | 既存 skill の修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
 
-- 内部 skill（`.claude/skills/`・`metadata.internal: true`）の変更は配布物に影響しないためバンプ対象外。
+- 内部 skill（`metadata.internal: true`。例: 本 `auto-release`）の変更は配布物に影響しないためバンプ対象外。
 - ドキュメントのみ（README / CLAUDE.md / docs）の変更も配布 skill 不変ならバンプ不要（必要なら `-p` で明示）。
 - リポジトリ構造・配布経路の**一度きりの破壊的変更**（例: v2.0.0 の marketplace 撤去）は `skills/` 差分に現れないため自動判定の対象外。`-p` で明示的に major を指定してリリースする。
 

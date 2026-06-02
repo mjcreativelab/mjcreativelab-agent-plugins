@@ -93,14 +93,13 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   # デザイン
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
+  # 内部（配布対象外・metadata.internal で --list 非表示）
+  auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
 packages/                        # スキル群のドキュメント（README のみ・plugin マニフェストは持たない）
   mjc-git-workflow-tools/README.md
   mjc-claude-improver-tools/README.md
   mjc-code-develop-tools/README.md
   mjc-design-tools/README.md
-.claude/
-  skills/
-    auto-release/                # repo-level タグ発行（プロジェクトローカル・配布対象外・metadata.internal）
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md 等）
 ```
 
@@ -115,7 +114,9 @@ docs/                            # 設計・移行ドキュメント（migration
 
 注意点:
 
-- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示からは隠れる。ただし**このバージョンの `npx skills` は `--skill '*'`（wildcard install）から internal を除外しない**ため `--skill '*'` には含まれる。配布対象だけクリーンに入れるには `--skill <name>` を名前指定する。
+- 内部 skill（リポジトリ自身の運用用。例: `auto-release`）も **`skills/<skill>/` に置く**。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示から隠れる（ただし `--skill '*'` には含まれる。配布対象だけクリーンに入れるには `--skill <name>` を名前指定）。
+  - **`.claude/skills/` には置かない**: npx のリモート探索は浅い標準ルートを 1 つ見つけると深い探索をしない。`.claude/skills/` に skill があると `skills/` をシャドウし、配布 skill が発見されなくなる（v2.0.0→2.0.1 でこれを踏んだ）。
+  - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./ --skill auto-release -g`（internal なので明示指定で導入）で global install して呼ぶ。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - 新規 skill 追加時に同期スクリプト・マニフェストは不要（`skills/<skill>/` を直接追加するだけ）。
 
