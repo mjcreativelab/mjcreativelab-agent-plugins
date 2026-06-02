@@ -34,9 +34,10 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
   `--full-depth` 無しでは発見されず（clean probe で default=1 / `--full-depth`=16 を確認）。marketplace.json が
   暗黙の探索ポインタを兼ねていたため撤去で露呈した。配布 skill を npx 標準の浅い `skills/<skill>/` へ移設し、
   `packages/<group>/` は README（グループ説明）のみに。`/auto-release` のバンプ判定基準も `skills/` 差分へ更新。
-  **注意（要クリーン環境検証）**: 内部 skill `auto-release`（`.claude/skills/`）が `skills/` 探索を妨げないかは、
+  ~~**注意（要クリーン環境検証）**: 内部 skill `auto-release`（`.claude/skills/`）が `skills/` 探索を妨げないかは、
   本セッションの npx clone キャッシュ汚染により未検証。別マシン/CI 等の clean 環境で `@v2.0.1 --list` が
-  全 skill を返すことを確認すること。
+  全 skill を返すことを確認すること。~~ → **検証済み・解消（2026-06-02）**: `'#v2.0.1' --list` が
+  15 配布 skill を返すことを確認（次項参照。`@v2.0.1` という当時の検証コマンド自体が誤構文だった）。
 - **`@<ref>` 問題の真因判明（2026-06-02・CLI v1.5.9 ソース照合 + 実証）**: `owner/repo@X` の `@X` は
   **ref ではなく skill フィルタ**（`--skill X` 相当）。本メモおよび README の `@v<X.Y.Z>` pin 例は version pin
   として機能していなかった（探索は常に default branch）。「キャッシュ汚染」「CLI バージョンの揺れ」という

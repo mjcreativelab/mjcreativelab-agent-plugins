@@ -70,6 +70,7 @@ head -5 skills/<skill-name>/SKILL.md
 /auto-release
 
 # git pull が "unable to update local ref" で失敗した場合の復旧（マージ直後に発生することがある）
+# 注意: reset --hard は未コミット変更を破棄する。実行前に git status --short で clean を確認すること
 git update-ref refs/remotes/origin/main <merge-sha> && git reset --hard <merge-sha>
 ```
 
