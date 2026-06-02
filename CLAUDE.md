@@ -129,9 +129,18 @@ packages/
 
 注意点:
 
-- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外だが、`npx skills` の探索には出る。配布対象を絞る場合は `--skill <name>` の名前指定を使う（`--skill '*'` は内部 skill も含む）。
+- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外。`npx skills` の探索から隠すため frontmatter に `metadata.internal: true` を付ける（`INSTALL_INTERNAL_SKILLS=1` 時のみ可視）。これにより `--skill '*'` でも配布対象の skill のみが入る。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - 新規 skill・新規 package 追加時に同期スクリプトは不要（`packages/` を直接編集するだけ）。
+
+### タグ運用
+
+2 系統のタグを併用する（互いに別軸）:
+
+- **repo-level `v<X.Y.Z>`**: `npx skills` の pin 用（例: `npx skills add <repo>@v1.0.0 ...`）。移行完了点（npx 配布開始）を `v1.0.0` とし、Claude marketplace を撤去する将来の major 変更を `v2.0.0` に予約する。
+- **per-package `<package>@<semver>`**: Claude marketplace 用。`/auto-release` が `packages/<plugin>/` 差分で判定・発行する。
+
+Git タグは不変。リネーム前の旧タグ（per-package・旧 codex 配布の `mjcreativelab-claude-plugins@1.0.0`）はそのまま残る。
 
 ## プラグイン構造
 
