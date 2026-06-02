@@ -197,7 +197,7 @@ allowed-tools: Read, Grep, Glob, Bash, Write, Edit, Agent, AskUserQuestion
 
 ## 関連
 
-- `mjc-claude-improver-tools:skill-improver` — `SKILL.md` を skill-creator eval + コンテキスト管理・静的チェックで改善する。機能品質重視。本 skill は「指示文の明瞭性」を別 subagent による実行で測るアプローチで、併用可能。
-- `mjc-claude-improver-tools:claude-code-update-review` — Claude Code 環境全体（`settings.json` / `rules/` / `skills/` 等）の構成レビュー。個別プロンプトの指示品質は対象外なので、本 skill とはスコープが別。
+- `skill-improver` — `SKILL.md` を skill-creator eval + コンテキスト管理・静的チェックで改善する。機能品質重視。本 skill は「指示文の明瞭性」を別 subagent による実行で測るアプローチで、併用可能。
+- `claude-code-update-review` — Claude Code 環境全体（`settings.json` / `rules/` / `skills/` 等）の構成レビュー。個別プロンプトの指示品質は対象外なので、本 skill とはスコープが別。
 - `superpowers:writing-skills` — skill 作成時の TDD アプローチ。本 skill の「subagent で baseline → 修正 → 再実行」と本質的に同じ。
 - `superpowers:dispatching-parallel-agents` — 複数シナリオを並列で走らせるときの作法。

@@ -37,3 +37,8 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 
 - Issue の読み取り → ブランチ作成 → 実装まで一貫して行うため、クリーンなコンテキストで開始するのが効率的
 - **新しいタスクに取り掛かるとき、新規セッションで `/smart-issue-resolve #123` を実行するのがベスト**
+
+## 前提条件
+
+- **git** — ブランチ作成・チェックアウトに使用
+- **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）

@@ -24,3 +24,8 @@
 - 作業セッションにはコード探索・編集・試行錯誤の履歴が大量に蓄積されており、スキル実行時にそのコンテキストがすべてトークンとして消費される
 - 新規セッションなら、スキルが必要な情報（git diff, git log, CLAUDE.md 等）だけを読み込むため、トークン効率が圧倒的に良い
 - **作業セッションでコミットまで済ませてから、新規セッションで `/smart-pr` を実行するのがベスト**
+
+## 前提条件
+
+- **git** — push・差分取得に使用
+- **GitHub MCP サーバー** — PR の作成・更新に必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）

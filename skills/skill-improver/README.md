@@ -51,6 +51,8 @@ Phase 1 のレポートファイルが存在することを **物理ゲート** 
 - 読み込みタイミング / 圧縮耐性 / 中間データの外部化 / API レスポンスの絞り込み 等の設計チェック
 - `TODO` / `FIXME` 残留、テンプレート未カスタマイズ、リンク切れ、`bash -n` での構文チェック
 
+チェック項目の全リスト（バッチ処理設計・サブエージェント委譲・テンプレート肥大化リスク・公式推奨差分の調査観点など）は [references/context-checklist.md](references/context-checklist.md) と [references/phase2-steps.md](references/phase2-steps.md) を参照。
+
 ## 前提条件
 
 `skill-creator` プラグインがインストール済みであること。

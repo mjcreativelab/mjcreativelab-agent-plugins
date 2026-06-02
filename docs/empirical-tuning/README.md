@@ -1,6 +1,6 @@
-# Empirical Prompt Tuning 設計書 — mjc-git-workflow
+# Empirical Prompt Tuning 設計書 — Git ワークフロー系 skills
 
-`mjc-claude-skill-tool:empirical-prompt-tuning` を使って `mjc-git-workflow` 配下 7 skills をチューニングするための設計書。
+`empirical-prompt-tuning` skill を使って Git ワークフロー系 7 skills（`skills/smart-*`）をチューニングするための設計書。
 
 1 skill 1 セッションを推奨する（subagent dispatch が multi 発生する前提）。
 
@@ -39,7 +39,7 @@
 
 ### 評価軸（全 skill 共通）
 
-詳細は `mjc-claude-skill-tool:empirical-prompt-tuning` の SKILL.md を参照。本設計書では各 skill の要件チェックリストのみ定義する。
+詳細は `skills/empirical-prompt-tuning/SKILL.md` を参照。本設計書では各 skill の要件チェックリストのみ定義する。
 
 - 成功/失敗: `[critical]` 項目が全て ○ のときのみ成功
 - 精度: ○=1.0、部分的=0.5、×=0 で加重平均
