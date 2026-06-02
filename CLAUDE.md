@@ -114,7 +114,7 @@ docs/                            # 設計・移行ドキュメント（migration
 注意点:
 
 - 内部 skill（リポジトリ自身の運用用。例: `auto-release`）は **`internal/<skill>/` に置く**（npx の標準探索ルート外のため、リモート探索にも `--skill '*'` にも含まれない）。保険として frontmatter に `metadata.internal: true` も付ける（標準ルートに置かれても `--list` から隠れる）。
-  - **`skills/` や `.claude/skills/` には置かない**: どちらも npx リモート探索の優先ルートで、internal flag があっても `--skill '*'` で install されてしまう（v2.0.1〜v2.0.2 の間は `skills/` に置いていた）。
+  - **`skills/` や `.claude/skills/` には置かない**: どちらも npx リモート探索の優先ルートで、internal flag があっても `--skill '*'` で install されてしまう（v2.0.1 では `skills/` に置いていた）。
   - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./internal/auto-release --skill auto-release -g` で global install して呼ぶ（auto-release 改修時は同コマンドで再 add）。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - npx のデフォルト探索は浅い（全階層走査は `--full-depth`）。
@@ -123,7 +123,7 @@ docs/                            # 設計・移行ドキュメント（migration
 
 ### タグ運用
 
-- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add '<repo>#v2.0.1' ...`。`@` ではなく `#`）。`/auto-release` が `skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
+- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add '<repo>#v2.0.2' ...`。`@` ではなく `#`）。`/auto-release` が `skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
 - 旧タグ（per-package `<package>@<semver>`・旧 codex `mjcreativelab-claude-plugins@1.0.0`）は不変で残る（履歴）。これらは廃止済みの旧配布経路のもの。
 
 ## スキルファイル形式
