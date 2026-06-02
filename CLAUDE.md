@@ -129,7 +129,7 @@ packages/
 
 注意点:
 
-- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外。`npx skills` の探索から隠すため frontmatter に `metadata.internal: true` を付ける（`INSTALL_INTERNAL_SKILLS=1` 時のみ可視）。これにより `--skill '*'` でも配布対象の skill のみが入る。
+- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外。frontmatter に `metadata.internal: true` を付けると `npx skills ... --list` の表示からは隠れる。ただし**このバージョンの `npx skills` は `--skill '*'`（wildcard install）から internal を除外しない**ため、`--skill '*'` には含まれてしまう。配布対象だけをクリーンに入れるには `--skill <name>` を名前指定する。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - 新規 skill・新規 package 追加時に同期スクリプトは不要（`packages/` を直接編集するだけ）。
 
