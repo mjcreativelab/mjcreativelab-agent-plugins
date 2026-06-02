@@ -17,6 +17,10 @@
     {
       "name": "mjc-code-develop-tools",
       "source": "./packages/mjc-code-develop-tools"
+    },
+    {
+      "name": "mjc-design-tools",
+      "source": "./packages/mjc-design-tools"
     }
   ]
 }

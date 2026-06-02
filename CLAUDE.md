@@ -127,6 +127,12 @@ packages/
       code-reviewer-adversarial/   # Breaker (Claude) × Judge (Codex) の敵対的レビュー
       security-auditor/            # STRIDE・認可・データフロー等の設計セキュリティ監査
     README.md
+  mjc-design-tools/                # デザイン領域（UI / UX）の専門知識ロード
+    .claude-plugin/
+      plugin.json
+    skills/
+      game-ui-design/              # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
+    README.md
 .claude/
   skills/
     auto-release/                # バージョン更新・タグ付け・リリース（プロジェクトローカル）
