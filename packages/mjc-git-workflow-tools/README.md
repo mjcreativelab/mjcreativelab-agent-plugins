@@ -97,10 +97,13 @@ PR レビュー元の場合はコメントへの返信も行う。
 
 ## インストール
 
-```
-# 1. marketplace として登録
-/plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
+`npx skills`（[vercel-labs/skills](https://github.com/vercel-labs/skills)）で skill 単位に install する（旧 Claude marketplace は v2.0.0 で廃止）。
 
-# 2. mjc-git-workflow-tools プラグインをインストール
-/plugin install mjc-git-workflow-tools@mjcreativelab-agent-plugins
+```bash
+# 一覧
+npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
+
+# 個別 install（推奨: グローバル + タグ pin）
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-pr -g
 ```
