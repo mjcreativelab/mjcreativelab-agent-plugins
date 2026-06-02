@@ -38,6 +38,11 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
   本セッションの npx clone キャッシュ汚染により未検証。別マシン/CI 等の clean 環境で `@v2.0.1 --list` が
   全 skill を返すことを確認すること。~~ → **検証済み・解消（2026-06-02）**: `'#v2.0.1' --list` が
   15 配布 skill を返すことを確認（次項参照。`@v2.0.1` という当時の検証コマンド自体が誤構文だった）。
+- **内部 skill を `internal/` へ移設（2026-06-02・v2.0.2）**: `auto-release` を `skills/` から `internal/`（npx
+  標準探索ルート外）へ移設し、リモート探索・`--skill '*'` から完全に除外。なお v2.0.1 の移設根拠だった
+  「`.claude/skills/` が `skills/` をシャドウする」説は CLI v1.5.9 ソース確認で**誤診**と判明（探索は優先
+  ルート横断で加算収集。v2.0.0 障害の真因は `packages/<group>/skills/` が優先ルート外だったこと）。
+  ただし `.claude/skills/` も優先ルートの一つで wildcard install に含まれてしまうため、戻さず `internal/` を採用。
 - **`packages/` 解体（2026-06-02・v2.0.2）**: グループ README（`packages/<group>/README.md`）は per-skill
   README（`skills/<skill>/README.md`・npx 配布に同梱）と重複し、旧 marketplace 名前空間の起動例
   （`/mjc-…-tools:<skill>`）等の陳腐化も進んでいたため撤去。スキル説明は per-skill README に一本化、

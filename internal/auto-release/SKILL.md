@@ -7,8 +7,9 @@ metadata:
 
 # Auto Release
 
-`npx skills` 配布のために repo-level の `v<X.Y.Z>` タグを発行する。skill 本体は
-`skills/<skill>/` が正本で、配布は `npx skills`（git tree-SHA ベース）。
+`npx skills` 配布のために repo-level の `v<X.Y.Z>` タグを発行する。配布 skill 本体は
+`skills/<skill>/` が正本で、配布は `npx skills`（git tree-SHA ベース）。本 skill 自身は
+`internal/` 配下の内部 skill（配布対象外）。
 利用者は `npx skills add '<repo>#v<X.Y.Z>' ...` でバージョンを pin できる（`#` が ref。`@` は skill フィルタ）。
 
 > Claude marketplace（`.claude-plugin/marketplace.json` / per-package `plugin.json` /
@@ -72,6 +73,8 @@ git diff --name-status <v-prev>..HEAD -- skills/
 ```
 
 skill ディレクトリ単位で追加（`A`）/ 削除（`D`）/ リネーム（`R`）/ 修正（`M`）を集計し、「バンプルール」で判定する。差分が無ければ「リリース不要」と報告して終了（`-p` で強制指定があれば従う）。
+
+**内部 skill の除外**: 削除（`D`）・リネーム（`R`）と判定したエントリは、旧リビジョン側の frontmatter を確認し（`git show <v-prev>:<旧パス> | head -8`）、`metadata.internal: true` の skill はバンプ判定から除外する（例: 内部 skill の `internal/` への移設は `D skills/...` に見えるが major 対象ではない）。
 
 ### 3. ユーザー確認
 
