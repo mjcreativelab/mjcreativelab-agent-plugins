@@ -68,6 +68,9 @@ head -5 skills/<skill-name>/SKILL.md
 
 # リリース（repo-level v<X.Y.Z> タグの発行 + GitHub Release）
 /auto-release
+
+# git pull が "unable to update local ref" で失敗した場合の復旧（マージ直後に発生することがある）
+git update-ref refs/remotes/origin/main <merge-sha> && git reset --hard <merge-sha>
 ```
 
 ## リポジトリ構造
@@ -109,7 +112,7 @@ docs/                            # 設計・移行ドキュメント（migration
 
 `skills/<skill>/` が skill の唯一の正本（generated な中間物・render 工程は無い）。配布は `npx skills`（[vercel-labs/skills](https://github.com/vercel-labs/skills)・git tree-SHA ベース）:
 
-- `npx skills add mjcreativelab/mjcreativelab-agent-plugins@v<X.Y.Z> --skill <name> -g` で各エージェントへ install。skill は `.agents/skills/<skill>/` に配置され Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開される。
+- `npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>' --skill <name> -g` で各エージェントへ install。skill は `.agents/skills/<skill>/` に配置され Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開される。
 - frontmatter は逐語コピーされる（`allowed-tools` 等は標準仕様、`argument-hint` / `disable-model-invocation` は Claude 拡張で他エージェントは無視）。
 
 注意点:
@@ -118,11 +121,13 @@ docs/                            # 設計・移行ドキュメント（migration
   - **`.claude/skills/` には置かない**: npx のリモート探索は浅い標準ルートを 1 つ見つけると深い探索をしない。`.claude/skills/` に skill があると `skills/` をシャドウし、配布 skill が発見されなくなる（v2.0.0→2.0.1 でこれを踏んだ）。
   - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./ --skill auto-release -g`（internal なので明示指定で導入）で global install して呼ぶ。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
+- npx のデフォルト探索は浅い（全階層走査は `--full-depth`）。
+- **`@` は ref ではなく skill フィルタ**: `owner/repo@X` の `@X` は `--skill X` 相当（CLI v1.5.9 の source-parser で確認）。バージョン pin は fragment 構文 **`owner/repo#v<X.Y.Z>`**（zsh ではソース全体を引用符で囲む。`#ref@skill` の複合も可）。`#ref` は探索・install に効き、lock（skills-lock.json）に `ref` が記録され `npx skills update` も pin に従う。ただし blob fast path（skills.sh download API）が ref を渡さない既知問題があり（[vercel-labs/skills#1123](https://github.com/vercel-labs/skills/pull/1123) で修正中）、ref の中身の権威確認は `git ls-tree -r origin/<ref> --name-only` で行う。
 - 新規 skill 追加時に同期スクリプト・マニフェストは不要（`skills/<skill>/` を直接追加するだけ）。
 
 ### タグ運用
 
-- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add <repo>@v2.0.0 ...`）。`/auto-release` が `skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
+- **repo-level `v<X.Y.Z>`**（SemVer）: `npx skills` の pin 用（例: `npx skills add '<repo>#v2.0.1' ...`。`@` ではなく `#`）。`/auto-release` が `skills/` 差分で判定・発行する。バージョンは git タグのみ（バージョンファイル・plugin.json なし）。
 - 旧タグ（per-package `<package>@<semver>`・旧 codex `mjcreativelab-claude-plugins@1.0.0`）は不変で残る（履歴）。これらは廃止済みの旧配布経路のもの。
 
 ## スキルファイル形式

@@ -37,6 +37,13 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
   **注意（要クリーン環境検証）**: 内部 skill `auto-release`（`.claude/skills/`）が `skills/` 探索を妨げないかは、
   本セッションの npx clone キャッシュ汚染により未検証。別マシン/CI 等の clean 環境で `@v2.0.1 --list` が
   全 skill を返すことを確認すること。
+- **`@<ref>` 問題の真因判明（2026-06-02・CLI v1.5.9 ソース照合 + 実証）**: `owner/repo@X` の `@X` は
+  **ref ではなく skill フィルタ**（`--skill X` 相当）。本メモおよび README の `@v<X.Y.Z>` pin 例は version pin
+  として機能していなかった（探索は常に default branch）。「キャッシュ汚染」「CLI バージョンの揺れ」という
+  当時の推定は誤り。正しい ref pin は fragment 構文 **`owner/repo#v<X.Y.Z>`**（`#ref@skill` 複合可）。
+  `'#v2.0.1' --list` が 15 skill を返すこと、probe ブランチで `#ref` install が ref の中身を届けることを実証済み。
+  既知の上流問題: blob fast path（skills.sh download API）は ref を渡さない
+  （[vercel-labs/skills#1123](https://github.com/vercel-labs/skills/pull/1123) で修正中）。詳細は Issue #47 のコメント参照。
 
 > ⚠️ **以降（§1〜§9）は実装前の当初ドラフト（2026-05 時点・履歴）**。`skill-sources/` / `/skill-sync` /
 > `tools/sync_skill_sources.py` / ルート `skills/` / `packages/*/skills/` 削除 などに言及する箇所は、
