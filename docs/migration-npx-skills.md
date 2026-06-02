@@ -21,6 +21,11 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
 - 以下の Phase 記述のうち「`skill-sources/` 維持」「`packages/<plugin>/skills/` 削除」を前提とする箇所は
   本メモが優先する（Phase 2 の sync 単一化は「skill-sources 全廃」で代替済み）。
 
+> ⚠️ **以降（§1〜§9）は実装前の当初ドラフト（2026-05 時点・履歴）**。`skill-sources/` / `/skill-sync` /
+> `tools/sync_skill_sources.py` / ルート `skills/` / `packages/*/skills/` 削除 などに言及する箇所は、
+> 上記「実装メモ」と実際の実装（PR #46）で**撤去済みの旧構造**を指す。現行の正は「実装メモ」。
+> 未着手で有効なのは Phase 3-4（marketplace の deprecate → 撤去）と Phase 1 残り（タグ運用・ラベル）のみ。
+
 ## 1. 背景と目的
 
 ### 1.1 現状（As-Is）
