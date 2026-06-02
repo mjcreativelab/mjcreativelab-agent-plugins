@@ -2,9 +2,24 @@
 
 本リポジトリの skill 配布経路を、Claude Code marketplace と Codex marketplace の 2 系統から、vercel-labs/skills の `npx skills add` 1 系統に集約するための移行計画。
 
-- 対象: `packages/` 配下 14 skill + 今後追加される skill
+- 対象: `packages/` 配下の全 skill + 今後追加される skill
 - 期間想定: フェーズ 1〜4 を 2〜3 リリースサイクル
 - 上位ゴール: 1 つの install コマンドで Claude Code / Codex / Cursor / Gemini CLI を横断的にサポートする
+
+## 実装メモ（2026-06-02 更新・原計画からの変更）
+
+Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を受け、原計画から以下を変更して着手済み:
+
+- **主チャネル = `npx skills`** に決定（marketplace は当面維持し Phase 3-4 で sunset）。
+- **正本 = `packages/<plugin>/skills/` を直接編集**（= b1）。原計画 §1.3 / §3.1 は `skill-sources/` を
+  維持する想定だったが、単一 target では `skill-sources/` → `packages/` が無変換の冗長コピーになるため、
+  **`skill-sources/` / `/skill-sync` / `tools/sync_skill_sources.py` / `tools/validate_codex_skills.py` を全廃**した。
+- **正規化版 root `skills/` と root `.codex-plugin/` を削除**（旧 Codex 単一プラグイン配布を撤去）。`npx skills` は
+  `packages/<plugin>/skills/`（フル frontmatter）を一意に解決する（探索衝突を解消済み）。
+- 正本配置は当面 `packages/` のまま（`.agents/skills/` への集約は将来検討）。
+- `auto-release` は claude package 単一バージョニングへ簡素化済み。
+- 以下の Phase 記述のうち「`skill-sources/` 維持」「`packages/<plugin>/skills/` 削除」を前提とする箇所は
+  本メモが優先する（Phase 2 の sync 単一化は「skill-sources 全廃」で代替済み）。
 
 ## 1. 背景と目的
 
@@ -322,11 +337,11 @@ git rm -r packages/*/.claude-plugin/
 
 | フェーズ | ステータス | 完了日 |
 |---|---|---|
-| Phase 0 | Not started | - |
-| Phase 1 | Not started | - |
-| Phase 2 | Not started | - |
-| Phase 3 | Not started | - |
-| Phase 4 | Not started | - |
+| Phase 0 | Done（互換性レポート済み） | 2026-06-02 |
+| Phase 1 | In progress（README に npx 手順追記済み。タグ運用・ラベルは未） | - |
+| Phase 2 | Superseded（skill-sources 全廃・packages 直接正本化で代替） | 2026-06-02 |
+| Phase 3 | Not started（marketplace deprecate 告知） | - |
+| Phase 4 | Not started（marketplace / 旧インフラ削除・major bump） | - |
 | Phase 5 | Not started | - |
 
 ---

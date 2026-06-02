@@ -1,11 +1,11 @@
 # Claude Plugins Monorepo
 
-Claude Code 用プラグイン（skills, hooks, rules）の開発リポジトリ。
+Claude Code / Codex など各種エージェント用プラグイン（skills, hooks, rules）の開発リポジトリ。`packages/<plugin>/skills/<skill>/` を直接正本とし、**Claude Code marketplace** と **`npx skills`（クロスツール）** の 2 経路で配布する（render 工程・中間正本は持たない）。
 
 ## 標準ワークフロー
 
-1. `skill-sources/<package>/<skill>/` を編集（必要なら `codex/` override や `skill-sync.yaml` を追加）
-2. `/skill-sync --check` で差分確認 → `/skill-sync` で claude(`packages/`) と codex(`skills/`) に render
+1. `packages/<plugin>/skills/<skill>/` を直接編集（SKILL.md / assets / references）
+2. `claude plugin validate .` で marketplace を検証（必要なら `/reload-plugins` で反映）
 3. PR 経由で main にマージ（`/smart-commit main にコミット` で直接コミット可）
 4. `/auto-release` でバージョンバンプ・タグ付け・リリース PR を一括作成
 
@@ -67,21 +67,8 @@ bash -n packages/<plugin>/skills/<skill-name>/assets/<name>.sh
 # SKILL.md frontmatter 確認
 head -5 packages/<plugin>/skills/<skill-name>/SKILL.md
 
-
-# skill-sources/ を claude(packages/) と codex(ルート skills/) 両方に render
-/skill-sync
-
-# 特定スキルのみコピー
-/skill-sync <skill-name>
-
-# 差分確認のみ（コピーしない）
-/skill-sync --check
-
-# codex 側だけ差分確認（claude も同様に --target claude）
-python3 tools/sync_skill_sources.py --check --target codex
-
-# codex SKILL.md の frontmatter 検証
-python3 tools/validate_codex_skills.py
+# npx skills が検出する skill 一覧（クロスツール配布の確認）
+npx skills add ./ --list
 
 # リリース（plugin.json のバージョンバンプ + タグ + リリース PR）
 /auto-release
@@ -91,17 +78,12 @@ python3 tools/validate_codex_skills.py
 
 ```
 .claude-plugin/
-  marketplace.json               # マーケットプレイスカタログ（プラグイン一覧）
-.codex-plugin/
-  plugin.json                    # codex プラグインマニフェスト
-skills/                          # codex 用 skill 配置先（generated、編集禁止）
-skill-sources/                  # claude/codex 両配布先の正本（編集はここ）
-  <package-name>/<skill-name>/   # SKILL.md + assets/ + references/ + README.md + target override
+  marketplace.json               # Claude marketplace カタログ（プラグイン一覧）
 packages/
   mjc-git-workflow-tools/        # Git ワークフロー系プラグイン
     .claude-plugin/
       plugin.json                # プラグインマニフェスト（name, version 等）
-    skills/
+    skills/                      # 正本（直接編集）。Claude marketplace と npx skills が参照
       smart-commit/              # 差分を作業単位で分割コミット
       smart-pr/                  # PR 作成・更新の自動化
       smart-git-sync/            # ブランチ同期・整理
@@ -135,39 +117,21 @@ packages/
     README.md
 .claude/
   skills/
-    auto-release/                # バージョン更新・タグ付け・リリース（プロジェクトローカル）
-    skill-sync/                  # skill-sources/ → 配布先 render（プロジェクトローカル）
-tools/
-  sync_skill_sources.py          # skill-sources/ から packages/ と skills/ へ render
-  validate_codex_skills.py       # codex SKILL.md frontmatter の検証
+    auto-release/                # バージョン更新・タグ付け・リリース（プロジェクトローカル・配布対象外）
 ```
 
-codex 配布の特殊な点: `.codex-plugin/` は plugin.json 専用、skill 本体はルート `skills/` に配置（`plugin.json` の `"skills": "./skills/"` 参照先）。
+### 配布の仕組み（単一正本）
 
+`packages/<plugin>/skills/<skill>/` が skill の唯一の正本（generated な中間物・render 工程は無い）。これを 2 経路で配布する:
 
-### skill-sources/（スキル共通本体）
+- **Claude Code marketplace**: `.claude-plugin/marketplace.json` が `packages/<plugin>` を指す。`/plugin install <plugin>@mjcreativelab-agent-plugins` で導入。
+- **`npx skills`（クロスツール）**: [vercel-labs/skills](https://github.com/vercel-labs/skills) が `packages/<plugin>/skills/` を探索し、`.agents/skills/<skill>/` 経由で Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開。frontmatter は逐語コピーされる（`allowed-tools` 等は標準仕様、`argument-hint` / `disable-model-invocation` は Claude 拡張で他エージェントは無視）。
 
-claude package と codex plugin で配布する skill 一式（`SKILL.md` + `assets/` + `references/` + 任意の `README.md` + target override）の正本を置く。配置は `skill-sources/<package-name>/<skill-name>/`（ディレクトリ階層が claude package 所属を表現する）。
+注意点:
 
-`tools/sync_skill_sources.py`（`/skill-sync`）で以下に target 別 render（orphan 削除あり）する:
-
-- claude: `packages/<package>/skills/<skill>/`（package 階層を保持）
-- codex: `skills/<skill>/`（リポジトリルート直下に平坦化。`.codex-plugin/plugin.json` の `"skills": "./skills/"` が指す先）
-
-> **注意**: `.codex-plugin/` ディレクトリは plugin metadata（`plugin.json`）専用。skill 本体はルートの `skills/` に配置する。`.codex-plugin/skills/` には何も置かない。
-
-配布先の中身は generated。直接編集しても次回 sync で上書き・削除される。配布先に symlink を作成しない。`.claude/skills/`（プロジェクトローカルスキル）はこの同期処理の対象外。
-
-target 差分の扱い:
-
-- `codex/` または `claude/` 配下のファイルは target root に重ねる（例: `codex/SKILL.md` → `skills/<skill>/SKILL.md`）
-- `skill-sync.yaml` / `skill-sync.json` で target ごとの `enabled` / `exclude` / `include_readme` を指定できる
-- Codex 向け `SKILL.md` は frontmatter を Codex validator 向けに正規化する（`argument-hint` / `disable-model-invocation` / `model` / `allowed-tools` 等は出力しない）
-- Codex 向けは `README.md` をデフォルトで出力しない。必要な場合のみ `include_readme: true` を指定する
-- Claude 専用 skill は `skill-sync.yaml` で `targets.codex.enabled: false` にする
-- リリース時のバンプ判定は rendered 出力（`packages/` / `skills/`）の diff で行う。`skill-sources/` の diff は判定基準にしない（skill-sync.yaml 変更や override 影響を取りこぼすため）
-
-新規 skill・新規 package 追加時もスクリプト編集は不要（自動検出される）。codex 側はフラット配置のため **skill 名はリポジトリ全体で一意**である必要がある。
+- `.claude/skills/`（プロジェクトローカル。例: `auto-release`）は配布対象外だが、`npx skills` の探索には出る。配布対象を絞る場合は `--skill <name>` の名前指定を使う（`--skill '*'` は内部 skill も含む）。
+- 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
+- 新規 skill・新規 package 追加時に同期スクリプトは不要（`packages/` を直接編集するだけ）。
 
 ## プラグイン構造
 
@@ -301,13 +265,21 @@ bash ${CLAUDE_SKILL_DIR}/assets/git-sync.sh
 - Changed files: !`gh pr diff --name-only`
 ```
 
-### Codex 配布時の禁止 token
+### クロスツール配布時の frontmatter / token 互換性
 
-Codex は以下の token を解釈できない。skill-sources の SKILL.md 本文にこれらが必要な場合、`codex/SKILL.md` override で代替表現を書くか、`skill-sync.yaml` で `targets.codex.enabled: false` にする:
+`npx skills` は frontmatter を逐語コピーする（正規化しない）。Agent Skills 標準仕様
+（<https://agentskills.io/specification>）に沿うため、`name` / `description` は必須、
+`allowed-tools` / `license` / `metadata` は標準フィールド。`argument-hint` /
+`disable-model-invocation` は Claude 拡張で、他エージェントは**無視**する（reject しない）。
+
+本文中の以下は Claude 固有で、他エージェントでは解決されない（graceful degradation 前提で書く）:
 
 - tools: `AskUserQuestion`, `WebSearch`, `WebFetch`, `Skill`, `Agent`, `Task`
-- 変数: `${CLAUDE_SKILL_DIR}`（Codex では SKILL.md からの相対パスで解決）
-- skill 参照: `codex:rescue` や `mcp__plugin_github_github__*`（Codex は別の plugin discovery 機構を使う）
+- 変数: `${CLAUDE_SKILL_DIR}`（他エージェントでは未解決。SKILL.md からの相対パスを基本にする）
+- skill 参照: `codex:rescue` や `mcp__plugin_github_github__*`（エージェントごとに discovery 機構が異なる）
+
+クロスツールで確実に動かしたい skill は、これらに依存しない表現を選ぶ。Claude 専用前提の
+skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を description に明記する。
 
 ## スキル改修時の注意
 
