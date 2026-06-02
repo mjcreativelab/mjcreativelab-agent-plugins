@@ -12,7 +12,7 @@
 - "diegetic interface", "in-world ui", "quest tracker"
 - "radial menu", "cooldown indicator", "damage numbers"
 
-明示的にスキル名を呼ぶ場合は `/mjc-design-tools:game-ui-design`。
+明示的にスキル名を呼ぶ場合は `/game-ui-design`。
 
 ## 構成
 

@@ -40,7 +40,7 @@ disable-model-invocation: true
 - `/code-reviewer-adversarial` — 現在の未コミット変更を対象
 - `/code-reviewer-adversarial 42` — PR #42
 - `/code-reviewer-adversarial main..HEAD` — 現在ブランチの全コミット
-- `/code-reviewer-adversarial packages/mjc-git-workflow-tools/ -p N+1` — 特定パス + 重点観点
+- `/code-reviewer-adversarial src/api/ -p N+1` — 特定パス + 重点観点
 - `/code-reviewer-adversarial --test "pnpm test" feature/add-foo` — テストコマンド明示 + ブランチ指定
 
 ## フロー

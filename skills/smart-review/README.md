@@ -31,3 +31,8 @@ Issue 番号を渡すか、ブランチ名から Issue 番号を抽出できる�
 - 作業セッションにはコード探索・編集・試行錯誤の履歴が大量に蓄積されており、スキル実行時にそのコンテキストがすべてトークンとして消費される
 - 新規セッションなら、スキルが必要な情報（git diff、Issue 内容）だけを読み込むため、トークン効率が圧倒的に良い
 - **コミット後、PR 作成前に新規セッションで `/smart-review` を実行するのがベスト**
+
+## 前提条件
+
+- **git** — デフォルトブランチとの差分取得に使用
+- Issue 番号を指定して要件適合をチェックする場合は **GitHub MCP サーバー**（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）

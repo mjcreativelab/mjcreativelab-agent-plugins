@@ -99,15 +99,10 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
   # 内部（配布対象外・metadata.internal で --list 非表示）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
-packages/                        # スキル群のドキュメント（README のみ・plugin マニフェストは持たない）
-  mjc-git-workflow-tools/README.md
-  mjc-claude-improver-tools/README.md
-  mjc-code-develop-tools/README.md
-  mjc-design-tools/README.md
-docs/                            # 設計・移行ドキュメント（migration-npx-skills.md 等）
+docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
 ```
 
-`skills/<skill>/` が配布 skill の唯一の正本（直接編集）。skill 名はリポジトリ全体で一意。`packages/<group>/` は skill 群の説明ドキュメント（README）置き場で、plugin マニフェストは持たない（旧 marketplace 撤去後もグループ説明として保持）。
+`skills/<skill>/` が配布 skill の唯一の正本（直接編集）。skill 名はリポジトリ全体で一意。スキルの説明・使用例・前提条件は各 `skills/<skill>/README.md` に書く（npx install でスキルと一緒に配布される）。旧 `packages/`（グループ README）は per-skill README と重複・陳腐化したため v2.0.2 で解体済み。
 
 ### 配布の仕組み（単一正本・npx skills）
 
@@ -214,7 +209,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 
 - SKILL.md は **500行以下**に保つ。大きなコンテンツは `assets/` または `references/` に切り出す
 - GitHub API 操作は MCP ツールに統一する（`gh` CLI との混在を避ける）
-- `SKILL.md` + 該当グループの `README.md` を同時に更新すること。外部スクリプトがある場合はそれも更新
+- `SKILL.md` と同 skill の `README.md` を同時に更新すること。外部スクリプトがある場合はそれも更新
 - スキルの動作が CLAUDE.md の Git/GitHub 運用規則と関連する場合、CLAUDE.md と整合性を保って更新すること（Git 規約はプラグイン外参照不可のため各 SKILL.md にも内蔵されている）
 - シェルスクリプト改修後は `bash -n` で構文チェックすること
 - SKILL.md にインラインで埋め込むシェルスクリプトに正規表現パターン（`^[[:space:]]` 等）が含まれる場合、zsh がグロブ展開してエラーになる。`bash /dev/stdin` または一時ファイル経由で実行する旨を明記すること
@@ -229,18 +224,14 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 
 1. `skills/<skill-name>/` ディレクトリを作成
 2. `SKILL.md` を作成（frontmatter: `name`〔ディレクトリ名と一致〕 + `description`）
-3. `packages/<group>/README.md` にスキルの説明・使用例を追加
-4. この `CLAUDE.md` のリポジトリ構造セクションにスキルを追記
+3. `skills/<skill-name>/README.md` を作成（スキルの説明・使用例・前提条件。npx install で配布される）
+4. この `CLAUDE.md` のリポジトリ構造セクションとルート `README.md` のスキル一覧表にスキルを追記
 5. `npx skills add ./ --list` で検出されることを確認
 6. リリースは `/auto-release`（新 skill 追加 → マイナーバンプ）
 
-グループ説明を足す場合は `packages/<group>/README.md` を追加する（任意・ドキュメントのみ。マニフェスト不要）。
+## 変更履歴（パッケージ名・配布経路）
 
-## パッケージ（グループ）リネーム時の注意
-
-リネーム対象: ディレクトリ（`git mv`）、`CLAUDE.md`、各 `README.md`、SKILL.md 内の参照、`settings.local.json` のパス
-
-Git タグは変更不可 — 旧タグは旧名のまま残る。
+Git タグは変更不可 — 旧タグは旧名のまま残る。グループ（パッケージ）概念は v2.0.2 で解体済み（下記「配布経路の変更履歴」参照）。
 
 ### パッケージ名変更履歴
 
@@ -252,3 +243,4 @@ Git タグは変更不可 — 旧タグは旧名のまま残る。
 
 - ~v1.x: Claude Code marketplace（per-package `.claude-plugin/plugin.json` + `<package>@<semver>` タグ）+ 旧 Codex 単一プラグイン配布（ルート `skills/` + `.codex-plugin/`）。
 - v2.0.0〜: `npx skills` 一本化（repo-level `v<X.Y.Z>` タグ）。marketplace・per-package plugin.json・per-package タグ運用は撤去。
+- v2.0.2〜: `packages/`（グループ README）を解体。スキル説明は per-skill `skills/<skill>/README.md` に一本化、チューニング記録は `docs/empirical-tuning/` へ移設。

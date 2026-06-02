@@ -31,3 +31,7 @@ GitHub Issue の実装計画を作成・更新するスキル。
 - 作業セッションにはコード探索・編集・試行錯誤の履歴が大量に蓄積されており、スキル実行時にそのコンテキストがすべてトークンとして消費される
 - 新規セッションなら、スキルが必要な情報（Issue 内容、コードベース探索結果）だけを読み込むため、トークン効率が圧倒的に良い
 - **計画作成は実装前に行うため、新規セッションで `/smart-issue-plan` を実行するのがベスト**
+
+## 前提条件
+
+- **GitHub MCP サーバー** — Issue の読み取り・計画コメント投稿に必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）

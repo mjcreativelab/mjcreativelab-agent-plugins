@@ -51,6 +51,8 @@ Phase 1 のレポートファイルが存在することを **物理ゲート** 
 - 読み込みタイミング / 圧縮耐性 / 中間データの外部化 / API レスポンスの絞り込み 等の設計チェック
 - `TODO` / `FIXME` 残留、テンプレート未カスタマイズ、リンク切れ、`bash -n` での構文チェック
 
+チェック項目の全リスト（バッチ処理設計・サブエージェント委譲・テンプレート肥大化リスク・公式推奨差分の調査観点など）は [references/context-checklist.md](references/context-checklist.md) と [references/phase2-steps.md](references/phase2-steps.md) を参照。
+
 ## 前提条件
 
 `skill-creator` プラグインがインストール済みであること。
@@ -65,7 +67,16 @@ Phase 1 のレポートファイルが存在することを **物理ゲート** 
 
 本スキルは Anthropic 公式の [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) を呼び出すラッパーとして設計している。`skill-creator` が短い eval で検出しにくい「長い会話・コンテキスト圧縮時に顕在化する問題」と「静的に検出できる問題」を、Phase 2 で補完する位置付け。
 
-skill-creator との補完関係の詳細は [パッケージ README](../../README.md) を参照。
+skill-creator と Phase 2 の補完関係:
+
+| 問題の種類 | skill-creator | 本スキル Phase 2 |
+|---|---|---|
+| 出力品質（結果が正しいか） | eval で検出 | - |
+| description の発火精度 | 統計的に最適化 | - |
+| コンテキスト圧縮時のデータ消失 | 短い eval では再現しない | 再 Read ルールの有無を静的チェック |
+| 参照ファイルの一括読み込みによるコンテキスト浪費 | 「動く」ので eval では問題にならない | 読み込みタイミングの設計を検証 |
+| 中間データがコンテキストに残り続ける | 同上 | 外部化設計の有無を検証 |
+| TODO / FIXME 残留・リンク切れ・シェル構文エラー | 出力に影響しなければ素通り | Grep / Glob / `bash -n` で静的検出 |
 
 ## 推奨: 新規セッションで実行する
 

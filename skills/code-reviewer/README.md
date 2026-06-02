@@ -33,7 +33,7 @@
 /code-reviewer                                   # 現在の未コミット変更 + 現在ブランチ vs main
 /code-reviewer 42                                # PR #42
 /code-reviewer main..HEAD                        # 現在ブランチの全コミット
-/code-reviewer packages/mjc-git-workflow-tools/  # 特定パス
+/code-reviewer src/api/                          # 特定パス
 ```
 
 ## 引数

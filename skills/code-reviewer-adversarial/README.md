@@ -35,7 +35,7 @@
 /code-reviewer-adversarial                                   # 現在の未コミット変更 + 現在ブランチ vs main
 /code-reviewer-adversarial 42                                # PR #42
 /code-reviewer-adversarial main..HEAD                        # 現在ブランチの全コミット
-/code-reviewer-adversarial packages/mjc-git-workflow-tools/ -p N+1
+/code-reviewer-adversarial src/api/ -p N+1
 /code-reviewer-adversarial --test "pnpm test" feature/add-foo
 ```
 

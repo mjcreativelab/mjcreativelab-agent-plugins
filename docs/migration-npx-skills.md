@@ -38,6 +38,10 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
   本セッションの npx clone キャッシュ汚染により未検証。別マシン/CI 等の clean 環境で `@v2.0.1 --list` が
   全 skill を返すことを確認すること。~~ → **検証済み・解消（2026-06-02）**: `'#v2.0.1' --list` が
   15 配布 skill を返すことを確認（次項参照。`@v2.0.1` という当時の検証コマンド自体が誤構文だった）。
+- **`packages/` 解体（2026-06-02・v2.0.2）**: グループ README（`packages/<group>/README.md`）は per-skill
+  README（`skills/<skill>/README.md`・npx 配布に同梱）と重複し、旧 marketplace 名前空間の起動例
+  （`/mjc-…-tools:<skill>`）等の陳腐化も進んでいたため撤去。スキル説明は per-skill README に一本化、
+  グループ一覧はルート README の表に集約、チューニング記録は `docs/empirical-tuning/` へ移設。
 - **`@<ref>` 問題の真因判明（2026-06-02・CLI v1.5.9 ソース照合 + 実証）**: `owner/repo@X` の `@X` は
   **ref ではなく skill フィルタ**（`--skill X` 相当）。本メモおよび README の `@v<X.Y.Z>` pin 例は version pin
   として機能していなかった（探索は常に default branch）。「キャッシュ汚染」「CLI バージョンの揺れ」という

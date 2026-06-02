@@ -6,12 +6,16 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 
 ## スキル一覧
 
+各スキルの説明・使用例・前提条件は `skills/<skill>/README.md` を参照（npx install 時にスキルと一緒に配布される）。
+
 | グループ | スキル |
 |-----------|------|
-| [mjc-git-workflow-tools](packages/mjc-git-workflow-tools/) | smart-issue-resolve, smart-issue-plan, smart-commit, smart-pr, smart-review, smart-review-apply, smart-git-sync |
-| [mjc-claude-improver-tools](packages/mjc-claude-improver-tools/) | skill-improver, empirical-prompt-tuning, claude-code-update-review |
-| [mjc-code-develop-tools](packages/mjc-code-develop-tools/) | software-architect, code-reviewer, code-reviewer-adversarial, security-auditor |
-| [mjc-design-tools](packages/mjc-design-tools/) | game-ui-design |
+| Git ワークフロー | [smart-issue-resolve](skills/smart-issue-resolve/), [smart-issue-plan](skills/smart-issue-plan/), [smart-commit](skills/smart-commit/), [smart-pr](skills/smart-pr/), [smart-review](skills/smart-review/), [smart-review-apply](skills/smart-review-apply/), [smart-git-sync](skills/smart-git-sync/) |
+| スキル品質改善・環境構成レビュー | [skill-improver](skills/skill-improver/), [empirical-prompt-tuning](skills/empirical-prompt-tuning/), [claude-code-update-review](skills/claude-code-update-review/) |
+| コード開発ライフサイクル | [software-architect](skills/software-architect/), [code-reviewer](skills/code-reviewer/), [code-reviewer-adversarial](skills/code-reviewer-adversarial/), [security-auditor](skills/security-auditor/) |
+| デザイン | [game-ui-design](skills/game-ui-design/) |
+
+コード開発ライフサイクル系は `/software-architect` → 実装 → `/code-reviewer` → `/security-auditor` の流れで組み合わせて使うことを想定。
 
 ## インストール（`npx skills`）
 

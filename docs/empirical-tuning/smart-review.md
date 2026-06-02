@@ -1,6 +1,6 @@
 # smart-review — Empirical Tuning 設計書
 
-対象: `packages/mjc-git-workflow/skills/smart-review/SKILL.md`
+対象: `skills/smart-review/SKILL.md`
 
 ## Iteration 0 状態
 
