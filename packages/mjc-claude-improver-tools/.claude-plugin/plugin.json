@@ -1,9 +1,0 @@
-{
-  "name": "mjc-claude-improver-tools",
-  "description": "Claude Code のスキル品質改善と環境構成レビューのツール群（skill-creator 連携 + コンテキスト管理・静的チェック / アップデートレビュー）",
-  "version": "1.2.4",
-  "author": {
-    "name": "mjcreativelab"
-  },
-  "repository": "https://github.com/mjcreativelab/mjcreativelab-agent-plugins"
-}

@@ -1,222 +1,123 @@
 ---
 name: auto-release
-description: パッケージのバージョン更新・タグ付け・リリース PR の作成・マージを一括で行う。ユーザーが「リリースして」「バージョン上げて」「/auto-release」と言ったら起動する。
+description: リポジトリの repo-level バージョン（v<X.Y.Z> タグ）を自動判定して発行し、GitHub Release を作成する。ユーザーが「リリースして」「バージョン上げて」「タグ切って」「/auto-release」と言ったら起動する。
 metadata:
   internal: true
 ---
 
 # Auto Release
 
-パッケージ（claude package）のバージョンを自動判定して更新し、タグ付け・PR 作成・squash merge までを一括で行う。
+`npx skills` 配布のために repo-level の `v<X.Y.Z>` タグを発行する。skill 本体は
+`packages/<plugin>/skills/` が正本で、配布は `npx skills`（git tree-SHA ベース）。
+利用者は `npx skills add <repo>@v<X.Y.Z> ...` でバージョンを pin できる。
+
+> Claude marketplace（`.claude-plugin/marketplace.json` / per-package `plugin.json` /
+> per-package タグ `<package>@<semver>`）は v2.0.0 で撤去済み。本スキルは repo-level タグ専用。
 
 ## オプション
 
-`-p <プロンプト>`: バージョン番号の指定やリリース対象の絞り込みなど追加指示。
-
-例: `-p 1.2.0 にして` / `-p mjc-git-workflow-tools だけ`
+`-p <プロンプト>`: バージョン番号の指定や挙動の上書き（例: `-p v2.1.0 にして` / `-p major で`）。
 
 ## バージョン体系
 
-リリース対象は `packages/<plugin>/` の **claude package** 単位。`packages/<plugin>/skills/`
-が skill の正本であり、Claude marketplace と npx skills の双方がここを参照する
-（render 工程・codex 専用配布物は持たない）。
+- **形式**: repo-level SemVer タグ `v<X.Y.Z>`（例: `v1.0.0`, `v2.0.0`）
+- **格納先**: git タグのみ（バージョンファイル・plugin.json は持たない）
+- **判定基準**: 前回 `v*` タグから HEAD までの **`packages/*/skills/` 配下**の差分（配布対象 skill の変化）
 
-- **タグ形式**: `<package-name>@<semver>`（例: `mjc-git-workflow-tools@1.1.0`）
-- **バージョン格納先**: `packages/<plugin>/.claude-plugin/plugin.json` の `version`
-- **判定基準**: 前回タグからの `packages/<plugin>/` 配下の差分
+### バンプルール
 
-### バージョンバンプルール
-
-前回タグからの差分を分析し、以下のルールで自動判定する。複数の変更種別が混在する場合は、最も大きいバンプを適用する。
+前回タグからの差分を分析し、最も大きいバンプを適用する。
 
 | 変更内容 | バンプ | 例 |
 |----------|--------|-----|
-| `packages/` に新しいパッケージディレクトリが追加された | **メジャー** | 1.0.0 → 2.0.0 |
-| 既存パッケージに新しいスキルが追加された（`skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
-| 既存コードの修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
+| 配布 skill の削除・リネーム・互換性破壊（`packages/*/skills/` 差分に現れる） | **メジャー** | 1.2.0 → 2.0.0 |
+| 配布 skill の新規追加（`packages/*/skills/` 下に新ディレクトリ） | **マイナー** | 1.0.0 → 1.1.0 |
+| 既存 skill の修正・改善（上記以外） | **パッチ** | 1.0.0 → 1.0.1 |
+
+- 内部 skill（`.claude/skills/`・`metadata.internal: true`）の変更は配布物に影響しないためバンプ対象外。
+- ドキュメントのみ（README / CLAUDE.md / docs）の変更も配布 skill 不変ならバンプ不要（必要なら `-p` で明示）。
+- リポジトリ構造・配布経路の**一度きりの破壊的変更**（例: v2.0.0 の marketplace 撤去）は `packages/*/skills/` 差分に現れないため自動判定の対象外。`-p` で明示的に major を指定してリリースする。
 
 ## ツール選択
 
-GitHub API 操作には **GitHub MCP ツール**を優先。git 操作は Bash。
-
-## 事前準備: ツール一括取得
-
-手順で使用する MCP ツールを **1回の ToolSearch で一括取得** する:
-
-```
-ToolSearch: select:AskUserQuestion,mcp__plugin_github_github__create_pull_request,mcp__plugin_github_github__issue_write,mcp__plugin_github_github__merge_pull_request
-```
-
-これにより ToolSearch のラウンドトリップを最小化する。
+GitHub Release 作成は `gh release create`。git 操作は Bash。
 
 ## 手順
 
-### 0. 事前整合性チェック（marketplace.json）
+### 0. 事前チェック
 
-`packages/` 配下のディレクトリと `.claude-plugin/marketplace.json` の `plugins[].name` を突き合わせ、未登録パッケージがないか確認する。
-
-```bash
-ls -d packages/*/ | xargs -n1 basename
-```
-
-未登録パッケージの扱いはリリース対象との関係で分岐する:
-
-| 状況 | 対応 |
-|---|---|
-| 全パッケージが登録済み | そのまま手順 1 へ進む |
-| 未登録パッケージを **今回リリースする** | 同期は不要。リリース PR（手順 6）で `marketplace.json` 追記を同梱する |
-| 未登録パッケージを **今回リリースしない** | 先に **marketplace 同期 PR** を作成・マージしてから手順 1 へ進む |
-
-未登録パッケージが見つかった場合は、`.claude-plugin/plugin.json` が存在することを事前確認する。存在しなければリリース対象として未準備のため、ユーザーに通知して中断する。
-
-#### 同期 PR の手順（リリース対象外の未登録パッケージがある場合のみ）
-
-このフェーズは main/master ブランチから開始する。作業ブランチにいる場合はユーザーに状況確認してから進める。
+- **main 上で実行する**（リリースは main の HEAD をタグ付けするため、対象変更は merge 済みであること）。作業ブランチにいる場合はユーザーに確認し、main へ切替・pull する。
 
 ```bash
-git checkout main && git pull origin main
-git checkout -b chore/sync-marketplace-$(date +%Y%m%d)
+git rev-parse --abbrev-ref HEAD
+git fetch origin main
+git checkout main && git pull --ff-only origin main
 ```
 
-ブランチ名は CLAUDE.md のルール (`chore/<説明>-YYYYMMDD`) に従う。`.claude-plugin/marketplace.json` の `plugins` 配列に未登録パッケージのエントリを追加する（`name` + `source` のみ）:
-
-```json
-{ "name": "<package-name>", "source": "./packages/<package-name>" }
-```
-
-コミットメッセージ:
-
-```
-📦 chore: add <package-names> to marketplace
-```
-
-`create_pull_request` で PR 作成 → `issue_write` でアサイン → `merge_pull_request`（squash）でマージ。マージ後は main を pull し、リモートブランチを削除してから手順 1 に進む:
+### 1. 前回バージョンの特定
 
 ```bash
-git checkout main && git pull origin main
-git push origin --delete chore/sync-marketplace-<date>
+git tag --list 'v*' --sort=-v:refname | head -1
 ```
 
-### 1. 対象パッケージの特定
+- タグあり → そのバージョンを前回値
+- タグ無し（初回）→ ユーザーにバージョンを確認（`-p` 指定があればそれに従う）
 
-`packages/` 配下の各プラグインの `.claude-plugin/plugin.json` を読み取り、登録されているパッケージ一覧を取得する。
+### 2. 差分分析とバンプ判定
 
-- パッケージが1つだけ → そのパッケージを対象とする
-- 複数パッケージがある → ユーザーに対象を確認する（`-p` で指定があればそれに従う）
-
-新規追加パッケージ（手順 0 で marketplace に追加したもの）が含まれる場合、初回リリースとなるため手順 2 でユーザーにバージョン指定を促す。
-
-### 2. 前回バージョンの特定
-
-対象 claude package の既存タグを検索する:
+**前回タグがある場合のみ**差分分析する（初回リリース＝前回タグ無しは本手順をスキップし、手順 3 でユーザー指定のバージョンをそのまま使う）:
 
 ```bash
-git tag --list '<package-name>@*' --sort=-v:refname | head -1
+git diff --name-status <v-prev>..HEAD -- packages/*/skills/
 ```
 
-- **タグが存在する** → そのバージョンを前回バージョンとして使用
-- **タグが存在しない（初回リリース）** → ユーザーにバージョンを手動指定してもらう（`-p` で指定があればそれに従う）
+skill ディレクトリ単位で追加（`A`）/ 削除（`D`）/ リネーム（`R`）/ 修正（`M`）を集計し、「バンプルール」で判定する。差分が無ければ「リリース不要」と報告して終了（`-p` で強制指定があれば従う）。
 
-### 3. 差分分析とバージョン判定
+### 3. ユーザー確認
 
-前回タグから HEAD までの `packages/<package-name>/` 配下の差分を分析する:
+新バージョンと変更内容の要約を提示し、承認を得る:
+
+```
+前回: v1.1.0 → 次版: v1.2.0 (新 skill 追加 → マイナー)
+配布 skill 差分:
+  A packages/mjc-design-tools/skills/<new-skill>/SKILL.md
+  M packages/mjc-git-workflow-tools/skills/smart-commit/SKILL.md
+```
+
+ユーザーが別バージョンを指定した場合（破壊的変更で major にするなど）はそれに従う。
+
+### 4. タグ発行
+
+main の HEAD に注釈付きタグを作成・push する:
 
 ```bash
-git diff --name-only <package-name>@<version>..HEAD -- packages/<package-name>/
+git tag -a v<X.Y.Z> -m "v<X.Y.Z>: <変更要約>"
+git push origin v<X.Y.Z>
 ```
 
-「バージョンバンプルール」に照らして判定し、ユーザーに提示する:
+`--no-verify` は使わない。force push はしない（タグは新規発行のみ）。
 
-```
-対象: mjc-git-workflow-tools
-現在: 1.0.0 → 次版: 1.1.0 (新スキル追加 → マイナー)
-```
-
-初回リリースの場合は差分分析をスキップし、ユーザー指定のバージョンをそのまま使う。
-
-### 4. ユーザー確認
-
-バージョンと変更内容の要約を提示し、承認を得る。ユーザーが別のバージョンを指定した場合はそれに従う。
-
-### 5. リリースブランチの作成
-
-現在のブランチが main/master の場合のみリリースブランチを作成する:
-
-```
-release/<package-name>-v<version>
-```
-
-例: `release/mjc-git-workflow-tools-v1.1.0`
-
-既に作業ブランチにいる場合は、そのブランチ上で作業を続ける。
-
-### 6. plugin.json の更新
-
-対象 claude package の `packages/<package-name>/.claude-plugin/plugin.json` の `version` を新バージョンに更新する。
-
-**初回リリースで `marketplace.json` 未登録の場合**: 同じコミットで `.claude-plugin/marketplace.json` の `plugins` 配列にもエントリを追加する（`{ "name": "<package-name>", "source": "./packages/<package-name>" }`）。
-
-### 7. コミット
-
-変更をコミットする:
-
-```
-🔖 release(<package-name>): v<version>
-```
-
-`Co-Authored-By` トレーラーは付けない。`--no-verify` は使わない。
-
-### 8. プッシュ
-
-ブランチをリモートにプッシュする:
+### 5. GitHub Release 作成
 
 ```bash
-git push -u origin <branch>
+gh release create v<X.Y.Z> --title "v<X.Y.Z>" --notes "<差分要約・移行注記>"
 ```
 
-### 9. PR 作成
+リリースノートに配布 skill の差分要約を載せる。破壊的変更がある場合は移行手順を明記する。
 
-GitHub MCP ツール (`create_pull_request`) で PR を作成する。
-
-**タイトル**: `release(<package-name>): v<version>`
-
-**本文**: [assets/release-pr-template.md](assets/release-pr-template.md) を使用。
-
-PR 作成後、`issue_write` でアサインとラベル（`release` があれば付与）を設定する（GitHub API では PR も Issue 番号で操作可能）。
-
-### 10. squash merge
-
-PR の CI チェックが通っていることを確認してから `merge_pull_request`（merge_method: `squash`）で squash merge する。
-
-CI チェックが設定されていない場合はそのままマージする。マージ後、`git push origin --delete <branch>` でリモートブランチを削除する。
-
-### 11. タグ付け
-
-squash merge 後、main 上の新しいコミットにタグを付ける:
-
-```bash
-git checkout main
-git pull origin main
-git tag <package-name>@<version>
-git push origin <package-name>@<version>
-```
-
-### 12. 結果報告
-
-以下を表示して完了:
+### 6. 結果報告
 
 ```
 リリース完了:
-  パッケージ: <package-name>
-  バージョン: <old-version> → <version>
-  タグ: <package-name>@<version>
-  PR: <pr-url>
+  バージョン: v<old> → v<X.Y.Z>
+  タグ: v<X.Y.Z>
+  Release: <release-url>
+  pin 例: npx skills add mjcreativelab/mjcreativelab-agent-plugins@v<X.Y.Z> --skill <name> -g
 ```
 
 ## 注意事項
 
-- main への直接コミットはしない（必ず PR 経由）
-- `--no-verify` は使わない
-- force push はしない（タグは squash merge 後に main 上で作成するため不要）
-- リリース PR では `plugin.json` 以外のファイルは変更しない（ソースコードの変更は事前にコミット済みであること）。ただし**初回リリースに限り**、`marketplace.json` への登録追記を同梱可
-- 今回リリース対象外の未登録パッケージがある場合は、先に marketplace 同期 PR を分離してマージする
+- main への直接コミットはしない。本スキルはタグ発行のみで、ソース変更は事前に PR 経由で merge 済みであること
+- `--no-verify` / force push は使わない
+- 旧 per-package タグ（`<package>@<semver>`）・旧 codex タグ（`mjcreativelab-claude-plugins@1.0.0`）は不変で残る。repo-level タグ `v*` とは別軸（履歴）
+- CHANGELOG を運用する場合は GitHub Release のノートを一次情報とする

@@ -25,6 +25,10 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
 - **内部 skill の扱い**: `auto-release` に `metadata.internal: true` を付与（`npx skills ... --list` の表示から隠す）。
   ただし**このバージョンの npx は `--skill '*'` から internal を除外しない**ため、wildcard install には含まれる。
   クリーンな配布は `--skill <name>` の名前指定で行う（要追跡: npx 側の wildcard 除外手段 / auto-release の配置）。
+- **Phase 3-4 をクリーンカットで実施（2026-06-02）**: sunset 期間を置かず、Claude marketplace を即撤去。
+  `.claude-plugin/marketplace.json` と per-package `.claude-plugin/plugin.json` を削除、`/auto-release` を
+  repo-level `v<X.Y.Z>` タグ運用へ全面改修、README/CLAUDE.md から marketplace 記述を除去、`v2.0.0` を発行。
+  以降の配布は `npx skills` のみ。
 
 > ⚠️ **以降（§1〜§9）は実装前の当初ドラフト（2026-05 時点・履歴）**。`skill-sources/` / `/skill-sync` /
 > `tools/sync_skill_sources.py` / ルート `skills/` / `packages/*/skills/` 削除 などに言及する箇所は、
@@ -350,9 +354,8 @@ git rm -r packages/*/.claude-plugin/
 | Phase 0 | Done（互換性レポート済み） | 2026-06-02 |
 | Phase 1 | In progress（README に npx 手順追記済み。タグ運用・ラベルは未） | - |
 | Phase 2 | Superseded（skill-sources 全廃・packages 直接正本化で代替） | 2026-06-02 |
-| Phase 3 | Not started（marketplace deprecate 告知） | - |
-| Phase 4 | Not started（marketplace / 旧インフラ削除・major bump） | - |
-| Phase 5 | Not started | - |
+| Phase 3-4 | Done（クリーンカットで marketplace 撤去・auto-release 改修・v2.0.0） | 2026-06-02 |
+| Phase 5 | Not started（後始末: 旧タグのリリースノート整理等） | - |
 
 ---
 

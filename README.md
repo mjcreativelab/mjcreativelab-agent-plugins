@@ -1,50 +1,34 @@
 # mjcreativelab-agent-plugins
 
-Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキル集。`packages/<plugin>/skills/<skill>/` を正本として monorepo で管理し、**Claude Code marketplace** と **`npx skills`（クロスツール）** の 2 経路で配布する（render 工程は持たず、各 skill のディレクトリを直接編集する）。
+Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキル集。`packages/<group>/skills/<skill>/` を正本として monorepo で管理し、[vercel-labs/skills](https://github.com/vercel-labs/skills) の **`npx skills`** で配布する（クロスツール・単一経路）。
 
-## パッケージ一覧
+> **v2.0.0 で配布経路を `npx skills` に一本化**しました。旧 Claude Code marketplace（`/plugin install ...@mjcreativelab-agent-plugins`）と旧 Codex 単一プラグイン配布は廃止しています（最終タグ: marketplace 系は各 `<package>@<semver>`、旧 Codex は `mjcreativelab-claude-plugins@1.0.0`）。下記 `npx skills` へ移行してください。
 
-| パッケージ | 説明 |
+## スキル一覧
+
+| グループ | スキル |
 |-----------|------|
-| [mjc-git-workflow-tools](packages/mjc-git-workflow-tools/) | Git ワークフロー自動化（smart-issue-resolve, smart-commit, smart-pr, smart-review 等） |
-| [mjc-claude-improver-tools](packages/mjc-claude-improver-tools/) | スキル品質改善・環境構成レビュー（skill-improver, empirical-prompt-tuning, claude-code-update-review） |
-| [mjc-code-develop-tools](packages/mjc-code-develop-tools/) | コード開発ライフサイクル支援（software-architect, code-reviewer, code-reviewer-adversarial, security-auditor） |
-| [mjc-design-tools](packages/mjc-design-tools/) | デザイン領域の専門知識（game-ui-design ほか） |
+| [mjc-git-workflow-tools](packages/mjc-git-workflow-tools/) | smart-issue-resolve, smart-issue-plan, smart-commit, smart-pr, smart-review, smart-review-apply, smart-git-sync |
+| [mjc-claude-improver-tools](packages/mjc-claude-improver-tools/) | skill-improver, empirical-prompt-tuning, claude-code-update-review |
+| [mjc-code-develop-tools](packages/mjc-code-develop-tools/) | software-architect, code-reviewer, code-reviewer-adversarial, security-auditor |
+| [mjc-design-tools](packages/mjc-design-tools/) | game-ui-design |
 
-## Claude Code でのインストール（marketplace）
+## インストール（`npx skills`）
 
-```
-# 1. marketplace として登録
-/plugin marketplace add mjcreativelab/mjcreativelab-agent-plugins
-
-# 2. プラグインをインストール
-/plugin install <package-name>@mjcreativelab-agent-plugins
-```
-
-例:
-
-```
-/plugin install mjc-git-workflow-tools@mjcreativelab-agent-plugins
-/plugin install mjc-claude-improver-tools@mjcreativelab-agent-plugins
-/plugin install mjc-code-develop-tools@mjcreativelab-agent-plugins
-/plugin install mjc-design-tools@mjcreativelab-agent-plugins
-```
-
-## 他エージェント（Codex / Cursor / Gemini 等）でのインストール（`npx skills`）
-
-[vercel-labs/skills](https://github.com/vercel-labs/skills) の `npx skills` で、skill 単位にクロスツール install できる。skill は `.agents/skills/<skill>/` に配置され、各エージェントへ展開される（Codex / Cursor / Gemini CLI / GitHub Copilot ほか対応）。
-
-> **旧 Codex 配布からの移行**: リポジトリ全体を 1 プラグインとする旧 Codex 配布（ルート `skills/` + `.codex-plugin/`）は廃止した（最終タグ `mjcreativelab-claude-plugins@1.0.0`）。Codex では下記 `npx skills add ... -a codex` での個別 install に切り替える。Claude Code marketplace は従来どおり利用できる。
+skill 単位にクロスツール install できる。skill は `.agents/skills/<skill>/` に配置され、各エージェント（Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot ほか）へ展開される。
 
 ```bash
 # 利用可能な skill 一覧
 npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
 
 # 推奨: グローバル install + タグ pin（更新は npx skills update で完結）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v1.0.0 --skill smart-commit -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -g
 
 # エージェント指定（例: Codex）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v1.0.0 --skill smart-commit -a codex -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -a codex -g
+
+# 全 skill を一括（zsh は '*' をクォート）
+npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill '*' -g
 
 # 更新確認 / 取り込み（global）
 npx skills check
@@ -52,9 +36,19 @@ npx skills update
 ```
 
 - 推奨は **グローバル install（`-g`）+ タグ pin（`@v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
-- **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v1.0.0`）。タグ無しは HEAD 追従の「お試し」用途。なお Claude Code marketplace 用の per-package タグ（`<package>@<semver>`）は別軸で継続する。
-- skill は名前で個別指定する（`--skill <name>`）。全 skill を一括で入れるなら `--skill '*'`（zsh はクォート必須）。
+- **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v2.0.0`）。タグ無しは HEAD 追従の「お試し」用途。
 - 内部 skill `auto-release` は `metadata.internal: true` で `npx skills ... --list` の表示からは隠れるが、**`--skill '*'` では install される**（このバージョンの `npx skills` は wildcard から internal を除外しない）。`auto-release` は本リポジトリ専用のため他環境では不要。配布対象だけをクリーンに入れたい場合は `--skill <name>` を列挙する。
+
+### 旧 marketplace からの移行
+
+旧 `/plugin install` は**パッケージ単位**、新 `npx skills` は**skill 単位**。旧パッケージに含まれていた skill を `--skill` で指定し直す:
+
+| 旧（廃止） | 新（`npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 ... -g`） |
+|---|---|
+| `/plugin install mjc-git-workflow-tools@…` | `--skill smart-commit --skill smart-pr --skill smart-git-sync --skill smart-issue-resolve --skill smart-issue-plan --skill smart-review --skill smart-review-apply` |
+| `/plugin install mjc-claude-improver-tools@…` | `--skill skill-improver --skill empirical-prompt-tuning --skill claude-code-update-review` |
+| `/plugin install mjc-code-develop-tools@…` | `--skill software-architect --skill code-reviewer --skill code-reviewer-adversarial --skill security-auditor` |
+| `/plugin install mjc-design-tools@…` | `--skill game-ui-design` |
 
 ## ライセンス
 
