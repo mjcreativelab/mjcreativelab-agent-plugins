@@ -9,7 +9,7 @@ metadata:
 
 `npx skills` 配布のために repo-level の `v<X.Y.Z>` タグを発行する。skill 本体は
 `skills/<skill>/` が正本で、配布は `npx skills`（git tree-SHA ベース）。
-利用者は `npx skills add <repo>@v<X.Y.Z> ...` でバージョンを pin できる。
+利用者は `npx skills add '<repo>#v<X.Y.Z>' ...` でバージョンを pin できる（`#` が ref。`@` は skill フィルタ）。
 
 > Claude marketplace（`.claude-plugin/marketplace.json` / per-package `plugin.json` /
 > per-package タグ `<package>@<semver>`）は v2.0.0 で撤去済み。本スキルは repo-level タグ専用。
@@ -112,7 +112,7 @@ gh release create v<X.Y.Z> --title "v<X.Y.Z>" --notes "<差分要約・移行注
   バージョン: v<old> → v<X.Y.Z>
   タグ: v<X.Y.Z>
   Release: <release-url>
-  pin 例: npx skills add mjcreativelab/mjcreativelab-agent-plugins@v<X.Y.Z> --skill <name> -g
+  pin 例: npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>' --skill <name> -g
 ```
 
 ## 注意事項

@@ -21,29 +21,30 @@ skill 単位にクロスツール install できる。skill は `.agents/skills/
 # 利用可能な skill 一覧
 npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
 
-# 推奨: グローバル install + タグ pin（更新は npx skills update で完結）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 --skill smart-commit -g
+# 推奨: グローバル install + タグ pin（`#v<X.Y.Z>`。zsh ではソースを引用符で囲む）
+npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1' --skill smart-commit -g
 
 # エージェント指定（例: Codex）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 --skill smart-commit -a codex -g
+npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1' --skill smart-commit -a codex -g
 
 # 全 skill を一括（zsh は '*' をクォート）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 --skill '*' -g
+npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1' --skill '*' -g
 
 # 更新確認 / 取り込み（global）
 npx skills check
 npx skills update
 ```
 
-- 推奨は **グローバル install（`-g`）+ タグ pin（`@v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
-- **バージョン pin** には repo-level タグ `v<X.Y.Z>` を使う（例: `@v2.0.1`）。タグ無しは HEAD 追従の「お試し」用途。
+- 推奨は **グローバル install（`-g`）+ タグ pin（`#v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
+- **バージョン pin** は fragment 構文 `#v<X.Y.Z>` で指定する（例: `'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1'`）。**`@<名前>` は ref ではなく skill フィルタ**（`owner/repo@smart-commit` = `--skill smart-commit` 相当）。タグ無しは default branch 追従の「お試し」用途。
+- pin した install は lock に ref が記録され、`npx skills update` も pin に従う（タグ pin は据え置き）。新しいタグへ上げるときは `#v<新タグ>` で再 add する。
 - 内部 skill `auto-release` は `metadata.internal: true` で `npx skills ... --list` の表示からは隠れるが、**`--skill '*'` では install される**（このバージョンの `npx skills` は wildcard から internal を除外しない）。`auto-release` は本リポジトリ専用のため他環境では不要。配布対象だけをクリーンに入れたい場合は `--skill <name>` を列挙する。
 
 ### 旧 marketplace からの移行
 
 旧 `/plugin install` は**パッケージ単位**、新 `npx skills` は**skill 単位**。旧パッケージに含まれていた skill を `--skill` で指定し直す:
 
-| 旧（廃止） | 新（`npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.1 ... -g`） |
+| 旧（廃止） | 新（`npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.1' ... -g`） |
 |---|---|
 | `/plugin install mjc-git-workflow-tools@…` | `--skill smart-commit --skill smart-pr --skill smart-git-sync --skill smart-issue-resolve --skill smart-issue-plan --skill smart-review --skill smart-review-apply` |
 | `/plugin install mjc-claude-improver-tools@…` | `--skill skill-improver --skill empirical-prompt-tuning --skill claude-code-update-review` |
