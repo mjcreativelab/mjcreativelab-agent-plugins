@@ -29,10 +29,13 @@ allowed-tools: Read, Grep, Glob
 
 [assets/scan-disk-usage.sh](assets/scan-disk-usage.sh) を `bash` で実行する。出力は以下の形式:
 
-- `CANDIDATE<TAB>カテゴリ<TAB>パス<TAB>サイズ<TAB>削除コマンド` — 削除候補
+- `CANDIDATE<TAB>カテゴリ<TAB>パス<TAB>サイズ<TAB>削除方法` — 削除実行の候補（Step 4 の選択肢）
+- `PRESENT_ONLY<TAB>カテゴリ<TAB>対象<TAB>提示コマンド` — 提示のみ（Docker volumes・sudo 必要な Linux 領域）。**Step 4 の選択肢に含めず、Step 5 でも実行しない**
 - `SKIP<TAB>カテゴリ<TAB>理由` — ツール不在・OS 非対象・取得失敗（silent skip しない）
 - `DOCKER_DF_*` / `DOCKER_PS_*` / `BREW_DRYRUN_*` / `CACHE_TOP_*` — 補助ブロック
 - 最終行 `SCAN_COMPLETE`
+
+「削除方法」列は表示用ヒント。実際のパスは独立した `パス` フィールドにあり、`rm` を組み立てる際はそちらを使う（コマンド列の文字列をそのまま実行しない）。
 
 ### Step 3: リストアップ
 
@@ -42,7 +45,10 @@ allowed-tools: Read, Grep, Glob
 
 - `パス` 列は scan 出力の `パス` と対応させる
 - Docker 停止コンテナは `DOCKER_PS_*` ブロックの名前・作成日時・サイズの内訳を提示する
+- `PRESENT_ONLY` 行は別セクション「提示のみ（手動実行）」としてコマンドを表示する（削除候補テーブルには載せない）
 - `SKIP` 行は末尾に要約表示する（「未対象: npm 未インストール, …」）
+
+scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
 
 ### Step 4: 承認ゲート（カテゴリ単位）
 
