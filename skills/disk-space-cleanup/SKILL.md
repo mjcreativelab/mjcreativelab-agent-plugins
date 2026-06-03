@@ -1,0 +1,96 @@
+---
+name: disk-space-cleanup
+description: ディスク空き容量の確保。開発系キャッシュ（npm/Docker/brew/Xcode 等）をスキャンし、削除可能な理由とリスクを添えてリストアップ → ユーザー確認後に削除。macOS / Linux 対応。「ディスクが足りない」「容量を空けたい」「/disk-space-cleanup」で起動。
+argument-hint: "[-p <観点・追加調査パス>]"
+disable-model-invocation: true
+allowed-tools: Read, Grep, Glob
+---
+
+# Disk Space Cleanup
+
+使用端末のディスク空き容量を確保する。開発系キャッシュを読み取り専用でスキャンし、削除して良い理由とリスクを添えてリストアップ → ユーザー確認後に削除する。
+
+## 引数の解析
+
+`$ARGUMENTS` を解析する:
+
+- `-p <プロンプト>`: 調査観点・追加調査パスの指定（例: `-p ~/Downloads も見て`）。`-p` より後を `{観点}` とする
+- `-p` がない場合 → `{観点}` は空
+
+`{観点}` で事前定義カテゴリ外のパスが指定された場合、**調査・提示まで**は行うが、削除はユーザーの明示指示がない限り行わない。
+
+## フロー
+
+### Step 1: before スナップショット
+
+`df -h` を実行し、現在の空き容量を記録する。
+
+### Step 2: スキャン
+
+[assets/scan-disk-usage.sh](assets/scan-disk-usage.sh) を `bash` で実行する。出力は以下の形式:
+
+- `CANDIDATE<TAB>カテゴリ<TAB>パス<TAB>サイズ<TAB>削除方法` — 削除実行の候補（Step 4 の選択肢）
+- `PRESENT_ONLY<TAB>カテゴリ<TAB>対象<TAB>提示コマンド` — 提示のみ（Docker volumes・sudo 必要な Linux 領域）。**Step 4 の選択肢に含めず、Step 5 でも実行しない**
+- `SKIP<TAB>カテゴリ<TAB>理由` — ツール不在・OS 非対象・取得失敗（silent skip しない）
+- `DOCKER_DF_*` / `DOCKER_PS_*` / `BREW_DRYRUN_*` / `CACHE_TOP_*` — 補助ブロック
+- 最終行 `SCAN_COMPLETE`
+
+「削除方法」列は表示用ヒント。実際のパスは独立した `パス` フィールドにあり、`rm` を組み立てる際はそちらを使う（コマンド列の文字列をそのまま実行しない）。
+
+### Step 3: リストアップ
+
+[references/cleanup-targets.md](references/cleanup-targets.md) と突合し、削除候補をサイズ降順テーブルで提示する。
+
+列: **カテゴリ / パス / サイズ / 削除して良い理由 / リスク / 復元可否 / 削除コマンド**
+
+- `パス` 列は scan 出力の `パス` と対応させる
+- Docker 停止コンテナは `DOCKER_PS_*` ブロックの名前・作成日時・サイズの内訳を提示する
+- `PRESENT_ONLY` 行は別セクション「提示のみ（手動実行）」としてコマンドを表示する（削除候補テーブルには載せない）
+- `SKIP` 行は末尾に要約表示する（「未対象: npm 未インストール, …」）
+
+scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
+
+### Step 4: 承認ゲート（カテゴリ単位）
+
+削除するカテゴリをユーザーに選択させる。
+
+- Claude Code では `AskUserQuestion`（multiSelect）を使う。他エージェントではテキストで「削除するカテゴリ番号を挙げてください」と確認する（graceful degradation）
+- リスク「中」のカテゴリは**デフォルト非選択**
+- **選択が 0 件（全キャンセル）の場合は何も削除せず Step 6 のレポートへ進む（no-op 終了）**
+
+### Step 5: 実行
+
+承認済みカテゴリを 1 つずつ処理し、都度結果を確認する。承認は Step 4 のカテゴリ選択が唯一の承認であり、単一パス・単一コマンドのカテゴリでは再承認を求めない。例外は次の 2 つで、いずれも**実行直前に対象を再表示して個別の最終確認**を挟む:
+
+- **(a) 複数パスを束ねたカテゴリ**（複数ツールのキャッシュ束・`Caches`/`.cache` 上位 10 サブディレクトリ等）: パス単位で削除対象を選択・除外できるようにする
+- **(b) 復元不能操作（ゴミ箱を空にする）とリスク「中」カテゴリ**: 個別の最終確認を必須とする
+
+公式クリーンコマンドがあるカテゴリは [references/cleanup-targets.md](references/cleanup-targets.md) の「削除方法」列のコマンドを実行する。
+
+#### `rm` 実行ルール
+
+公式コマンドがないカテゴリ（DerivedData 等）で `rm` を使う場合:
+
+- 形式は `rm -rf -- <フルパス>` に固定（`--` 区切り必須・変数展開やワイルドカード禁止）
+- 対象は cleanup-targets.md で定義された既知パス、またはその直下のサブディレクトリのみ
+- `/`・`$HOME` そのもの、および `$HOME` 直下のディレクトリ丸ごと（`~/Documents` 等）を対象にしない
+- 対象パスが symlink の場合は削除せずスキップして報告する
+- 権限エラーが出た場合は **sudo を提案せず**、スキップして報告する
+- 実行直前に対象パスを再表示する
+- 失敗したカテゴリは再試行せず、失敗内容を Step 6 のレポートに記録する
+
+「提示のみ」カテゴリ（Docker volumes・sudo 必要な Linux 領域）は**コマンドを提示するだけ**で、スキルからは実行しない。
+
+### Step 6: after レポート
+
+`df -h` を再実行し、レポートを出力する:
+
+- 解放容量サマリ（before → after）
+- 実行した削除コマンド一覧
+- 失敗・スキップした項目とその理由
+
+## 安全設計（要約）
+
+- 削除は承認カテゴリのみ。スキャンスクリプトに破壊的コマンドは含まれない
+- 削除対象は cleanup-targets.md の既知パスのみ。ユーザーデータ領域（`~/Documents`・`~/Desktop`・クラウド同期ディレクトリ・dotfiles・アプリ設定）は対象にしない
+- sudo が必要な領域は「提示のみ」。権限エラー時も sudo を提案しない

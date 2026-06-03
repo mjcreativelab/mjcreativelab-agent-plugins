@@ -14,6 +14,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 | スキル品質改善・環境構成レビュー | [skill-improver](skills/skill-improver/), [empirical-prompt-tuning](skills/empirical-prompt-tuning/), [claude-code-update-review](skills/claude-code-update-review/) |
 | コード開発ライフサイクル | [software-architect](skills/software-architect/), [code-reviewer](skills/code-reviewer/), [code-reviewer-adversarial](skills/code-reviewer-adversarial/), [security-auditor](skills/security-auditor/) |
 | デザイン | [game-ui-design](skills/game-ui-design/) |
+| システムメンテナンス | [disk-space-cleanup](skills/disk-space-cleanup/) |
 
 コード開発ライフサイクル系は `/software-architect` → 実装 → `/code-reviewer` → `/security-auditor` の流れで組み合わせて使うことを想定。
 
