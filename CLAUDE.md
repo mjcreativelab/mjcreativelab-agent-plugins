@@ -97,6 +97,8 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   # デザイン
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
+  # システムメンテナンス
+  disk-space-cleanup/            # ディスク空き容量の確保（開発系キャッシュのスキャン→確認→削除）
 internal/                        # 内部 skill（npx 標準探索ルート外・配布対象外）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
