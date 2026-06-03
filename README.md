@@ -26,22 +26,25 @@ skill 単位にクロスツール install できる。skill は `.agents/skills/
 # 利用可能な skill 一覧
 npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
 
-# 推奨: グローバル install + タグ pin（`#v<X.Y.Z>`。zsh ではソースを引用符で囲む）
-npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.2' --skill smart-commit -g
+# 推奨: グローバル install（最新を追従）
+npx skills add mjcreativelab/mjcreativelab-agent-plugins --skill smart-commit -g
 
 # エージェント指定（例: Codex）
-npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.2' --skill smart-commit -a codex -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins --skill smart-commit -a codex -g
 
 # 全 skill を一括（zsh は '*' をクォート）
-npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.2' --skill '*' -g
+npx skills add mjcreativelab/mjcreativelab-agent-plugins --skill '*' -g
+
+# 特定バージョンに固定したい場合は末尾に #v<X.Y.Z> を付ける（zsh はソースを引用符で囲む）
+npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>' --skill smart-commit -g
 
 # 更新確認 / 取り込み（global）
 npx skills check
 npx skills update
 ```
 
-- 推奨は **グローバル install（`-g`）+ タグ pin（`#v<X.Y.Z>`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
-- **バージョン pin** は fragment 構文 `#v<X.Y.Z>` で指定する（例: `'mjcreativelab/mjcreativelab-agent-plugins#v2.0.2'`）。**`@<名前>` は ref ではなく skill フィルタ**（`owner/repo@smart-commit` = `--skill smart-commit` 相当）。タグ無しは default branch 追従の「お試し」用途。
+- 推奨は **グローバル install（`-g`）**。プロジェクト install は `npx skills update` の対象外になる場合があるため、更新は再 add で取り込む。
+- **バージョンを固定したい場合**は fragment 構文 `#v<X.Y.Z>` でタグ pin する（例: `'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>'`）。タグ無しは default branch（最新）追従。**`@<名前>` は ref ではなく skill フィルタ**（`owner/repo@smart-commit` = `--skill smart-commit` 相当）。
 - pin した install は lock に ref が記録され、`npx skills update` も pin に従う（タグ pin は据え置き）。新しいタグへ上げるときは `#v<新タグ>` で再 add する。
 - 内部 skill `auto-release`（本リポジトリ専用のリリース用）は `internal/` 配下にあり配布対象外（リモート探索・`--skill '*'` のいずれにも含まれない）。
 
@@ -49,7 +52,7 @@ npx skills update
 
 旧 `/plugin install` は**パッケージ単位**、新 `npx skills` は**skill 単位**。旧パッケージに含まれていた skill を `--skill` で指定し直す:
 
-| 旧（廃止） | 新（`npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v2.0.2' ... -g`） |
+| 旧（廃止） | 新（`npx skills add mjcreativelab/mjcreativelab-agent-plugins ... -g`） |
 |---|---|
 | `/plugin install mjc-git-workflow-tools@…` | `--skill smart-commit --skill smart-pr --skill smart-git-sync --skill smart-issue-resolve --skill smart-issue-plan --skill smart-review --skill smart-review-apply` |
 | `/plugin install mjc-claude-improver-tools@…` | `--skill skill-improver --skill empirical-prompt-tuning --skill claude-code-update-review` |
