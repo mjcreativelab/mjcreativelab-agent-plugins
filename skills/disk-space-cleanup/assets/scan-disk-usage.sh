@@ -24,7 +24,7 @@ has() { command -v "$1" >/dev/null 2>&1; }
 
 # 公式 clean コマンドありのキャッシュ。パス取得失敗・空・不存在は SKIP。
 emit_cache() {
-  cat="$1"; path="$2"; method="$3"
+  local cat="$1" path="$2" method="$3"
   if [ -z "$path" ] || [ ! -d "$path" ]; then
     emit_skip "$cat" "パス取得失敗または不存在"
     return
