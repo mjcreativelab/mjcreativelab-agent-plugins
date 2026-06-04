@@ -118,6 +118,8 @@ Judge には **分類理由** と **修正コスト見積（S/M/L）** を必ず
 
 #### Judge 呼び出し不能時のフォールバック
 
+> 呼び出し済みの裁定が返らない（ハング・silent death）場合は、即フォールバックせず、まず [assets/judge-prompt.md](assets/judge-prompt.md) の「運用ノート」に従って復旧（cancel → `--resume` 再投入）を試みる。復旧 2 回で完了しない場合に本フォールバックへ切り替える。
+
 `codex:rescue` が呼び出せない環境（Codex CLI 未設定・ネットワーク断・サブエージェント内実行など）では、**Phase 2 で停止し、Phase 3 を出力しない**。次の 2 点をユーザーに提示して終了する:
 
 1. Breaker 報告書（Phase 1 の成果物をそのまま）

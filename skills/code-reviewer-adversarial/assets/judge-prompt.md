@@ -75,6 +75,17 @@ Claude による Breaker の指摘を裁定し、「真の欠陥」のみを抽�
 - Codex 側で追加のコード変更は行わせない（レビュー裁定のみ）
 - Judge の結果は Phase 3 でそのまま最終出力に埋め込む。Claude 側で再解釈や書き換えはしない（共犯化回避）
 
+## 運用ノート: silent death（ハング・静止死）からの復旧
+
+Codex の裁定プロセスは、ジョブレジストリ上 `running` のまま静かに死ぬことがある。裁定結果がいつまでも返らない場合は、呼び出し不能時の扱いに切り替える前に以下の順で復旧を試みる:
+
+1. **検知（stall 判定）** — 次の 3 点が揃えば stall 確定: ジョブの `updatedAt` が固定のまま（`elapsed` だけ進行）/ `kill -0 <pid>` が失敗 / ジョブログの mtime が停止
+2. **回収** — rollout transcript（`~/.codex/sessions/YYYY/MM/DD/rollout-*-<threadId>.jsonl`）の末尾を確認する。`agent_message` / `task_complete` があれば実は完了済みなので、そこから裁定結果を回収する。末尾が `reasoning` / `function_call` で途切れていたら未完（silent death）
+3. **復旧（resume が最効率）** — companion の cancel（`/codex:cancel`）で stale ジョブを落とす → resume 候補が復活する（`task-resume-candidate` が `available: true` を返す）→ `--resume` を付けて `codex:rescue` を再投入する。裁定コンテキストを引き継いで続きから実行されるため、fresh 再実行より大幅に速い
+4. **予防** — companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長い裁定が親側から切られる）。長時間が見込まれる裁定は `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
+
+復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、下記「codex:rescue 呼び出し不能時の扱い」に切り替える。
+
 ## codex:rescue 呼び出し不能時の扱い
 
 `codex:rescue` が呼び出せない環境（Codex CLI 未設定・ネットワーク断・サブエージェント内で Skill 呼び出し不可など）では、Phase 2 で停止する。

@@ -196,6 +196,8 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
 
 ### フォールバック（codex:rescue 呼び出し不能時）
 
+> 呼び出し済みのレビューが返らない（ハング・silent death）場合は、即フォールバックせず、まず [assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従って復旧（cancel → `--resume` 再投入）を試みる。復旧 2 回で完了しない場合に本フォールバックへ切り替える。
+
 Codex プラグイン未導入・Codex CLI 未設定・他エージェント環境などで `codex:rescue` が呼び出せない場合:
 
 - Claude 自身でレビューを代行しない

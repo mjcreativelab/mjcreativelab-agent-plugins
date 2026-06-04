@@ -63,3 +63,14 @@
 - Codex はリポジトリにアクセスできるため、diff の取得・コードの確認は Codex 側に行わせる（巨大な diff を依頼文に貼り込まない）
 - Codex にコードの修正を行わせない（レビューのみ）。修正は Claude 側の妥当性判定を経てから行う
 - 返ってきた指摘の再解釈・要約による弱体化をしない（妥当性判定は採用 / 不採用の分類と理由の明記のみ）
+
+## 運用ノート: silent death（ハング・静止死）からの復旧
+
+Codex のレビュープロセスは、ジョブレジストリ上 `running` のまま静かに死ぬことがある。レビュー結果がいつまでも返らない場合は、フォールバックに切り替える前に以下の順で復旧を試みる:
+
+1. **検知（stall 判定）** — 次の 3 点が揃えば stall 確定: ジョブの `updatedAt` が固定のまま（`elapsed` だけ進行）/ `kill -0 <pid>` が失敗 / ジョブログの mtime が停止
+2. **回収** — rollout transcript（`~/.codex/sessions/YYYY/MM/DD/rollout-*-<threadId>.jsonl`）の末尾を確認する。`agent_message` / `task_complete` があれば実は完了済みなので、そこから結果を回収する。末尾が `reasoning` / `function_call` で途切れていたら未完（silent death）
+3. **復旧（resume が最効率）** — companion の cancel（`/codex:cancel`）で stale ジョブを落とす → resume 候補が復活する（`task-resume-candidate` が `available: true` を返す）→ `--resume` を付けて `codex:rescue` を再投入する。調査コンテキストを引き継いで続きから実行されるため、fresh 再実行より大幅に速い
+4. **予防** — companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長いレビューが親側から切られる）。長時間が見込まれるレビューは `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
+
+復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue 呼び出し不能時）」に切り替える。
