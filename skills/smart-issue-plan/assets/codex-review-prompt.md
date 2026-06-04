@@ -65,4 +65,4 @@ Codex のレビュープロセスは、ジョブレジストリ上 `running` の
 3. **復旧（resume が最効率）** — companion の cancel（`/codex:cancel`）で stale ジョブを落とす → resume 候補が復活する（`task-resume-candidate` が `available: true` を返す）→ `--resume` を付けて `codex:rescue` を再投入する。調査コンテキストを引き継いで続きから実行されるため、fresh 再実行より大幅に速い
 4. **予防** — companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長いレビューが親側から切られる）。長時間が見込まれるレビューは `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
 
-復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue 呼び出し不能時）」に切り替える。
+復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue 利用不能時）」に切り替える。

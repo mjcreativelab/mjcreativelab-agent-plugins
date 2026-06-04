@@ -184,11 +184,14 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
 
 **サブスキル不在時のフォールバック**: Skill ツールが使えない、または smart-commit / smart-pr が未インストールの環境では、コミット・PR 作成を自動実行せず従来の完了案内（手順 7）に切り替え、コミット・PR が未実施であることを明示する。
 
-### フォールバック（codex:rescue 呼び出し不能時）
+### フォールバック（codex:rescue 利用不能時）
 
-> 呼び出し済みのレビューが返らない（ハング・silent death）場合は、即フォールバックせず、まず [assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従って復旧（cancel → `--resume` 再投入）を試みる。復旧 2 回で完了しない場合に本フォールバックへ切り替える。
+以下のいずれかに該当する場合に実施する:
 
-Codex プラグイン未導入・Codex CLI 未設定・他エージェント環境などで `codex:rescue` が呼び出せない場合:
+- **呼び出し不能** — Codex プラグイン未導入・Codex CLI 未設定・他エージェント環境などで `codex:rescue` が呼び出せない
+- **復旧不能なハング** — 呼び出し済みのレビューが返らず（silent death）、[assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる）
+
+該当した場合:
 
 - Claude 自身でレビューを代行しない
 - 「Codex レビュー未実施」とユーザーに明示し、従来の完了案内（手順 7）に切り替える（コミット・PR 作成の自動実行もしない）

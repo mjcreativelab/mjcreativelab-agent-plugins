@@ -75,7 +75,7 @@
 | 低優先度   | 妥当だが重大度が低く、修正コストに見合わない                  | サマリに件数のみ                   |
 | ノイズ     | 反証不能・誤解・的外れ                                         | 除外（件数のみ報告）               |
 
-**Judge 呼び出し不能時**（`codex:rescue` 未設定等）は Phase 2 で停止し、Phase 3 を出力しない。Claude 側で Judge 裁定を模擬・代行してはならない（別系統モデルによる独立裁定が本スキルの核のため）。
+**Judge 利用不能時**（`codex:rescue` 未設定、または silent death から復旧不能等）は Phase 2 で停止し、Phase 3 を出力しない。Claude 側で Judge 裁定を模擬・代行してはならない（別系統モデルによる独立裁定が本スキルの核のため）。ハング時は即停止せず、まず judge-prompt.md の運用ノートに従って復旧（cancel → `--resume` 再投入）を試みる。
 
 ### Phase 3 — 最終出力
 
@@ -83,7 +83,7 @@
 
 ### Phase 4 — PR 投稿ゲート
 
-書き出しモードが有効なら `AskUserQuestion` を経て PR Review として投稿する（Judge 呼び出し不能で Phase 3 を出さなかった場合は到達しない）。
+書き出しモードが有効なら `AskUserQuestion` を経て PR Review として投稿する（Judge 利用不能で Phase 3 を出さなかった場合は到達しない）。
 
 - 投稿ツール: `mcp__plugin_github_github__pull_request_review_write`（`event: "COMMENT"`）
 - 識別マーカー `<!-- claude-code-review:code-reviewer-adversarial -->` を先頭に付与
