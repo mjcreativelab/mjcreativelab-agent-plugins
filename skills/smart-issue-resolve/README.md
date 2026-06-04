@@ -7,6 +7,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 ```
 /smart-issue-resolve #134
 /smart-issue-resolve #134 -p テストも書いて
+/smart-issue-resolve #134 -codex-loop
 ```
 
 または「Issue #134 やって」「#42 に取り掛かる」と伝える。
@@ -16,6 +17,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | オプション        | 説明                                     |
 | ----------------- | ---------------------------------------- |
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
+| `-codex-loop`     | 実装後に Codex レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Claude Code + Codex プラグイン環境前提） |
 
 ## フロー
 
@@ -26,10 +28,19 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 5. 関連領域のテストをベースラインとして実行してから実装する
 6. 作業完了後、変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
 
+## Codex レビューループ（-codex-loop）
+
+`-codex-loop` を付けると、実装・動作確認の完了後に Codex（`codex:rescue` 経由）のレビューを受け、採用すべき指摘がなくなるまで「レビュー → 妥当性判定 → 修正 → テスト再実行」をループする（3 ラウンドごとに続行/打ち切り/中止をユーザーに確認）。
+
+- 収束後は `/smart-commit` → `/smart-pr` を自動で呼び出してコミット・PR 作成まで行う（オプション指定が事前オプトイン。機密ファイル警告・マージ競合などの安全系の確認は維持）
+- PR 本文のレビュアー向け補足に `🤖 Codex レビュー済み（N ラウンド、最終ラウンド採用指摘 0 件）` を記載する
+- `codex:rescue` が使えない環境では Claude がレビューを代行せず、従来の完了案内（コミット・PR は手動）にフォールバックする（レビュー済み表記なし）
+
 ## 関連スキル
 
 - `/smart-issue-plan` — 実装計画のみ作成する。計画を先に立てたいときに使う
-- `/smart-commit` — 本スキル完了後のコミット作成
+- `/smart-commit` — 本スキル完了後のコミット作成（`-codex-loop` 時は自動で呼び出す）
+- `/smart-pr` — PR の作成・更新（`-codex-loop` 時は自動で呼び出す）
 
 ## 推奨: 新規セッションで実行する
 
@@ -42,3 +53,5 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
+- **Codex プラグイン（`codex:rescue` スキル）** — `-codex-loop` 使用時のみ必須
+- **smart-commit / smart-pr スキル** — `-codex-loop` の自動コミット・PR 作成に使用（未インストール時は手動手順にフォールバック）
