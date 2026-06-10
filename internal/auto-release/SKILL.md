@@ -115,7 +115,7 @@ gh release create v<X.Y.Z> --title "v<X.Y.Z>" --notes "<差分要約・移行注
   バージョン: v<old> → v<X.Y.Z>
   タグ: v<X.Y.Z>
   Release: <release-url>
-  pin 例: npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>' --skill <name> -g
+  pin 例: npx skills add 'mjcreativelab/mjcreativelab-agent-prompts#v<X.Y.Z>' --skill <name> -g
 ```
 
 ## 注意事項

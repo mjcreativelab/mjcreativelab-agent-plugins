@@ -110,7 +110,7 @@ docs/                            # 設計・移行ドキュメント（migration
 
 `skills/<skill>/` が skill の唯一の正本（generated な中間物・render 工程は無い）。配布は `npx skills`（[vercel-labs/skills](https://github.com/vercel-labs/skills)・git tree-SHA ベース）:
 
-- `npx skills add 'mjcreativelab/mjcreativelab-agent-plugins#v<X.Y.Z>' --skill <name> -g` で各エージェントへ install。skill は `.agents/skills/<skill>/` に配置され Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開される。
+- `npx skills add 'mjcreativelab/mjcreativelab-agent-prompts#v<X.Y.Z>' --skill <name> -g` で各エージェントへ install。skill は `.agents/skills/<skill>/` に配置され Claude Code / Codex / Cursor / Gemini CLI / GitHub Copilot 等へ展開される。
 - frontmatter は逐語コピーされる（`allowed-tools` 等は標準仕様、`argument-hint` / `disable-model-invocation` は Claude 拡張で他エージェントは無視）。
 
 注意点:
@@ -240,6 +240,7 @@ Git タグは変更不可 — 旧タグは旧名のまま残る。グループ�
 - `mjc-git-workflow` → `mjc-git-workflow-tools`（旧タグ: `mjc-git-workflow@1.1.4` まで）
 - `mjc-claude-skill-tool` → `mjc-claude-improver-tools`（旧タグ: `mjc-claude-skill-tool@1.2.1` まで）
 - `mjcreativelab-claude-plugins` → `mjcreativelab-agent-plugins`（リポジトリ名・旧 marketplace 名・旧 codex plugin 名を一括リネーム。旧 codex タグ: `mjcreativelab-claude-plugins@1.0.0` まで）
+- `mjcreativelab-agent-plugins` → `mjcreativelab-agent-prompts`（リポジトリ名変更。npx 参照パスを更新）
 
 ### 配布経路の変更履歴
 

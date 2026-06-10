@@ -83,7 +83,7 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
 
 ### 1.3 目的
 
-- 配布経路を `npx skills add mjcreativelab/mjcreativelab-agent-plugins` 1 つに集約
+- 配布経路を `npx skills add mjcreativelab/mjcreativelab-agent-prompts` 1 つに集約
 - frontmatter は Claude フル仕様で統一（`argument-hint` / `allowed-tools` / `disable-model-invocation` を保持）
 - skill 著者のフロー（`skill-sources/` を編集 → `/skill-sync`）は変更しない
 
@@ -141,17 +141,17 @@ Phase 0 検証（`docs/specs/npx-skills-compatibility-report.md`）の結果を�
 
 ```bash
 # 利用可能な skill 一覧
-npx skills add mjcreativelab/mjcreativelab-agent-plugins --list
+npx skills add mjcreativelab/mjcreativelab-agent-prompts --list
 
 # ★推奨: グローバルに tag 固定でインストール（更新は `npx skills update` で完結）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -g
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill '*' -g
+npx skills add mjcreativelab/mjcreativelab-agent-prompts@v2.0.0 --skill smart-commit -g
+npx skills add mjcreativelab/mjcreativelab-agent-prompts@v2.0.0 --skill '*' -g
 
 # プロジェクト install（更新時は再 add が必要）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit
+npx skills add mjcreativelab/mjcreativelab-agent-prompts@v2.0.0 --skill smart-commit
 
 # Codex / Cursor / Gemini 向け
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.0.0 --skill smart-commit -a codex -g
+npx skills add mjcreativelab/mjcreativelab-agent-prompts@v2.0.0 --skill smart-commit -a codex -g
 
 # 更新確認 / 取り込み（global のみ）
 npx skills check
@@ -159,7 +159,7 @@ npx skills update            # 全 skill を最新タグへ
 npx skills update smart-commit
 
 # プロジェクト install の更新は再 add（lockfile に乗らないため）
-npx skills add mjcreativelab/mjcreativelab-agent-plugins@v2.1.0 --skill '*'
+npx skills add mjcreativelab/mjcreativelab-agent-prompts@v2.1.0 --skill '*'
 ```
 
 ### 3.3 バージョニングとアップデート方式
@@ -188,7 +188,7 @@ marketplace の `/plugin update` とは挙動が異なるため、利用者向�
 
 #### 推奨運用（README に明記する内容）
 
-1. **常用 skill はグローバル install を推奨**: `npx skills add mjcreativelab/mjcreativelab-agent-plugins@<tag> --skill <name> -g`
+1. **常用 skill はグローバル install を推奨**: `npx skills add mjcreativelab/mjcreativelab-agent-prompts@<tag> --skill <name> -g`
    - 更新は `npx skills update` で完結
    - 複数プロジェクトで使い回せる
 2. **プロジェクト固有 skill のみプロジェクト install**: `npx skills add ... --skill <name>`（`-g` なし）
