@@ -49,6 +49,10 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 
 > 上記規則は `smart-commit` / `smart-issue-plan` / `smart-issue-resolve` / `smart-pr` の各 SKILL.md にも内蔵されている（`npx skills` 経由でインストールされた利用者がプロジェクト外ファイルを参照できないため）。本リポジトリで作業する際は CLAUDE.md（本セクション）が一次情報源。
 
+## 記述ルール
+
+- ファイルパスにユーザー名を含めない。ホームディレクトリは `/Users/<name>/` ではなく `~/` で表記する（SKILL.md・コメント・ドキュメント・コミットメッセージ・PR 本文のいずれも同様）
+
 ## よく使うコマンド
 
 ```bash
