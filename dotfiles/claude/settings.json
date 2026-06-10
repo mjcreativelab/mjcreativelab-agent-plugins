@@ -1,0 +1,233 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_github_github__issue_read",
+      "Bash(git fetch *)",
+      "Bash(node \"~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs\" task-resume-candidate --json)",
+      "Bash(mise which *)",
+      "Read(/~/.local/share/mise/installs/node/**)",
+      "Bash(~/.local/share/mise/installs/node/24.13.0/bin/node \"~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs\" task-resume-candidate --json)",
+      "Bash(./scripts/setup-vton-iqa-scoring-infra.sh)",
+      "Bash(chmod +x services/vton-iqa-scorer/scripts/deploy_phase1_cloud_run.sh)",
+      "Bash(git commit -m ' *)",
+      "Skill(near-fashion-business-ideation:near-fashion-ideation)",
+      "Skill(near-fashion-business-ideation:near-fashion-ideation:*)",
+      "Bash(git pull *)",
+      "mcp__plugin_github_github__search_issues",
+      "Bash(gcloud scheduler *)",
+      "Bash(SKIP_VERTEX_AI_TESTS=0 uv run pytest tests/test_avatar_generator.py -k \"women-volume\" -v -s)",
+      "WebSearch",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(echo \"---exit:$?---\")",
+      "WebFetch(domain:trademarks.justia.com)",
+      "WebFetch(domain:uspto.report)",
+      "Bash(grep -v \":0$\")",
+      "Bash(mise exec node@22 -- node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task ' *)",
+      "Bash(node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task --resume-last --write ' *)",
+      "Bash(node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task --resume-last 'tmp/near-fashion-codex-review/oshi-beya/20260526_re-review-v3-final.md を最初に読んでから、以下のレビュー対象 10 ファイルを順に読み、依頼文末尾の「出力形式」セクションに従って結果を返してください。 *)",
+      "Bash(mise exec node@22 -- node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task --resume-last 'tmp/near-fashion-codex-review/oshi-beya/20260526_re-review-v3-final.md を最初に読んでから、以下のレビュー対象 10 ファイルを順に読み、依頼文末尾の「出力形式」セクションに従って結果を返してください。 *)",
+      "Bash(node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task ' *)",
+      "Bash(mise exec *)",
+      "Bash(/usr/local/bin/node --version)",
+      "Bash(/opt/homebrew/bin/node --version)",
+      "Bash(~/.local/share/mise/shims/node --version)",
+      "Read(/~/.local/share/mise/shims/**)",
+      "Bash(git add *)",
+      "Bash(node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task '<task> *)",
+      "Bash(node ~/.claude/plugins/cache/openai-codex/codex/1.0.4/scripts/codex-companion.mjs task 'あなたは NEAR FASHION 新規事業のプロダクト PRD 独立レビュアーです。 *)",
+      "Read(//private/tmp/**)",
+      "Bash(python -m markitdown \"~/Work/NEAR_FASHION_NEW_BIZ/near-fashion-plan-1/tmp/oshi-beya/Roomfolio_企画書_作業中.pptx\")",
+      "Bash(python3 -m markitdown --help)",
+      "Bash(python3 -c ' *)",
+      "Bash(which soffice *)",
+      "Read(//Applications/**)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(echo \"tsc exit:$?\")",
+      "Bash(echo \"vitest exit:$?\")",
+      "Bash(echo \"build exit:$?\")",
+      "Bash(python tmp/oshi-beya/build_pitch_pptx.py)",
+      "Bash(python3 -c \"from pptx import Presentation; print\\('ok'\\)\")",
+      "Bash(python3 ~/Work/NEAR_FASHION_NEW_BIZ/near-fashion-plan-1/tmp/oshi-beya/build_pitch_pptx.py)",
+      "Bash(echo \"tsc:$?\")",
+      "Bash(echo \"vitest:$?\")",
+      "Bash(echo \"build:$?\")",
+      "Bash(cp ~/.claude/plugins/cache/mjcreativelab-agent-prompts/mjc-git-workflow-tools/1.1.6/skills/smart-git-sync/assets/git-sync.sh /tmp/git-sync.sh && bash /tmp/git-sync.sh 2>&1)",
+      "mcp__claude_ai_Atlassian__getConfluencePage",
+      "mcp__claude_ai_Atlassian__updateConfluencePage",
+      "Bash(mise ls *)",
+      "Bash(git check-ignore *)",
+      "Bash(xargs cat -n)",
+      "Bash(git -C ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook show be34b62 --stat)",
+      "Bash(sed -n 189,210p ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook/plugins/near-fashion-business-ideation/skills/near-fashion-research-analysis/references/parallel-workers.md)",
+      "Bash(sed -n 27,33p ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook/plugins/near-fashion-business-ideation/skills/near-fashion-research-analysis/references/parallel-workers.md)",
+      "Bash(sed -n 14,18p ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook/plugins/near-fashion-business-ideation/skills/near-fashion-research-analysis/references/parallel-workers.md)",
+      "Bash(cat implementer-prompt.md)",
+      "Bash(cat spec-reviewer-prompt.md)",
+      "Bash(cat code-quality-reviewer-prompt.md)",
+      "Bash(echo \"=== tsc exit: $? ===\")",
+      "Bash(echo \"=== eslint exit: $? ===\")",
+      "Bash(sed -n 45,78p ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook/plugins/near-fashion-business-ideation/agents/near-fashion-research-worker.md)",
+      "Bash(sed -n 54,60p ~/Work/NEAR_FASHION_NEW_BIZ/new-product-claude-cookbook/plugins/near-fashion-business-ideation/agents/near-fashion-research-worker.md)",
+      "Bash(echo \"EXIT_TSC=$?\")",
+      "Bash(echo \"EXIT_ESLINT=$?\")",
+      "Bash(mkdir -p .claude/tmp && echo \"ok\")",
+      "Bash(git rm *)",
+      "Bash(gh issue *)"
+    ],
+    "additionalDirectories": [
+      "~/.claude/plugins/cache/mjcreativelab-agent-prompts/mjc-git-workflow-tools/1.1.6/skills/smart-git-sync/assets",
+      "~/Work/RD_PoC/VTO/00.VTO_PRODUCT_IDEAS/bs-vto-app-event-display/.claude/tmp"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__claude_ai_Slack__slack_read_channel|mcp__claude_ai_Slack__slack_read_thread",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "channel=$(jq -r '.tool_input.channel_id // .tool_input.channel // empty' 2>/dev/null); if [[ \"$channel\" =~ ^[DG] ]]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Slack DM の読み取りは禁止されています\"}}'; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(echo \"$TOOL_INPUT\" | sed -n 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p'); case \"$FILE\" in */.env|*/.env.*) case \"$FILE\" in */.env.sample|*/.env.sample.*) ;; *) echo \"BLOCK: .env 系ファイル ($FILE) への直接書き込みは禁止です。.env.sample を編集してください。\" >&2; exit 2 ;; esac ;; esac"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(echo \"$TOOL_INPUT\" | sed -n 's/.*\"command\"[[:space:]]*:[[:space:]]*\"\\(.*\\)\"/\\1/p'); if echo \"$CMD\" | grep -qE '(>|>>|tee|sed|cp).*\\.env' && ! echo \"$CMD\" | grep -qE '\\.env\\.sample'; then echo 'BLOCK: Bash 経由での .env 系ファイル操作は禁止です。' >&2; exit 2; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(echo \"$TOOL_INPUT\" | sed -n 's/.*\"command\"[[:space:]]*:[[:space:]]*\"\\(.*\\)\"/\\1/p'); if echo \"$CMD\" | grep -qE 'git\\s+commit'; then if git branch --show-current 2>/dev/null | grep -qE '^main$'; then echo 'BLOCK: main ブランチへの直接コミットは禁止です。feature branch を使ってください。' >&2; exit 2; fi; fi; if echo \"$CMD\" | grep -qE 'git\\s+push'; then if git branch --show-current 2>/dev/null | grep -qE '^main$'; then echo 'BLOCK: main ブランチからの push は禁止です。feature branch を使ってください。' >&2; exit 2; fi; if echo \"$CMD\" | grep -qE 'git\\s+push\\s+.*(:main|HEAD:main|\\smain$|\\smain\\s)'; then echo 'BLOCK: main ブランチへの直接 push は禁止です。PR 経由でマージしてください。' >&2; exit 2; fi; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(echo \"$TOOL_INPUT\" | sed -n 's/.*\"command\"[[:space:]]*:[[:space:]]*\"\\(.*\\)\"/\\1/p'); if echo \"$CMD\" | grep -qE 'git\\s+(reset\\s+--hard|push\\s+--force|push\\s+-f\\b|push\\s+.*--force-with-lease|clean\\s+-[a-zA-Z]*[fx]|checkout\\s+--\\s+\\.|branch\\s+-D)'; then echo 'BLOCK: 破壊的 git 操作を検出しました。この操作は禁止されています。' >&2; exit 2; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "afplay ~/Music/ffxiv_sps05001_mp3/FFXIV_Notification.mp3"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/pre-compact-save-state.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$TOOL_INPUT\" | grep -q '\"file_path\".*CLAUDE\\.md\"'; then DIR=$(echo \"$TOOL_INPUT\" | sed -n 's/.*\"file_path\"[[:space:]]*:[[:space:]]*\"\\(.*\\)\\/CLAUDE\\.md\".*/\\1/p'); if [ -n \"$DIR\" ]; then AGENTS=\"$DIR/AGENTS.md\"; if [ ! -L \"$AGENTS\" ]; then rm -f \"$AGENTS\" 2>/dev/null; ln -s CLAUDE.md \"$AGENTS\"; fi; fi; fi"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "jdtls-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "slack@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": true,
+    "autoresearch@autoresearch": true,
+    "skill-creator@claude-plugins-official": true,
+    "codex@openai-codex": true,
+    "feature-dev@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "atlassian@zozo-claude-plugins": true,
+    "chrome-devtools@zozo-claude-plugins": true,
+    "context7@zozo-claude-plugins": true,
+    "datadog@zozo-claude-plugins": true,
+    "drawio@zozo-claude-plugins": true,
+    "figma@zozo-claude-plugins": true,
+    "github@zozo-claude-plugins": true,
+    "guideline-review@zozo-claude-plugins": true,
+    "sentry@zozo-claude-plugins": true,
+    "serena@zozo-claude-plugins": true,
+    "slack@zozo-claude-plugins": true,
+    "awslabs-aws-knowledge@zozo-claude-plugins": true,
+    "awslabs-aws-dataprocessing@zozo-claude-plugins": true,
+    "awslabs-aws-api@zozo-claude-plugins": true,
+    "awslabs-cloudwatch@zozo-claude-plugins": true,
+    "playwright@zozo-claude-plugins": true,
+    "near-fashion-business-ideation@new-product-marketplace": true,
+    "near-fashion-business-ops@new-product-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      },
+      "autoUpdate": true
+    },
+    "autoresearch": {
+      "source": {
+        "source": "github",
+        "repo": "uditgoenka/autoresearch"
+      }
+    },
+    "agent-plugins-for-aws": {
+      "source": {
+        "source": "github",
+        "repo": "awslabs/agent-plugins"
+      },
+      "autoUpdate": true
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      },
+      "autoUpdate": true
+    }
+  },
+  "effortLevel": "xhigh",
+  "showThinkingSummaries": true,
+  "skipWorkflowUsageWarning": true
+}

@@ -101,6 +101,13 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   disk-space-cleanup/            # ディスク空き容量の確保（開発系キャッシュのスキャン→確認→削除）
 internal/                        # 内部 skill（npx 標準探索ルート外・配布対象外）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
+  global-config-pull/            # ~/.claude/ → dotfiles/claude/ へ取り込む
+  global-config-push/            # dotfiles/claude/ → ~/.claude/ へ反映する
+dotfiles/                        # ホストマシンのグローバル設定（個人管理用・配布対象外）
+  claude/
+    CLAUDE.md                    # グローバル Claude Code 指示ファイル
+    settings.json                # グローバル設定（hooks・permissions・statusLine・plugins 等）
+    statusline-command.sh        # ステータスライン表示スクリプト
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
 ```
 
