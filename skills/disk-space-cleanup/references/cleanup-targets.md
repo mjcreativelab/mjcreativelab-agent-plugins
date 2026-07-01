@@ -18,6 +18,8 @@ scan-disk-usage.sh の `CANDIDATE` 行と突合して使う。各行の「削除
 | `unavailable simulators` | `xcrun simctl delete unavailable` | 低 | 再生成可 | 現行 Xcode で利用不能なランタイムの残骸 |
 | ユーザーキャッシュ上位 10（`CACHE_TOP_*` ブロック。macOS: `~/Library/Caches` / Linux: `~/.cache` 直下） | SKILL.md の `rm` ルール | 中 | 再生成可 | アプリキャッシュは再生成されるが一部アプリで再ログイン等が必要。パス単位で選択・除外する |
 | `Trash`（macOS: `~/.Trash` / Linux: `~/.local/share/Trash`） | 承認後に中身を削除 | 中 | **不可** | ユーザーが既に削除したファイルだが、空にすると復元不能。実行直前の個別最終確認を必須とする |
+| `Claude Code transcripts` | `find ~/.claude/projects -name "*.jsonl" -mtime +{N} -delete`（N = 保持日数） | 低 | 不可 | セッション履歴ログ。削除後の開発作業への影響はないが復元不能。`-c`/`-r` 再開時に古いセッションが消える点を注記する |
+| `Codex session transcripts` | `find ~/.codex/sessions -name "*.jsonl" -mtime +{N} -delete && find ~/.codex/sessions -type d -empty -delete`（N = 保持日数） | 低 | 不可 | Codex タスクのロールアウトログ。削除後の開発作業への影響はない。空ディレクトリも合わせて掃除する |
 
 ## 提示のみ（`PRESENT_ONLY` 行・スキルは実行しない）
 

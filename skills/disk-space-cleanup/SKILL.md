@@ -32,7 +32,7 @@ allowed-tools: Read, Grep, Glob
 - `CANDIDATE<TAB>カテゴリ<TAB>パス<TAB>サイズ<TAB>削除方法` — 削除実行の候補（Step 4 の選択肢）
 - `PRESENT_ONLY<TAB>カテゴリ<TAB>対象<TAB>提示コマンド` — 提示のみ（Docker volumes・sudo 必要な Linux 領域）。**Step 4 の選択肢に含めず、Step 5 でも実行しない**
 - `SKIP<TAB>カテゴリ<TAB>理由` — ツール不在・OS 非対象・取得失敗（silent skip しない）
-- `DOCKER_DF_*` / `DOCKER_PS_*` / `BREW_DRYRUN_*` / `CACHE_TOP_*` — 補助ブロック
+- `DOCKER_DF_*` / `DOCKER_PS_*` / `BREW_DRYRUN_*` / `CACHE_TOP_*` / `TRANSCRIPT_CLAUDE_*` / `TRANSCRIPT_CODEX_*` — 補助ブロック
 - 最終行 `SCAN_COMPLETE`
 
 「削除方法」列は表示用ヒント。実際のパスは独立した `パス` フィールドにあり、`rm` を組み立てる際はそちらを使う（コマンド列の文字列をそのまま実行しない）。
@@ -48,7 +48,9 @@ allowed-tools: Read, Grep, Glob
 - `PRESENT_ONLY` 行は別セクション「提示のみ（手動実行）」としてコマンドを表示する（削除候補テーブルには載せない）
 - `SKIP` 行は末尾に要約表示する（「未対象: npm 未インストール, …」）
 
-scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
+scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash` / `Claude Code transcripts` / `Codex session transcripts`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
+
+トランスクリプトカテゴリは `TRANSCRIPT_CLAUDE_BEGIN` / `TRANSCRIPT_CODEX_BEGIN` 補助ブロックを使って詳細を表示する。ブロック内の値は `総ファイル数<TAB>総サイズ<TAB>7日以前のファイル数<TAB>7日以前のサイズ` の形式。削除候補テーブルではサイズ列に「合計 X MB（うち 7 日以前: Y ファイル / Z MB）」の形式で補足する。
 
 ### Step 4: 承認ゲート（カテゴリ単位）
 
@@ -57,6 +59,7 @@ scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip c
 - Claude Code では `AskUserQuestion`（multiSelect）を使う。他エージェントではテキストで「削除するカテゴリ番号を挙げてください」と確認する（graceful degradation）
 - リスク「中」のカテゴリは**デフォルト非選択**
 - **選択が 0 件（全キャンセル）の場合は何も削除せず Step 6 のレポートへ進む（no-op 終了）**
+- **トランスクリプトカテゴリが選択された場合、保持日数を追加で確認する**（AskUserQuestion single-select / 選択肢: `7 日（推奨）` / `14 日` / `30 日` / `全削除（0 日）`）。確認した日数を `{N}` として Step 5 で使用する。
 
 ### Step 5: 実行
 
@@ -66,6 +69,19 @@ scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip c
 - **(b) 復元不能操作（ゴミ箱を空にする）とリスク「中」カテゴリ**: 個別の最終確認を必須とする
 
 公式クリーンコマンドがあるカテゴリは [references/cleanup-targets.md](references/cleanup-targets.md) の「削除方法」列のコマンドを実行する。
+
+#### トランスクリプトカテゴリの実行ルール
+
+`Claude Code transcripts` / `Codex session transcripts` は `find -delete` で処理する（`rm` ルールは適用しない）:
+
+- `{N}` = Step 4 で確認した保持日数。全削除（0 日）の場合は `-mtime +0` ではなく `find <path> -name "*.jsonl" -delete` で全件削除する
+- 実行コマンド（N 日保持）:
+  ```
+  find <path> -name "*.jsonl" -mtime +{N} -delete
+  find <path> -type d -empty -delete   # Codex のみ: 空ディレクトリを掃除
+  ```
+- 実行直前に削除対象ファイル数・サイズを再表示する（`find <path> -name "*.jsonl" -mtime +{N} | wc -l` と `xargs du -ch | tail -1` で確認）
+- 失敗した場合は再試行せず Step 6 に記録する
 
 #### `rm` 実行ルール
 
