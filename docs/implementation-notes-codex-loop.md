@@ -2,6 +2,8 @@
 
 > 作業ブランチ: `feature/add-codex-loop-option`（2026-06-04）/ PR: #60
 > `-codex-loop` 実装時の設計判断・トレードオフ・Codex レビュー記録
+>
+> **後続変更（2026-07-01）**: `-codex-loop` は `--codex-review-loop`（`-cdxrl`）にリネーム、敵対的レビューモード `--codex-advs-review-loop`（`-cdxarl`）を追加、セキュリティ影響検出時の自動発動を追加した。設計判断は [implementation-notes-codex-review-loop.md](implementation-notes-codex-review-loop.md) を参照。以下は原初 `-codex-loop` 実装時点の記録（履歴として保持）。
 
 ## 仕様（ユーザー要求 + AskUserQuestion での確定事項)
 
