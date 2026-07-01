@@ -88,6 +88,37 @@ fi
 # --- ゴミ箱 ---
 [ -d "$TRASH" ] && emit_candidate "Trash" "$TRASH" "$(dir_size "$TRASH")" "中身を削除（復元不能・実行直前に最終確認）" || emit_skip "Trash" "$TRASH なし"
 
+# --- AI エージェント トランスクリプト ---
+# ファイルが 0 件の場合に xargs du -ch が壊れるため count を先にチェック
+scan_transcripts() {
+  local cat="$1" dir="$2"
+  if [ ! -d "$dir" ]; then
+    emit_skip "$cat" "$dir なし"
+    return
+  fi
+  local total_count old_count total_size old_size
+  total_count=$(find "$dir" -name "*.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+  old_count=$(find "$dir" -name "*.jsonl" -mtime +7 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$total_count" -gt 0 ]; then
+    total_size=$(find "$dir" -name "*.jsonl" 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
+  else
+    total_size="0B"
+  fi
+  if [ "$old_count" -gt 0 ]; then
+    old_size=$(find "$dir" -name "*.jsonl" -mtime +7 2>/dev/null | xargs du -ch 2>/dev/null | tail -1 | cut -f1)
+  else
+    old_size="0B"
+  fi
+  emit_candidate "$cat" "$dir" "$total_size" "find + -name '*.jsonl' -mtime +{N} -delete"
+  # 補助ブロック: total_count<TAB>total_size<TAB>old_count(>7d)<TAB>old_size(>7d)
+  printf 'TRANSCRIPT_%s_BEGIN\n' "$3"
+  printf '%s\t%s\t%s\t%s\n' "$total_count" "$total_size" "$old_count" "$old_size"
+  printf 'TRANSCRIPT_%s_END\n' "$3"
+}
+
+scan_transcripts "Claude Code transcripts" "$HOME/.claude/projects" "CLAUDE"
+scan_transcripts "Codex session transcripts" "$HOME/.codex/sessions" "CODEX"
+
 # --- Linux: sudo 必要なもの（提示のみ・削除候補にしない） ---
 if [ "$OS" = "Linux" ]; then
   has apt-get    && emit_present_only "apt cache"      "/var/cache/apt" "sudo apt-get clean"
