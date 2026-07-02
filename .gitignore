@@ -3,7 +3,7 @@ node_modules/
 .env
 **/*.local.*
 *.log
-docs/temp/*
-!docs/temp/.gitkeep
+**/tmp/*
+!**/tmp/.gitkeep
 docs/superpowers/
 .serena/

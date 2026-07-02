@@ -103,6 +103,8 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
   # システムメンテナンス
   disk-space-cleanup/            # ディスク空き容量の確保（開発系キャッシュのスキャン→確認→削除）
+  # エージェント記憶管理
+  memory-dream/                  # 記憶階層の consolidation（重複・矛盾・陳腐化の除去。Dreams の手動再現）
 internal/                        # 内部 skill（npx 標準探索ルート外・配布対象外）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
   global-config-pull/            # ~/.claude/ → dotfiles/claude/ へ取り込む
