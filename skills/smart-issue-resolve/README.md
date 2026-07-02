@@ -50,6 +50,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 - `/smart-commit` — 本スキル完了後のコミット作成（レビューループのフラグ明示時は自動で git/gh 直呼びに切り替わるため、手動起動は非フラグ時の経路）
 - `/smart-pr` — PR の作成・更新（同上）
 - `/code-reviewer-adversarial` — 実装から独立して敵対的レビューだけ回したいときに直接使う
+- `/codex:adversarial-review` — Codex 単独の敵対レビューをコード diff に単発でかけたいときに直接使う（Codex プラグイン付属。対象は git diff のみで計画テキストは対象外。本スキルのループには `disable-model-invocation` のため組み込めない）
 
 ## 推奨: 新規セッションで実行する
 
