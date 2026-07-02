@@ -53,5 +53,7 @@ GitHub Issue の実装計画を作成・更新するスキル。
 
 ## 前提条件
 
+- **git** — 分析時点 SHA の記録（`git rev-parse`）と更新モードでの変更点特定（`git log`）に使用（git が使えない環境では SHA は「未記録」となり、更新モードの差分検出が制限される）
 - **GitHub MCP サーバー** — Issue の読み取り・計画コメント投稿に必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
 - **Codex プラグイン（`codex:rescue` スキル）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時、およびセキュリティ自動発動時のみ必須
+- **AskUserQuestion** — Issue 番号・要件の確認と、レビューループ 3 ラウンドごとの続行確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）

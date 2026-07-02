@@ -63,6 +63,11 @@ Phase 1 のレポートファイルが存在することを **物理ゲート** 
 
 未インストールの場合は本スキルの実行は中止され、インストール手順が案内される。
 
+このほか、次の機能に依存する:
+
+- **WebSearch / WebFetch（Claude Code の Web アクセスツール）** — Phase 2 の公式ベストプラクティス調査（最新の SKILL.md 規約・推奨パターンとの差分取得）に使用する。アクセスできない環境では調査結果が「未確認」扱いとなり、機械的な静的チェックのみで続行される
+- **AskUserQuestion（Claude Code 拡張ツール）** — スキルパス未指定時の確認、eval 継続確認、Phase 2 修正適用の承認ゲートに使用する（提案の自動適用は行わない設計のため）
+
 ## 元になったスキル
 
 本スキルは Anthropic 公式の [skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator) を呼び出すラッパーとして設計している。`skill-creator` が短い eval で検出しにくい「長い会話・コンテキスト圧縮時に顕在化する問題」と「静的に検出できる問題」を、Phase 2 で補完する位置付け。

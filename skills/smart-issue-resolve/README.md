@@ -65,3 +65,4 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
 - **Codex プラグイン（`codex:rescue` スキル）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時、およびセキュリティ自動発動時のみ必須
 - **git / gh（または GitHub MCP）** — レビューループ収束後の自動コミット・PR 作成に使用（`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
+- **AskUserQuestion** — Issue 番号未指定時の確認、およびレビューループ 3 ラウンドごとの続行/打ち切り/中止の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）
