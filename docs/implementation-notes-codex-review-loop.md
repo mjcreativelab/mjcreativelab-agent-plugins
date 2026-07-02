@@ -70,3 +70,25 @@ Claude 多観点ワークフロー（loop-logic / consistency-refs / generality-
 
 1. **周期的再確認の分岐条件化** — 手順 5 のガードが絶対値 2 分岐だったため「続行」後（ラウンド 4 以降）が未定義だった。→「3 の倍数（3, 6, 9, …）で確認 / それ以外は +1」の周期条件に書き換え（参照元 PR #132 にも残っていた曖昧さ）。両スキル。
 2. **plan 打ち切り分岐の承認ゲート先** — 更新モードでは 8c が承認ゲートなのに手順 6 のみを参照していた。→「手順 6〔新規投稿〕または 8c〔更新〕」に修正。
+
+## 改善ラウンド 3（2026-07-02・`codex:adversarial-review` との比較検討）
+
+Codex プラグイン付属の `/codex:adversarial-review`（v1.0.4〜。command + prompts/adversarial-review.md + companion サブコマンド）を敵対的モードの実装に使うべきか比較し、**現行の Breaker×Judge インライン構造を維持**と判断した。
+
+### 判断理由（不採用の根拠）
+
+1. **plan では技術的に不可** — `codex:adversarial-review` の対象は git diff / working tree のみ（`--base` / `--scope auto|working-tree|branch`）。計画テキストはレビューできない。
+2. **呼び出し制約** — command が `disable-model-invocation: true` のためスキル内から Skill ツールで呼べない。回避は companion の Bash 直呼びだが `${CLAUDE_PLUGIN_ROOT}` はスキル外で解決されず、npx クロスツール配布のスキルには脆い。
+3. **二者構造の喪失** — Codex 単独の静的敵対レビューであり、Claude=Breaker の反例テスト実行検証・Codex=Judge の独立裁定という役割分離（共犯化回避）が失われる。
+4. **ループ統合不可** — 文脈注入が focus テキストのみで、ラウンドごとの Issue 要件・前ラウンド採用内容・プロジェクト固有基準を構造的に渡せない。
+
+### 採用した改善（公式プロンプトからのハイブリッド取り込み）
+
+`prompts/adversarial-review.md` の優れた要素を Breaker 手順（両 SKILL.md）と codex-judge-prompt.md（両スキル）に反映:
+
+1. **懐疑スタンス** — 「happy path でしか成立しないもの＝実在の弱点」「善意・部分修正・後続対応の見込みに信用を与えない」を Breaker の冒頭に明記
+2. **攻撃面の追加** — 不可逆な状態変更・部分失敗・再入可能性（resolve）・version skew／スキーマドリフト・依存劣化時の挙動を観点リストに追加
+3. **指摘品質の 4 点基準** — 「真の欠陥」は (1) 何が起きるか (2) なぜ脆弱か (3) 想定影響 (4) 具体的低減策 に答えられるものだけとし、出力の「内容」欄も 4 点対応に変更
+4. **キャリブレーション** — 「弱い複数指摘より防御可能な強い指摘を優先。重大な指摘を些末な指摘で薄めない」を Judge 制約に追加
+
+resolve README の関連スキル欄に、単発のコード敵対レビュー用途として `/codex:adversarial-review` を案内（ループに組み込めない理由の一行注記つき）。
