@@ -15,6 +15,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 | コード開発ライフサイクル | [software-architect](skills/software-architect/), [code-reviewer](skills/code-reviewer/), [code-reviewer-adversarial](skills/code-reviewer-adversarial/), [security-auditor](skills/security-auditor/) |
 | デザイン | [game-ui-design](skills/game-ui-design/) |
 | システムメンテナンス | [disk-space-cleanup](skills/disk-space-cleanup/) |
+| エージェント記憶管理 | [memory-dream](skills/memory-dream/) |
 
 コード開発ライフサイクル系は `/software-architect` → 実装 → `/code-reviewer` → `/security-auditor` の流れで組み合わせて使うことを想定。
 
