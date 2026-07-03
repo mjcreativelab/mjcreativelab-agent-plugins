@@ -1,14 +1,16 @@
 # smart-issue-resolve
 
-GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成・チェックアウトし、作業を開始するスキル。
+GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成・チェックアウトし、役割別エージェントのオーケストレーションで実装するスキル。メインセッションはオーケストレーター（対話・進行制御）に徹し、実装・レビューは model / effort を固定した専任エージェントが担う。
 
 ## 使い方
 
 ```
 /smart-issue-resolve #134
 /smart-issue-resolve #134 -p テストも書いて
-/smart-issue-resolve #134 --codex-review-loop   # または -cdxrl
-/smart-issue-resolve #134 --codex-advs-review-loop   # または -cdxarl（敵対的レビュー）
+/smart-issue-resolve #134 --codex-review-loop     # または -cdxrl
+/smart-issue-resolve #134 --codex-advs-review-loop # または -cdxarl（敵対的レビュー・Judge=Codex）
+/smart-issue-resolve #134 --claude-review-loop     # または -cldrl（Sonnet レビュワー）
+/smart-issue-resolve #134 --claude-adv-review-loop # または -cldarl（敵対的レビュー・独立 Sonnet×Sonnet）
 ```
 
 または「Issue #134 やって」「#42 に取り掛かる」と伝える。
@@ -18,10 +20,26 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | オプション        | 説明                                     |
 | ----------------- | ---------------------------------------- |
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
-| `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Claude Code + Codex プラグイン環境前提） |
-| `--codex-advs-review-loop`（`-cdxarl`） | 実装後に Claude=Breaker × Codex=Judge の敵対的レビューループを実施する。収束後の自動コミット・PR は標準と同じ |
+| `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Codex プラグイン前提） |
+| `--codex-advs-review-loop`（`-cdxarl`） | Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループ。収束後の自動コミット・PR は標準と同じ |
+| `--claude-review-loop`（`-cldrl`） | Sonnet（effort max）レビュワーエージェントによる標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
+| `--claude-adv-review-loop`（`-cldarl`） | 独立 Sonnet の Breaker × Judge による敵対的レビューループ（Codex 不要）。収束後の自動コミット・PR は同上 |
 
-> 認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（このときレビューは実施するが、コミット・PR の自動実行は行わない — 従来の完了案内に切り替える）。旧 `-codex-loop` は `--codex-review-loop` にリネームされ、使用できなくなった。
+> 複数指定時は adversarial > standard。モード同格で codex 系と claude 系が競合した場合は codex を優先する（別系統モデルの独立性がより高い）。認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（Codex 不在環境では claude 系で代替。このときレビューは実施するが、コミット・PR の自動実行は行わない）。旧 `-codex-loop` は `--codex-review-loop` にリネームされ、使用できなくなった。
+
+## 役割とモデル
+
+| 役割 | model / effort | 責務 |
+|------|----------------|------|
+| オーケストレーター | メインセッション | Issue 読取り・計画確認・ブランチ操作・context.md 作成・Workflow 起動・ループ制御・コミット/PR |
+| 設計役 | opus / max | 計画が無い/粗い場合の設計方針確定 + 実装後の設計整合・保守性・可用性レビュー（兼任） |
+| 開発者 | opus / max | 実装（調査→ベースライン→実装→動作確認）とレビュー指摘の採用判定・修正（レビュイー） |
+| 独立 QA | sonnet / high | 自己申告に依存しないテスト・lint の独立実行、受け入れ基準検証、自動コミット前の最終ゲート |
+| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | sonnet / max | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う） |
+| セキュリティ監査役 | sonnet / max | セキュリティ自動発動時に STRIDE・認可・データフロー観点を敵対的レビューへ注入 |
+| レビュワー / Judge（codex 系） | Codex（別系統モデル） | `codex:rescue` 経由のレビュー・裁定（従来どおり） |
+
+model はエイリアス指定（環境で利用可能な最新の同系統モデルに解決）。effort を指定できるのは Workflow ツールの `agent()` のみのため、エージェント起動はすべて Workflow ツールで行う。
 
 ## フロー
 
@@ -29,19 +47,24 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 2. 既存の実装計画（`/smart-issue-plan` が作成したコメント or `[実装計画]` Issue）があれば参照し、計画記録の分析時点 SHA と最新デフォルトブランチの差分から陳腐化を検出する（古ければ計画更新を提案）
 3. 作業ツリーの状態を確認する（未コミット変更は識別可能なメッセージ付きで stash）
 4. Issue に基づいたブランチを作成・チェックアウトする
-5. 関連領域のテストをベースラインとして実行してから実装する
-6. 作業完了後、変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
+5. プロジェクト固有基準を収集し、一時作業ディレクトリに context.md（要件・計画・テスト方針・基準）を書き出す
+6. 実装 Workflow を起動する: 設計役（計画が無い/粗い場合）→ 開発者（ベースライン→実装→動作確認）→ 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 反映 → QA 再確認
+7. レビューループ指定時（またはセキュリティ自動発動時）はレビューループへ。それ以外は変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
 
-## Codex レビューループ
+## レビューループ（codex 系 / claude 系）
 
-いずれのフラグでも、採用すべき指摘がなくなるまで「レビュー取得 → 妥当性判定（過剰対応チェック） → 修正 → テスト再実行」をループする（3 ラウンドごとに続行/打ち切り/中止をユーザーに確認）。**返ってきた指摘を採用するか（過剰対応でないか）の判定は、どのモードでもレビュイーの Claude が行う**。
+いずれのフラグでも、採用すべき指摘がなくなるまで「レビュー取得 → 妥当性判定（過剰対応チェック） → 修正 → テスト再実行」をループする（3 ラウンドごとに続行/打ち切り/中止をユーザーに確認）。**返ってきた指摘を採用するか（過剰対応でないか）の判定は、どのモードでもレビュイーの開発者エージェントが行う**。
 
-- **標準（`--codex-review-loop` / `-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で diff をレビューする
-- **敵対的（`--codex-advs-review-loop` / `-cdxarl`）**: Claude=Breaker（反例・攻撃シナリオの生成、可能なら failing テスト実行）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。`code-reviewer-adversarial` スキルは `disable-model-invocation` のため直接委譲できないので、その二者構造をループ内にインライン再現している
-- **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や変更ファイルから検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示）。ただしこの自動発動のみのケースでは**コミット・PR は自動実行せず**、従来の完了案内に切り替える（外部副作用の自動化は明示オプトイン時のみ）
-- 収束後の自動コミット・PR（フラグ明示時のみ）は `smart-commit` / `smart-pr` が `disable-model-invocation` のため、`git` / `gh`（または GitHub MCP）で直接実行する。機密ファイル警告・pre-commit hook・behind 時のマージ確認などの安全系は維持する
-- PR 本文のレビュアー向け補足に `🤖 Codex レビュー済み（標準…）` / `🤖 Codex 敵対的レビュー済み（Breaker×Judge…）` を記載する
-- `codex:rescue` が使えない環境では Claude がレビュー・裁定を代行せず、従来の完了案内（コミット・PR は手動）にフォールバックする（レビュー済み表記なし）
+- **codex 標準（`-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で diff をレビューする
+- **codex 敵対（`-cdxarl`）**: Breaker（独立 Sonnet エージェント。実装文脈から隔離）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。Workflow が使えない環境ではメインセッションが Breaker を代行する（従来動作）
+- **claude 標準（`-cldrl`）**: Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする。観点は codex 標準と同一
+- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Sonnet（effort max）エージェントが担う。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
+- **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や変更ファイルから検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示。Codex 不在なら claude 系で代替）。ただしこの自動発動のみのケースでは**コミット・PR は自動実行せず**、従来の完了案内に切り替える（外部副作用の自動化は明示オプトイン時のみ）
+- claude 系は 1 セット（最大 3 ラウンド）を 1 つの Workflow で実行し、3 ラウンドごとの続行確認はセット間にオーケストレーターが行う（サブエージェントはユーザーに質問できないため）
+- 敵対モードの裁定「仕様未定」（仕様が曖昧で要確認の指摘）は、対話できないエージェントに握り潰させず、オーケストレーターが AskUserQuestion でユーザーに確認して確定内容を context.md に反映する
+- 収束後の自動コミット・PR（フラグ明示時のみ）の前に、**独立 QA の最終ゲート**を通す（不合格なら自動コミットを中止して相談）。`smart-commit` / `smart-pr` は `disable-model-invocation` のため、コミット・push は `git`、PR 作成は GitHub MCP（不在時は `gh`）で直接実行する。機密ファイル警告・pre-commit hook・behind 時のマージ確認などの安全系は維持する
+- PR 本文のレビュアー向け補足に `🤖 Codex レビュー済み（…）` / `🤖 Claude レビュー済み（…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Sonnet…）` を記載する
+- `codex:rescue` が使えない環境では Claude がレビュー・裁定を代行せず、従来の完了案内（コミット・PR は手動）にフォールバックする（レビュー済み表記なし）。ただしセキュリティ自動発動のケースに限り claude 敵対レビューで代替する。claude 系が使えない（Workflow なし）場合も同様に代行せずフォールバックする
 - 実装とは独立に敵対的レビューだけ行いたい場合は `/code-reviewer-adversarial` を直接使う
 
 ## 関連スキル
@@ -63,6 +86,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
-- **Codex プラグイン（`codex:rescue` スキル）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時、およびセキュリティ自動発動時のみ必須
-- **git / gh（または GitHub MCP）** — レビューループ収束後の自動コミット・PR 作成に使用（`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
+- **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、レビュワー = sonnet/max 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
+- **Codex プラグイン（`codex:rescue` スキル）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
+- **git + GitHub MCP（または gh）** — レビューループ収束後の自動コミット・PR 作成に使用（コミット・push は git、PR 作成は GitHub MCP を優先。`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
 - **AskUserQuestion** — Issue 番号未指定時の確認、およびレビューループ 3 ラウンドごとの続行/打ち切り/中止の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）

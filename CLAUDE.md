@@ -86,7 +86,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   smart-commit/                  # 差分を作業単位で分割コミット
   smart-pr/                      # PR 作成・更新の自動化
   smart-git-sync/                # ブランチ同期・整理
-  smart-issue-resolve/           # Issue からブランチ作成〜実装
+  smart-issue-resolve/           # Issue からブランチ作成〜実装（役割別エージェントのオーケストレーション + レビューループ）
   smart-issue-plan/              # Issue の実装計画を作成・更新
   smart-review/                  # ローカル変更のセルフレビュー
   smart-review-apply/            # レビューフィードバックの適用
