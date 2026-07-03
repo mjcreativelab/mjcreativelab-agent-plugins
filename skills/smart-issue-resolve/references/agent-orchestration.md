@@ -148,7 +148,7 @@ if (args.needDesign) {
 1. ${ctx} を読む（Issue 要件・受け入れ基準・プロジェクト固有基準）
 2. 関連コードを調査し（エントリポイント・依存グラフ・既存パターン・境界条件）、要件を満たす設計方針を確定する
 3. ${args.workDir}/design.md に次を書く: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項
-制約: コードは変更しない。判断できない仕様は独断で確定せず「未確定事項」に列挙する。
+制約: コードは変更しない。コミット・push はしない。判断できない仕様は独断で確定せず「未確定事項」に列挙する。
 最終出力: design.md の要点（10 行以内）。`,
     { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max' })
   if (design === null) return { status: 'agent-failed', at: 'design' }
@@ -192,7 +192,7 @@ const arch = await agent(`あなたは設計役である。実装完了後の変
    - 設計整合: 設計方針・実装計画・既存アーキテクチャ（レイヤー責務・依存方向）からの逸脱
    - 保守性: 過度な結合・テスト容易性の低下・変更波及の広さ・不要な抽象化
    - 可用性・運用: タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・可観測性（ログ・メトリクス）の欠落・デプロイ / ロールバックの脆さ
-制約: コードは変更しない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。`,
+制約: コードは変更しない。コミット・push はしない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。`,
   { label: 'architect:review', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })
 if (arch === null) return { status: 'agent-failed', at: 'arch-review' }
 
@@ -351,7 +351,7 @@ const breakerPrompt = (round, auditNote) => `あなたは Breaker である。Gi
 2. ${diffNote}（ラウンド ${round}）
 ${prior()}${auditNote}
 ## 攻撃観点（横断する）
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
 - 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
 - 回帰: 既存挙動・呼び出し元の破壊
 - 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
@@ -417,7 +417,7 @@ if (args.securityAudit) {
 3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
 4. ${args.workDir}/security-audit.md に書く
 自動発動の理由: ${args.securityReason}
-制約: コード・ファイルを変更しない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
     { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
   if (audit) {
     auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
@@ -476,7 +476,7 @@ return { converged, status, records, finalQa, specQuestions, auditFailed }
 
 返却の扱い:
 
-- `converged: true` → `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）
+- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す。この経路ではコミットしない）。空なら `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）
 - `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動
 - `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セット（または開発者修正 1 回 + 再収束確認）へ進む
 - `auditFailed: true` → セキュリティ監査役が失敗し、Breaker 内蔵のセキュリティ観点のみで実施された。完了報告に明記する
@@ -531,7 +531,7 @@ if (args.securityAudit) {
 3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
 4. ${args.workDir}/security-audit.md に書く
 自動発動の理由: ${args.securityReason}
-制約: コード・ファイルを変更しない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
     { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
   if (audit) {
     auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
@@ -546,7 +546,7 @@ const breaker = await agent(`あなたは Breaker である。GitHub Issue #${ar
 2. ${diffNote}（ラウンド ${args.round}）
 ${args.priorSummary ? `\n## 前ラウンドまでの経緯\n${args.priorSummary}\n` : ''}${auditNote}
 ## 攻撃観点(横断する)
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
 - 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
 - 回帰: 既存挙動・呼び出し元の破壊
 - 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
