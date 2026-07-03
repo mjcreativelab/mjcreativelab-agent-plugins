@@ -1,0 +1,668 @@
+# エージェントオーケストレーション（Workflow スクリプト雛形）
+
+smart-issue-resolve の実装・レビューを担う役割別エージェントの起動手順と Workflow スクリプト雛形。SKILL.md の手順 6 以降から参照される。**Claude Code の Workflow ツール前提**（利用できない環境の degradation は SKILL.md を参照）。
+
+## 前提とゲート
+
+- 起動前に `{作業Dir}/context.md` が存在すること（SKILL.md 手順 6 で作成）。存在しなければ Workflow を起動せず、context.md の作成に戻る
+- スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
+- `args` は JSON 値として渡す（文字列化した JSON を渡さない）
+- Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
+- ツール結果に返る `scriptPath` を控えておくと、同じ雛形の再起動（レビューセット続行など）は `{scriptPath, args}` で再送できる。中断・失敗からの再開は `resumeFromRunId` を使う
+
+## 作業ディレクトリと context.md
+
+作業ディレクトリはオーケストレーターが `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で作成する（OS の一時領域に任せ、スキル側で削除手順は持たない）。`context.md` は以下の書式で書き出す:
+
+```markdown
+# smart-issue-resolve コンテキスト（Issue #<番号>）
+
+## Issue 要件
+- タイトル: <タイトル>
+- 要件・受け入れ基準: <要約（箇条書き）>
+- ラベル: <ラベル一覧>
+
+## 実装計画（あれば）
+<実装手順・影響範囲・リスク・分析時点 SHA・依拠した前提の要約。無ければ「なし」>
+
+## 追加指示（-p）
+<{プロンプト}。無ければ「なし」>
+
+## ブランチ / diff 基準
+- 作業ブランチ: <ブランチ名>
+- デフォルトブランチ: <名前>（diff 基準は origin/<名前>...HEAD + 未コミットの working tree 変更）
+
+## テスト方針
+<関連テストのスコープ・実行コマンド。テストが特定できない場合は、ユーザーと合意済みの手動確認方針>
+
+## プロジェクト固有基準
+<SKILL.md 手順 6-1 で収集した規約・レビュー基準の要点。無ければ「なし」>
+```
+
+エージェント間の引き継ぎファイル（すべて `{作業Dir}` 配下）:
+
+| ファイル | 書き手 | 読み手 |
+|---|---|---|
+| `context.md` | オーケストレーター | 全エージェント |
+| `design.md` | 設計役 | 開発者・設計役（事後レビュー） |
+| `impl-notes.md` | 開発者 | 開発者（修正時）・オーケストレーター |
+| `security-audit.md` | セキュリティ監査役 | Breaker |
+| `breaker-round-<N>.md` | Breaker | Judge（codex 系では Codex） |
+| `findings-round-<N>.md` | オーケストレーター（標準: Codex の指摘全件 / 敵対: 裁定の真の欠陥 + ユーザー確認済みの仕様未定。要約・取捨選択をしない） | 開発者（雛形 D） |
+
+## 雛形 A: 実装フェーズ（sir-implement）
+
+設計（条件付き）→ 実装 → 独立 QA（不合格なら開発者修正、最大 2 回）→ 設計整合・保守可用性レビュー → 反映 → QA 再確認。
+
+`args`: `{ workDir, issueNumber, defaultBranch, needDesign }`
+
+```js
+export const meta = {
+  name: 'sir-implement',
+  description: 'smart-issue-resolve 実装フェーズ（設計→実装→独立QA→設計整合・保守可用性レビュー）',
+  phases: [
+    { title: 'Design', detail: '設計方針の確定（計画が無い/粗い場合のみ）' },
+    { title: 'Implement', detail: 'Opus 開発エージェントによる実装' },
+    { title: 'QA', detail: '独立エージェントによるテスト・受け入れ基準検証' },
+    { title: 'ArchReview', detail: '設計整合・保守性・可用性レビューと反映' },
+  ],
+}
+
+const ctx = args.workDir + '/context.md'
+const notes = args.workDir + '/impl-notes.md'
+
+const FINDINGS_SCHEMA = {
+  type: 'object',
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'severity', 'basis', 'detail'],
+        properties: {
+          title: { type: 'string' },
+          severity: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+          basis: { type: 'string', description: 'ファイルパス・行番号など一次情報' },
+          detail: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+const FIX_SCHEMA = {
+  type: 'object',
+  required: ['adopted', 'rejected', 'testsPassed'],
+  properties: {
+    adopted: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'action'], properties: { title: { type: 'string' }, action: { type: 'string' } } },
+    },
+    rejected: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
+    },
+    testsPassed: { type: 'boolean' },
+    notes: { type: 'string' },
+  },
+}
+
+const QA_SCHEMA = {
+  type: 'object',
+  required: ['pass', 'executed', 'issues'],
+  properties: {
+    pass: { type: 'boolean' },
+    executed: { type: 'string', description: '実行したテスト・lint コマンドと結果要約' },
+    issues: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
+    },
+  },
+}
+
+const IMPL_SCHEMA = {
+  type: 'object',
+  required: ['changedFiles', 'summary', 'testResults'],
+  properties: {
+    changedFiles: { type: 'array', items: { type: 'string' } },
+    summary: { type: 'string' },
+    testResults: { type: 'string' },
+  },
+}
+
+const qaPrompt = (extra) => `あなたは独立 QA エージェントである。開発者の自己申告を信用せず、自分でテストを実行して検証する。
+1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準を把握する）
+2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更
+3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する（手動確認方針の場合はその確認を可能な範囲で実施する）
+4. Issue の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
+5. ファイル名に .breaker-probe. を含む使い捨てテストが変更セットに残っていれば issues として報告する
+制約: コード・ファイルを変更しない。コミット・push はしない。${extra}
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。executed に実行コマンドと結果要約、問題は issues に列挙する。`
+
+log('実装フェーズ開始: Issue #' + args.issueNumber)
+
+let design = null
+if (args.needDesign) {
+  design = await agent(`あなたは設計役(ソフトウェアアーキテクト)である。実装には着手しない。
+1. ${ctx} を読む（Issue 要件・受け入れ基準・プロジェクト固有基準）
+2. 関連コードを調査し（エントリポイント・依存グラフ・既存パターン・境界条件）、要件を満たす設計方針を確定する
+3. ${args.workDir}/design.md に次を書く: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項
+制約: コードは変更しない。コミット・push はしない。判断できない仕様は独断で確定せず「未確定事項」に列挙する。
+最終出力: design.md の要点（10 行以内）。`,
+    { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max' })
+  if (design === null) return { status: 'agent-failed', at: 'design' }
+}
+
+const impl = await agent(`あなたは GitHub Issue #${args.issueNumber} を実装する開発者である。
+1. ${ctx} を読む${args.needDesign ? `。続いて ${args.workDir}/design.md の設計方針に従う。未確定事項があれば最小の合理的解釈を選び、判断内容を impl-notes.md に記録する` : ''}
+2. 計画・設計でカバーされない部分はコードベース調査で補う（エントリポイント・依存グラフ・既存パターン・lint / 型チェック等の品質ゲート）
+3. 実装前に context.md のテスト方針に従って関連スコープのテストを一度実行し、ベースライン（既存の失敗）を記録する
+4. Issue の要件・受け入れ基準・追加指示に沿って実装する。スコープは Issue 記載内容（と計画・設計の範囲）に限定する
+5. 同じスコープのテストを再実行し、既存テストの壊れがないこと・新規要件を満たすことを確認する
+6. ${notes} に次を書く: 変更ファイル / 要件対応（受け入れ基準ごと） / 自分で判断した事項 / テスト結果（ベースライン比較）
+制約: コミット・push はしない。Issue と無関係な変更を混ぜない。`,
+  { label: 'dev:implement', phase: 'Implement', model: 'opus', effort: 'max', schema: IMPL_SCHEMA })
+if (impl === null) return { status: 'agent-failed', at: 'implement' }
+
+let qa = await agent(qaPrompt(''), { label: 'qa:verify', phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+if (qa === null) return { status: 'agent-failed', at: 'qa' }
+
+let qaFixRounds = 0
+while (!qa.pass && qaFixRounds < 2) {
+  qaFixRounds++
+  const fix = await agent(`あなたは Issue #${args.issueNumber} を実装した開発者である。独立 QA から次の指摘が返った:
+${JSON.stringify(qa.issues, null, 2)}
+1. ${ctx} と ${notes} を読み、実装文脈を復元する
+2. 指摘を検証して修正する（QA の誤検出と判断した場合は理由を rejected に記録する）
+3. 関連スコープのテストを再実行する
+4. ${notes} を更新する
+制約: コミット・push はしない。`,
+    { label: 'dev:qa-fix-' + qaFixRounds, phase: 'QA', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
+  if (fix === null) return { status: 'agent-failed', at: 'qa-fix' }
+  qa = await agent(qaPrompt('前回 QA の指摘への対応後の再検証である。'), { label: 'qa:re-verify-' + qaFixRounds, phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+  if (qa === null) return { status: 'agent-failed', at: 'qa' }
+}
+if (!qa.pass) return { status: 'qa-failed', impl, qa }
+
+const arch = await agent(`あなたは設計役である。実装完了後の変更を、設計整合と保守・可用性の観点でレビューする。
+1. ${ctx} を読む${args.needDesign ? `。${args.workDir}/design.md の設計方針とも照合する` : ''}
+2. git diff origin/${args.defaultBranch}...HEAD と未コミット変更を確認する
+3. 次の観点で「修正価値のある欠陥」のみ指摘する:
+   - 設計整合: 設計方針・実装計画・既存アーキテクチャ（レイヤー責務・依存方向）からの逸脱
+   - 保守性: 過度な結合・テスト容易性の低下・変更波及の広さ・不要な抽象化
+   - 可用性・運用: タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・可観測性（ログ・メトリクス）の欠落・デプロイ / ロールバックの脆さ
+制約: コードは変更しない。コミット・push はしない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。`,
+  { label: 'architect:review', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })
+if (arch === null) return { status: 'agent-failed', at: 'arch-review' }
+
+let archFix = null
+if (arch.items.length > 0) {
+  archFix = await agent(`あなたは Issue #${args.issueNumber} を実装した開発者（レビュイー）である。設計役のレビュー指摘を判定・反映する:
+${JSON.stringify(arch.items, null, 2)}
+1. ${ctx} と ${notes} を読み、指摘を 1 件ずつ「採用 / 不採用」に分類する
+   - 採用: 仕様未充足・バグ・回帰リスク・設計 / 保守 / 可用性の欠陥を根拠付きで正しく突いている指摘
+   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する）
+2. 採用指摘を修正し、関連スコープのテストを再実行する
+3. ${notes} を更新する
+制約: コミット・push はしない。`,
+    { label: 'dev:arch-fix', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
+  if (archFix === null) return { status: 'agent-failed', at: 'arch-fix' }
+  if (archFix.adopted.length > 0) {
+    qa = await agent(qaPrompt('設計整合レビュー反映後の再検証である。'), { label: 'qa:post-arch', phase: 'ArchReview', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+    if (qa === null) return { status: 'agent-failed', at: 'qa' }
+    if (!qa.pass) return { status: 'qa-failed', impl, qa, archFix }
+  }
+}
+
+return { status: 'ok', impl, qa, designed: design !== null, archFindings: arch.items.length, archFix }
+```
+
+返却の扱い: `status: 'ok'` → レビューモードの確定へ。`'qa-failed'` → QA の `issues` を提示してユーザーに相談。`'agent-failed'` → 1 回だけ `resumeFromRunId` で再開を試み、それでも失敗なら degradation（SKILL.md 手順 6）。
+
+## 雛形 B: claude 系レビューセット（sir-claude-review-set）
+
+1 セット = 最大 3 ラウンド。「レビュー（標準: レビュワー / 敵対: Breaker→Judge）→ 開発者の採用判定・修正・テスト」を収束（採用 0 件）まで回し、収束時はセット内で最終 QA まで実施して返る。3 ラウンドごとの続行確認はオーケストレーターがセット間に行う。
+
+`args`: `{ workDir, issueNumber, branch, defaultBranch, mode, startRound, priorSummary, securityAudit, securityReason }`
+（`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true）
+
+```js
+export const meta = {
+  name: 'sir-claude-review-set',
+  description: 'smart-issue-resolve claude 系レビューループ 1 セット（最大 3 ラウンド + 収束時の最終 QA）',
+  phases: [
+    { title: 'Audit', detail: 'セキュリティ監査観点の注入（自動発動時・初回セットのみ）' },
+    { title: 'Review', detail: 'Sonnet レビュワー（標準）/ Breaker×Judge（敵対）' },
+    { title: 'Fix', detail: '開発者エージェントによる採用判定・修正・テスト' },
+    { title: 'FinalQA', detail: '収束時の独立最終検証' },
+  ],
+}
+
+const ctx = args.workDir + '/context.md'
+const notes = args.workDir + '/impl-notes.md'
+const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
+
+const FINDINGS_SCHEMA = {
+  type: 'object',
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'severity', 'basis', 'detail'],
+        properties: {
+          title: { type: 'string' },
+          severity: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+          category: { type: 'string', enum: ['真の欠陥', '仕様未定'], description: '敵対モードの Judge のみ設定' },
+          basis: { type: 'string', description: 'ファイルパス・行番号など一次情報' },
+          detail: { type: 'string' },
+        },
+      },
+    },
+    dismissed: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
+      description: '採用対象外（監査性のため件数とタイトルのみ残す）',
+    },
+  },
+}
+
+const FIX_SCHEMA = {
+  type: 'object',
+  required: ['adopted', 'rejected', 'testsPassed'],
+  properties: {
+    adopted: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'action'], properties: { title: { type: 'string' }, action: { type: 'string' } } },
+    },
+    rejected: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
+    },
+    testsPassed: { type: 'boolean' },
+    notes: { type: 'string' },
+  },
+}
+
+const QA_SCHEMA = {
+  type: 'object',
+  required: ['pass', 'executed', 'issues'],
+  properties: {
+    pass: { type: 'boolean' },
+    executed: { type: 'string' },
+    issues: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
+    },
+  },
+}
+
+const BREAK_SCHEMA = {
+  type: 'object',
+  required: ['counterexamples'],
+  properties: {
+    counterexamples: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'scenario', 'verified'],
+        properties: {
+          title: { type: 'string' },
+          scenario: { type: 'string', description: '反例・攻撃シナリオ・不変条件違反の内容' },
+          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'], description: 'fail=反例テストで検証済み / UNVERIFIED=実行で確認できない仮説' },
+          evidence: { type: 'string', description: 'ファイルパス・行・テスト実行結果など' },
+        },
+      },
+    },
+  },
+}
+
+const records = []
+const priorSummary = args.priorSummary || ''
+const history = () => records.map((r) => `ラウンド${r.round}: 指摘 ${r.findings} 件 / 採用 ${r.adopted} 件`).join('\n')
+const prior = () => (priorSummary || history()) ? `\n## 前ラウンドまでの経緯\n${priorSummary}${priorSummary && history() ? '\n' : ''}${history()}\n` : ''
+
+const reviewerPrompt = (round) => `あなたは GitHub Issue #${args.issueNumber} 対応の実装コードのレビュワーである。実装には関与していない独立の立場から、修正価値のある欠陥のみを指摘する。
+## 入力
+1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
+2. ${diffNote}（ラウンド ${round}）
+${prior()}
+## レビュー観点
+- 仕様充足: Issue の要件・受け入れ基準を満たしているか
+- バグ: ロジック誤り・エッジケース・境界条件・エラーハンドリング漏れ
+- 回帰リスク: 既存の挙動・テスト・呼び出し元を壊す変更はないか
+- 実装レベルの危険箇所: インジェクション・秘密情報の混入・認可漏れ・依存脆弱性
+- 運用・保守・可用性: 可観測性の欠落、デプロイ / ロールバック・設定管理、過度な結合・テスト容易性、タイムアウト・リトライ・障害時の劣化・リソース枯渇・単一障害点
+- データ整合性・性能: トランザクション境界・原子性・冪等性・並行更新の整合性、N+1・過剰な I/O・計算量
+- テストカバレッジ: 新規 / 変更ロジックの検証網羅（正常系・異常系・境界値）
+- アーキテクチャ境界: レイヤー責務の逸脱・境界侵犯
+- プロジェクト固有基準との整合（context.md に提示がある場合のみ）
+## 制約
+- 可読性・命名・スタイルは対象外（修正価値のある欠陥のみ）
+- 各指摘に根拠（ファイルパス・行番号など一次情報）と重大度を付ける
+- コード・ファイルを変更しない（レビューのみ）。コミットしない
+- 指摘が無ければ items を空配列にする`
+
+const breakerPrompt = (round, auditNote) => `あなたは Breaker である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
+## 入力
+1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
+2. ${diffNote}（ラウンド ${round}）
+${prior()}${auditNote}
+## 攻撃観点（横断する）
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
+- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
+- 回帰: 既存挙動・呼び出し元の破壊
+- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
+- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
+- アーキテクチャ: レイヤー責務の逸脱・境界侵犯・未検証の実行パス
+- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）
+## 反例テスト
+- 可能な仮説は最小 failing テストとして書き、context.md のテストスコープで実行して検証する。テストファイル名には必ず .breaker-probe. を含める（例: foo.breaker-probe.test.ts）
+- pass した仮説は破棄し、その反例テストは自分で削除して終える。fail した仮説は検証済み反例（verified: fail）として、テストをツリーに残したまま報告する（後続の開発者が採用時に正規回帰テスト化 / 不採用時に削除する）
+- 実行で確認できない仮説は verified: UNVERIFIED とする
+## 出力
+- ${args.workDir}/breaker-round-${round}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く
+- 構造化出力の counterexamples に同じ内容を返す
+制約: 反例テスト以外のコード変更をしない。コミットしない。`
+
+const judgePrompt = (round, breaker) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。
+## 入力
+1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
+2. ${diffNote}（ラウンド ${round}）
+3. Breaker の反例リスト（詳細は ${args.workDir}/breaker-round-${round}.md）:
+${JSON.stringify(breaker.counterexamples, null, 2)}
+${prior()}
+## 裁定タスク
+1. 各反例を実コードと照合し、次の 4 カテゴリに分類する:
+   - 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反として妥当で、修正価値がある
+   - 仕様未定: 仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
+   - 低優先度: 妥当だが重大度が低く、修正コストに見合わない
+   - ノイズ: 反証不能・誤解・的外れ（除外）
+2. Breaker が見落とした欠陥があれば、独立レビューとして追加で挙げる（同じ 4 カテゴリで分類する）
+## 制約
+- 可読性・命名・スタイルは対象外
+- 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
+- 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
+- コード・ファイルを変更しない（裁定のみ）。コミットしない
+- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す`
+
+const fixPrompt = (round, items) => `あなたは GitHub Issue #${args.issueNumber} を実装した開発者（レビュイー）である。ラウンド ${round} のレビュー指摘を判定・反映する:
+${JSON.stringify(items, null, 2)}
+1. ${ctx} と ${notes} を読み、実装文脈を復元する
+2. 指摘を 1 件ずつ「採用 / 不採用」に分類する:
+   - 採用: 仕様未充足・バグ・回帰リスク・実装レベルの危険箇所を根拠付きで正しく突いている指摘
+   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する。Judge が「真の欠陥」と裁定した指摘でも、修正が過剰対応になるなら不採用にしてよい）
+3. 採用指摘を修正し、関連スコープのテストを再実行する（壊れたまま終えない）
+4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換（リネーム・配置換え）し、それ以外は削除する
+5. ${notes} を更新する
+制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。`
+
+const qaPrompt = () => `あなたは独立 QA エージェントである。レビューループ収束後・コミット前の最終検証を行う。
+1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
+2. ${diffNote}
+3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する
+4. Issue の受け入れ基準を 1 件ずつ検証する
+5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
+制約: コード・ファイルを変更しない。コミットしない。
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。`
+
+let auditNote = ''
+let auditFailed = false
+if (args.securityAudit) {
+  const audit = await agent(`あなたはセキュリティ監査役である。実装コードの敵対的レビューに先立ち、攻撃シナリオの観点を提供する。
+1. ${ctx} を読む
+2. ${diffNote}
+3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
+4. ${args.workDir}/security-audit.md に書く
+自動発動の理由: ${args.securityReason}
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
+    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
+  if (audit) {
+    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
+  } else {
+    auditFailed = true
+  }
+}
+
+let converged = false
+let status = 'ok'
+const specQuestions = []
+
+for (let i = 0; i < 3; i++) {
+  const round = args.startRound + i
+  log(`レビューラウンド ${round}（${args.mode}）`)
+  let findings = null
+  if (args.mode === 'adversarial') {
+    const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
+    if (breaker === null) { status = 'agent-failed'; break }
+    findings = await agent(judgePrompt(round, breaker), { label: `judge:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+  } else {
+    findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+  }
+  if (findings === null) { status = 'agent-failed'; break }
+  if (findings.items.length === 0) {
+    records.push({ round, findings: 0, adopted: 0, rejected: [], dismissed: (findings.dismissed || []).length })
+    converged = true
+    break
+  }
+  specQuestions.push(...findings.items.filter((it) => it.category === '仕様未定'))
+  const trueDefects = findings.items.filter((it) => it.category !== '仕様未定')
+  if (trueDefects.length === 0) {
+    records.push({ round, findings: findings.items.length, adopted: 0, rejected: [], dismissed: (findings.dismissed || []).length })
+    converged = true
+    break
+  }
+  const fix = await agent(fixPrompt(round, trueDefects), { label: `dev:fix-r${round}`, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
+  if (fix === null) { status = 'agent-failed'; break }
+  records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length })
+  if (!fix.testsPassed) { status = 'tests-failing'; break }
+  if (fix.adopted.length === 0) { converged = true; break }
+}
+
+let finalQa = null
+if (converged) {
+  if (args.mode === 'adversarial') {
+    await agent(`現在の変更セット（git status / git diff で確認）にファイル名へ .breaker-probe. を含むファイルが残っていれば、それらをすべて削除する。採用された欠陥の回帰テストは開発者が正規名へ変換済みのため、.breaker-probe. が名前に残るファイルは使い捨てと定義されている。それ以外の変更は一切しない。残っていなければ何もしない。コミット・push はしない。`,
+      { label: 'dev:probe-cleanup', phase: 'FinalQA', model: 'sonnet', effort: 'low' })
+  }
+  finalQa = await agent(qaPrompt(), { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+  if (finalQa === null) status = 'agent-failed'
+}
+
+return { converged, status, records, finalQa, specQuestions, auditFailed }
+```
+
+返却の扱い:
+
+- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す。この経路ではコミットしない）。空なら `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）
+- `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動
+- `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セット（または開発者修正 1 回 + 再収束確認）へ進む
+- `auditFailed: true` → セキュリティ監査役が失敗し、Breaker 内蔵のセキュリティ観点のみで実施された。完了報告に明記する
+- `status: 'tests-failing'` → テストが壊れたままなので状況を提示して相談（そのまま次セットへ進まない）
+- `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
+
+## 雛形 C: codex 敵対モードの Breaker（sir-codex-breaker）
+
+codex 敵対モード（--codex-advs-review-loop / セキュリティ自動発動）のラウンドで、Judge（Codex）に渡す反例を独立 Sonnet エージェントが生成する。1 ラウンド 1 起動。
+
+`args`: `{ workDir, issueNumber, branch, defaultBranch, round, priorSummary, securityAudit, securityReason }`（`securityAudit` はセキュリティ自動発動時のラウンド 1 のみ true）
+
+```js
+export const meta = {
+  name: 'sir-codex-breaker',
+  description: 'codex 敵対モードの Breaker（独立 Sonnet）1 ラウンド分',
+  phases: [
+    { title: 'Audit', detail: 'セキュリティ監査観点の注入（自動発動時・ラウンド 1 のみ）' },
+    { title: 'Break', detail: '反例・攻撃シナリオ生成と反例テスト実行' },
+  ],
+}
+
+const ctx = args.workDir + '/context.md'
+const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
+
+const BREAK_SCHEMA = {
+  type: 'object',
+  required: ['counterexamples'],
+  properties: {
+    counterexamples: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['title', 'scenario', 'verified'],
+        properties: {
+          title: { type: 'string' },
+          scenario: { type: 'string' },
+          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'] },
+          evidence: { type: 'string' },
+        },
+      },
+    },
+  },
+}
+
+let auditNote = ''
+let auditFailed = false
+if (args.securityAudit) {
+  const audit = await agent(`あなたはセキュリティ監査役である。実装コードの敵対的レビューに先立ち、攻撃シナリオの観点を提供する。
+1. ${ctx} を読む
+2. ${diffNote}
+3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
+4. ${args.workDir}/security-audit.md に書く
+自動発動の理由: ${args.securityReason}
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
+    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
+  if (audit) {
+    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
+  } else {
+    auditFailed = true
+  }
+}
+
+const breaker = await agent(`あなたは Breaker である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
+## 入力
+1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
+2. ${diffNote}（ラウンド ${args.round}）
+${args.priorSummary ? `\n## 前ラウンドまでの経緯\n${args.priorSummary}\n` : ''}${auditNote}
+## 攻撃観点(横断する)
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
+- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
+- 回帰: 既存挙動・呼び出し元の破壊
+- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
+- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
+- アーキテクチャ: レイヤー責務の逸脱・境界侵犯・未検証の実行パス
+- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）
+## 反例テスト
+- 可能な仮説は最小 failing テストとして書き、context.md のテストスコープで実行して検証する。テストファイル名には必ず .breaker-probe. を含める
+- pass した仮説は破棄し、その反例テストは自分で削除して終える。fail した仮説は検証済み反例（verified: fail）として、テストをツリーに残したまま報告する
+- 実行で確認できない仮説は verified: UNVERIFIED とする
+## 出力
+- ${args.workDir}/breaker-round-${args.round}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く
+- 構造化出力の counterexamples に同じ内容を返す
+制約: 反例テスト以外のコード変更をしない。コミットしない。`,
+  { label: 'breaker:r' + args.round, phase: 'Break', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
+if (breaker === null) return { status: 'agent-failed' }
+
+return { status: 'ok', counterexamples: breaker.counterexamples, breakerFile: args.workDir + '/breaker-round-' + args.round + '.md', auditFailed }
+```
+
+返却の `counterexamples`（と `breakerFile` の内容）を [../assets/codex-judge-prompt.md](../assets/codex-judge-prompt.md) の「4. Breaker の反例リスト」に埋めて `codex:rescue` を呼ぶ。
+
+## 雛形 D: 開発者の採用判定・修正（sir-dev-fix）
+
+codex 系ラウンドで、Codex のレビュー結果を開発者エージェントが判定・反映する。起動前にオーケストレーターがレビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出しておく（標準モード: Codex の指摘全件、敵対モード: 裁定の真の欠陥 + ユーザー確認で仕様が確定した項目。いずれも要約・取捨選択・再解釈をしない。物理ゲート: このファイルが無ければ起動しない）。
+
+`args`: `{ workDir, issueNumber, round }`
+
+```js
+export const meta = {
+  name: 'sir-dev-fix',
+  description: 'レビュー指摘の採用判定と修正（開発者エージェント・codex 系ラウンド用）',
+  phases: [{ title: 'Fix', detail: '採用 / 不採用の判定・修正・テスト再実行' }],
+}
+
+const ctx = args.workDir + '/context.md'
+const notes = args.workDir + '/impl-notes.md'
+
+const FIX_SCHEMA = {
+  type: 'object',
+  required: ['adopted', 'rejected', 'testsPassed'],
+  properties: {
+    adopted: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'action'], properties: { title: { type: 'string' }, action: { type: 'string' } } },
+    },
+    rejected: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
+    },
+    testsPassed: { type: 'boolean' },
+    notes: { type: 'string' },
+  },
+}
+
+const fix = await agent(`あなたは GitHub Issue #${args.issueNumber} を実装した開発者（レビュイー）である。ラウンド ${args.round} のレビュー指摘を判定・反映する。
+1. ${ctx} と ${notes} を読み、実装文脈を復元する
+2. ${args.workDir}/findings-round-${args.round}.md のレビュー指摘を 1 件ずつ「採用 / 不採用」に分類する:
+   - 採用: 仕様未充足・バグ・回帰リスク・実装レベルの危険箇所を根拠付きで正しく突いている指摘
+   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する。Judge が「真の欠陥」と裁定した指摘でも、修正が過剰対応になるなら不採用にしてよい）
+3. 採用指摘を修正し、context.md のテスト方針に従って関連スコープのテストを再実行する（壊れたまま終えない）
+4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換し、それ以外は削除する
+5. ${notes} を更新する
+制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。`,
+  { label: 'dev:fix-r' + args.round, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
+if (fix === null) return { status: 'agent-failed' }
+
+return { status: 'ok', fix }
+```
+
+## 雛形 E: 収束後の最終 QA（sir-qa-final）
+
+codex 系ループの収束（または打ち切りで完了処理を選択した）後、および claude 系で**打ち切り**を選択した（雛形 B の最終 QA が未実施の）場合に、自動コミット・PR の前に独立検証を行う。claude 系の収束時は雛形 B が内蔵実行するため不要。
+
+`args`: `{ workDir, issueNumber, defaultBranch }`
+
+```js
+export const meta = {
+  name: 'sir-qa-final',
+  description: '自動コミット・PR 前の独立 QA 最終検証',
+  phases: [{ title: 'FinalQA', detail: 'テスト・受け入れ基準・混入物の最終確認' }],
+}
+
+const ctx = args.workDir + '/context.md'
+
+const QA_SCHEMA = {
+  type: 'object',
+  required: ['pass', 'executed', 'issues'],
+  properties: {
+    pass: { type: 'boolean' },
+    executed: { type: 'string' },
+    issues: {
+      type: 'array',
+      items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
+    },
+  },
+}
+
+const qa = await agent(`あなたは独立 QA エージェントである。レビューループ完了後・コミット前の最終検証を行う。
+1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
+2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更
+3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する
+4. Issue #${args.issueNumber} の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
+5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
+制約: コード・ファイルを変更しない。コミット・push はしない。
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。`,
+  { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+if (qa === null) return { status: 'agent-failed' }
+
+return { status: 'ok', qa }
+```
+
+## 完了報告への反映
+
+オーケストレーターは各 Workflow の返却を集約し、完了報告に含める:
+
+- 実装フェーズ: 変更ファイル・要件対応（`impl`）、QA 結果（`qa.executed`）、設計整合レビューの指摘数と採用 / 不採用（`archFindings` / `archFix`）
+- レビューループ: 各ラウンドのモード・指摘数・採用数・不採用理由（`records`）、最終 QA 結果（`finalQa`）
+- `{作業Dir}/impl-notes.md` の「自分で判断した事項」はユーザーが把握すべき決定事項として完了報告で言及する
