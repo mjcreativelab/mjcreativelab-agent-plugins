@@ -483,6 +483,8 @@ return { converged, status, records, finalQa, specQuestions, auditFailed }
 - `status: 'tests-failing'` → テストが壊れたままなので状況を提示して相談（そのまま次セットへ進まない）
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
 
+> **同期ノート**: 雛形 B（`sir-claude-review-set`）の構造は `smart-issue-plan/references/agent-orchestration.md` の計画レビューセット雛形（`sip-plan-review-set`）へ移植済み。セット制御（`startRound` / `priorSummary` / `records`）・収束判定・null ガード・`auditFailed` / `specQuestions` の経路を**両者で同期する**（片方の構造を変えたら両方更新すること）。plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる。
+
 ## 雛形 C: codex 敵対モードの Breaker（sir-codex-breaker）
 
 codex 敵対モード（--codex-advs-review-loop / セキュリティ自動発動）のラウンドで、Judge（Codex）に渡す反例を独立 Sonnet エージェントが生成する。1 ラウンド 1 起動。
