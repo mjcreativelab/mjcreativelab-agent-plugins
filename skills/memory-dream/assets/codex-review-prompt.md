@@ -1,6 +1,8 @@
 # Codex レビュー依頼テンプレート（memory dream 差分）
 
-標準モード（`--codex-review-loop`）のループ手順 1 で `codex:rescue` に渡す依頼文のテンプレート。`<>` を埋めて task として渡す。
+codex 系（`--codex-review-loop`）のループ手順 1 で `codex:rescue` に渡す依頼文のテンプレート。`<>` を埋めて task として渡す。
+
+> **同期ノート**: 「レビュー観点」7 項目と「制約」は、claude 系雛形 [references/agent-orchestration.md](../references/agent-orchestration.md)（`md-dream-review`）のレビュワープロンプトと同一の観点を持つ。片方を変えたらもう片方も更新すること。
 
 ---
 

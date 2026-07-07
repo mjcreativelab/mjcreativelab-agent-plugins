@@ -7,9 +7,11 @@ description: >
   「記憶を整理して」「dream して」「/memory-dream」で起動。
   --codex-review-loop（-cdxrl）を付けると採用前に Codex レビューループを実施する
   （Claude Code + Codex プラグイン環境前提）。
-argument-hint: "[--codex-review-loop|-cdxrl]"
+  --claude-review-loop（-cldrl）はコンテキスト隔離した Sonnet（effort max）レビュワーエージェントによる
+  レビューループを実施する（Codex 不要・Claude Code の Workflow ツール前提。利用できない環境はレビュー未実施で degrade）。
+argument-hint: "[--codex-review-loop|-cdxrl] [--claude-review-loop|-cldrl]"
 disable-model-invocation: true
-allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion
+allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion, Workflow
 ---
 
 # memory dream（記憶の整理 / consolidation）
@@ -20,10 +22,13 @@ git 管理された記憶階層を定期的に再編し、重複・矛盾・陳�
 
 `$ARGUMENTS` を解析する:
 
-- `--codex-review-loop` または `-cdxrl` → `{レビューモード}` を `standard` にする
+- `--codex-review-loop` または `-cdxrl` → `{レビューモード}` = `standard`、`{レビュー系統}` = `codex`
+- `--claude-review-loop` または `-cldrl` → `{レビューモード}` = `standard`、`{レビュー系統}` = `claude`
+- 両方指定された場合 → `{レビュー系統}` は `codex` を優先し（別系統モデルの独立性がより高い）、その旨を 1 行通知する
 - 指定がない場合 → `{レビューモード}` は `off`
 
-例: `/memory-dream --codex-review-loop` → レビューモード: standard
+例: `/memory-dream --codex-review-loop` → レビューモード: standard、系統: codex
+例: `/memory-dream -cldrl` → レビューモード: standard、系統: claude
 
 ## これは何か / なぜ必要か
 
@@ -34,7 +39,7 @@ Dreams は人間の REM 睡眠による記憶定着のメタファ。過去セ�
 ## 原則
 
 1. **入力非破壊**: 変更は論理単位ごとの commit に分離し、revert 可能な状態を保つ。push はユーザーの明示指示まで保留する
-2. **採用前レビュー必須**: consolidation の出力には hallucination が混入しうる。commit をユーザーがレビューしてから採用する（`{レビューモード}` が `standard` の場合は、その前段に Codex レビューループを挟む）
+2. **採用前レビュー必須**: consolidation の出力には hallucination が混入しうる。commit をユーザーがレビューしてから採用する（`{レビューモード}` が `standard` の場合は、その前段に独立レビューループ〔codex 系 / claude 系〕を挟む）
 3. **記憶の再編であって fine-tune ではない**: 変わるのは外部記憶のみ。モデルは変わらない
 
 ## Phase 0: 対象階層の確認（ゲート）
@@ -95,7 +100,7 @@ Dreams は人間の REM 睡眠による記憶定着のメタファ。過去セ�
   find notes -type f -name '*.md' | sort
   ```
 
-論理単位の編集が完了するたびに commit する（複数フェーズが同一ファイルを触るため、フェーズごとに commit を挟むとよい）。全フェーズ完了後、チェックリストで自己検証し、`{レビューモード}` が `standard` なら「Codex レビューループ」を実施してから、ユーザーへレビューを依頼する（push はしない）。
+論理単位の編集が完了するたびに commit する（複数フェーズが同一ファイルを触るため、フェーズごとに commit を挟むとよい）。全フェーズ完了後、チェックリストで自己検証し、`{レビューモード}` が `standard` なら「レビューループ（codex 系 / claude 系）」を実施してから、ユーザーへレビューを依頼する（push はしない）。
 
 ## 重複排除の判定ルール
 
@@ -116,7 +121,7 @@ Dreams は人間の REM 睡眠による記憶定着のメタファ。過去セ�
 
 ## チェックリスト
 
-ユーザーへレビューを依頼する前（`{レビューモード}` が `standard` の場合は Codex レビューループの前）に全項目を確認する:
+ユーザーへレビューを依頼する前（`{レビューモード}` が `standard` の場合はレビューループの前）に全項目を確認する:
 
 - [ ] 相対日付をすべて絶対日付へ変換した（基準日は git 履歴で特定。特定できないものは変換せずユーザー確認へ回した）
 - [ ] 上位が定めるルールを下位から削った（重複回避の注記自体も残していない）
@@ -129,19 +134,23 @@ Dreams は人間の REM 睡眠による記憶定着のメタファ。過去セ�
 - [ ] 変更を論理単位ごとに commit した（push はしていない）
 - [ ] ユーザーレビューを経てから採用する（dream 出力は hallucination 混入の懸念があるため鵜呑みにしない）
 
-## Codex レビューループ（--codex-review-loop）
+## レビューループ（--codex-review-loop / --claude-review-loop）
 
-`{レビューモード}` が `standard` の場合、チェックリストの自己検証後・ユーザーへのレビュー依頼前に実施する。別系統モデル（Codex）による独立レビューが目的のため、**Claude 自身が Codex のレビューを模擬・代行してはならない**。返ってきた指摘の採用 / 不採用（過剰対応かどうか）の判定は、レビュイーである Claude が行う。
+`{レビューモード}` が `standard` の場合、チェックリストの自己検証後・ユーザーへのレビュー依頼前に実施する。目的は **dream 実施の文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max）がレビューを担う。**Claude 自身（オーケストレーター）がレビューを模擬・代行してはならない**。返ってきた指摘の採用 / 不採用（過剰対応かどうか）の判定は、いずれの系統でもレビュイーである Claude（オーケストレーター）が行う。
 
-1. **レビュー取得** — [assets/codex-review-prompt.md](assets/codex-review-prompt.md) のテンプレートを埋め、Skill ツールで `codex:rescue` を呼び出す。Codex が dream の全差分（`git diff <開始時 HEAD>..HEAD`）を記憶階層の git 履歴と照合してレビューする
+1. **レビュー取得** — `{レビュー系統}` に応じて取得する:
+   - **codex 系** — [assets/codex-review-prompt.md](assets/codex-review-prompt.md) のテンプレートを埋め、Skill ツールで `codex:rescue` を呼び出す。Codex が dream の全差分（`git diff <開始時 HEAD>..HEAD`）を記憶階層の git 履歴と照合してレビューする
+   - **claude 系** — 雛形 `md-dream-review`（[references/agent-orchestration.md](references/agent-orchestration.md)）を Workflow ツールで起動する（1 起動 = 1 ラウンド。レビュー観点は codex 系と同一）。返却が `status: 'agent-failed'` の場合は 1 回だけ `resumeFromRunId` で再開し、それでも失敗ならフォールバック（claude 系）へ
 2. **妥当性判定** — 指摘を 1 件ずつ「採用 / 不採用」に分類する。不採用（妥当性がない・過剰対応・スコープ外）の理由は 1 行で記録する
 3. **修正** — 採用指摘を反映し、修正 commit を積む（既存 commit は書き換えない）
 4. **収束判定** — 採用が 0 件ならループ終了（収束）。1 件以上なら手順 5（上限チェック）へ進む（**必ず上限チェックを経由する**。直接手順 1 へ戻らない）
 5. **上限チェック** — ラウンド数が 3 の倍数（3, 6, …）に達したら、残指摘の要約を提示して AskUserQuestion で「続行 / 打ち切り / 中止」を確認する。達していなければラウンドを +1 して手順 1 へ戻る
 
-ループが収束・打ち切りとなっても、**ユーザーの採用前レビュー（原則 2）は省略しない**。レビュー依頼時にラウンド数・採用/不採用件数の要約を添える。
+ループが収束・打ち切りとなっても、**ユーザーの採用前レビュー（原則 2）は省略しない**。レビュー依頼時に系統・ラウンド数・採用/不採用件数の要約を添える。
 
-### フォールバック（codex:rescue 利用不能時）
+> claude 系の独立性は**コンテキスト隔離**で担保する（レビュワーは dream を実施していない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、利用できる環境では codex 系を推奨する。
+
+### フォールバック（codex 系: codex:rescue 利用不能時）
 
 以下のいずれかに該当する場合に実施する:
 
@@ -151,7 +160,14 @@ Dreams は人間の REM 睡眠による記憶定着のメタファ。過去セ�
 該当した場合:
 
 - Claude 自身でレビューを代行しない
-- 「Codex レビュー未実施」とユーザーに明示し、通常どおりユーザーの採用前レビューへ進む
+- claude 系へ勝手に切り替えない（ユーザーは別系統モデルのレビューを選んでいる）。「Codex レビュー未実施」とユーザーに明示し、必要なら `-cldrl` での再実行を案内して、通常どおりユーザーの採用前レビューへ進む
+
+### フォールバック（claude 系: Workflow 利用不能時）
+
+Workflow ツールが無い環境、または `resumeFromRunId` での再開後も `status: 'agent-failed'` の場合:
+
+- Claude 自身（オーケストレーター）でレビューを代行しない
+- 「Claude レビュー未実施」とユーザーに明示し、通常どおりユーザーの採用前レビューへ進む
 
 ## いつ実施するか
 
