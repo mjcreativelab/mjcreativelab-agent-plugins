@@ -267,5 +267,6 @@
   "showThinkingSummaries": true,
   "skipWorkflowUsageWarning": true,
   "autoUpdates": false,
-  "tui": "fullscreen"
+  "tui": "fullscreen",
+  "model": "claude-fable-5[1m]"
 }
