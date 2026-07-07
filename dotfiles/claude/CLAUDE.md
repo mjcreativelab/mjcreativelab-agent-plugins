@@ -4,6 +4,14 @@
 - Important: Think in English, interact with the user in Japanese.（思考は英語で行い、ユーザーとの対話・出力は日本語で行うこと）
 - 回答は常に日本語で行うこと（コード・コマンド・技術用語はそのままでOK）
 
+## Claude 標準ふるまいガイドライン（Opus / Sonnet 時のみ）
+- 環境コンテキストの「You are powered by the model named ...」で自分のモデルを判定し、**Opus または Sonnet 系のときに限り**、セッション開始時に `~/.claude/rules/claude-behavior-guidelines.md` を読み込み、その内容（product information / refusal handling / tone / user wellbeing / evenhandedness 等）を最終的なふるまい指針として遵守すること
+- **Opus / Sonnet 以外のモデル（Haiku / Fable 等）はこのファイルを読み込まない**（トークン節約のため参照不要）。上記ファイルへ自発的にアクセスしないこと
+
+## Fable 相当の開発判断ガイドライン（Opus / Sonnet 時のみ）
+- 環境コンテキストの「You are powered by the model named ...」で自分のモデルを判定し、**Opus または Sonnet 系のときに限り**、セッション開始時に `~/.claude/rules/fable-engineering-judgment.md` を読み込み、プログラム開発における思考・判断・検証・報告の規律（デバッグの認識論 / 検証してから主張する / テストの完全性 / 不確実性の申告 等）として遵守すること
+- **Opus / Sonnet 以外のモデル（Haiku / Fable 等）はこのファイルを読み込まない**（Fable は標準挙動と同内容のため冗長、Haiku はトークン節約のため参照不要）。上記ファイルへ自発的にアクセスしないこと
+
 ## Time Display
 - 日時は基本すべて JST（UTC+9）で表示すること。ソース（GitHub API / GCP ログ等）が UTC を返す場合は JST に変換し、曖昧になりうる場面では「(JST)」を併記する。ログのフィルタ条件など API に渡す値はソースのタイムゾーンのままでよい
 
@@ -90,6 +98,13 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 - React・Next.js・FastAPI・Tailwind など既知のライブラリでも参照する（学習データが古い可能性があるため）
 - リファクタリング・ビジネスロジック・一般的なプログラミング概念には使わない
 
+## DESIGN.md（デザインシステム仕様）
+- UI / フロントエンド作業では、プロジェクトルートの `DESIGN.md` を確認すること
+- 存在する場合は YAML フロントマター（`colors` / `typography` / `spacing` / `components` トークン）と Markdown prose（設計の意図・Do/Don't）の両方に従う
+- **prose をトークン値より優先して解釈する**（「1970 年代の学術ハンドアウト風」という一文が値の列より多くを語る）
+- Lint: `npx @google/design.md lint DESIGN.md`、Tailwind v4 エクスポート: `npx @google/design.md export --format css-tailwind DESIGN.md`
+- DESIGN.md がないプロジェクトに UI を新規追加するときは、`npx @google/design.md spec` でフォーマット仕様を確認しファイル作成を提案する
+
 ## Claude in Chrome
 - Claude in Chrome（Chrome 拡張）はインストール済み。使った方が良いケースでは積極的に使うこと
 - 向いているケース: 実ブラウザでの UI / アニメーション確認、ログイン済みセッションが必要な Web ページの確認・操作、スクリーンショットによる見た目検証、Web アプリの動作検証
@@ -166,3 +181,5 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 - **Codex silent death からの復旧（resume が最効率）**: stall 確定後、transcript 末尾が `reasoning` / `function_call` で途切れていたら未完。companion の cancel（`/codex:cancel`）で stale ジョブを落とす → `task-resume-candidate` が `available: true` に復活 → `--resume` 付きで再投入する（コンテキストを引き継いで続きから実行されるため fresh 再実行より大幅に速い）。復旧 2 回で完了しなければ fresh または手動回収に切り替える
 - **Codex silent death の予防**: companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長いレビューが親側から切られる）。長時間が見込まれるタスクは `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
 - **Codex への PR レビュー依頼は diff 基準を `origin/main...HEAD` と明示**する。ローカル `main` は origin より古いことが多く、`main..HEAD` だとマージ済みの無関係変更を誤検出させる
+- **`codex:rescue` サブエージェントの Bash 許可が relay 拒否されるとき**: companion `task` を呼ぶサブエージェントの Bash が許可ゲートで止まり、承認要求テキストを返して終了することがある（SendMessage 不在で継続不可）。回避は **main ループから companion を直接実行**: `node "<plugin>/codex-companion.mjs" task "$(cat /tmp/prompt.md)"`（Bash tool の timeout を 600000 に明示。プロンプトは `"$(cat file)"` で渡すとバッククォート・特殊文字がリテラル保持される）。companion は Codex を同期実行しレビュー結果を inline 返却する。ループ各ラウンドは fresh thread で `task` を都度呼べばよい
+- **`smart-commit` / `smart-pr` は `disable-model-invocation`**: Skill ツール（モデル発火）からは呼べず `cannot be used with Skill tool due to disable-model-invocation` で失敗する。`smart-issue-resolve --codex-review-loop` / `--codex-advs-review-loop`（旧 `-codex-loop`）等が「収束後にコミット/PR を自動実行」する局面では、`git` / `gh` で直接コミット・PR する（プロジェクトの git-conventions ＝ conventional commit・closing keyword 不使用・作成者アサインに従う）。ユーザーが手動で `/smart-commit` `/smart-pr` を打つ経路は従来どおり有効

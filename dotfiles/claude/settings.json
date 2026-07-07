@@ -72,11 +72,27 @@
       "Bash(echo \"EXIT_ESLINT=$?\")",
       "Bash(mkdir -p .claude/tmp && echo \"ok\")",
       "Bash(git rm *)",
-      "Bash(gh issue *)"
+      "Bash(gh issue *)",
+      "Edit(/.claude/skills/avatar-quality-review/**)",
+      "Edit(/.claude/skills/avatar-tuning/**)",
+      "Edit(/.claude/skills/vto-api-reference/**)",
+      "Bash(pkill -f \"pnpm install --force\")",
+      "Bash(/tmp/actionlint .github/workflows/license-check.yml)",
+      "Bash(echo \"=== EXIT=$? ===\")",
+      "Bash(NODE_OPTIONS= uvx --from licensecheck licensecheck --version)",
+      "Bash(NODE_OPTIONS= uvx --from licensecheck==9999 licensecheck --version)",
+      "Bash(NODE_OPTIONS= uvx --from licensecheck==2025.1.0 licensecheck --format json --requirements-paths pyproject.toml)",
+      "Bash(echo \"exit=$? ; json bytes=$\\(wc -c < /tmp/lc-2025.json\\)\")",
+      "Bash(echo \"=== WATCH EXIT=$? ===\")",
+      "Bash(cd ~/Work/RD_PoC/VTO/00.VTO_PRODUCT_IDEAS/bs-vto-app-event-display *)",
+      "Bash(echo \"=== EXIT: $? \\(空なら該当なし\\) ===\")",
+      "Bash(export CLOUDSDK_PYTHON=~/.local/share/mise/installs/python/3.12.13/bin/python)",
+      "Bash(export CLOUDSDK_PYTHON=~/.local/share/mise/installs/python/3.14.6/bin/python)"
     ],
     "additionalDirectories": [
       "~/.claude/plugins/cache/mjcreativelab-agent-prompts/mjc-git-workflow-tools/1.1.6/skills/smart-git-sync/assets",
-      "~/Work/RD_PoC/VTO/00.VTO_PRODUCT_IDEAS/bs-vto-app-event-display/.claude/tmp"
+      "~/Work/RD_PoC/VTO/00.VTO_PRODUCT_IDEAS/bs-vto-app-event-display/.claude/tmp",
+      "/tmp"
     ]
   },
   "hooks": {
@@ -196,7 +212,9 @@
     "awslabs-cloudwatch@zozo-claude-plugins": true,
     "playwright@zozo-claude-plugins": true,
     "near-fashion-business-ideation@new-product-marketplace": true,
-    "near-fashion-business-ops@new-product-marketplace": true
+    "near-fashion-business-ops@new-product-marketplace": true,
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "coding@new-product-marketplace": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -225,9 +243,29 @@
         "repo": "openai/codex-plugin-cc"
       },
       "autoUpdate": true
+    },
+    "zozo-claude-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "st-tech/zozo-claude-code-plugins"
+      }
+    },
+    "new-product-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "st-tech/new-product-claude-cookbook"
+      }
+    },
+    "karpathy-skills": {
+      "source": {
+        "source": "github",
+        "repo": "forrestchang/andrej-karpathy-skills"
+      }
     }
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "max",
   "showThinkingSummaries": true,
-  "skipWorkflowUsageWarning": true
+  "skipWorkflowUsageWarning": true,
+  "autoUpdates": false,
+  "tui": "fullscreen"
 }
