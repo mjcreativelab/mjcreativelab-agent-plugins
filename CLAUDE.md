@@ -46,12 +46,14 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 - PR・Issue 作成時は作成者を自動アサインする（GitHub MCP の `get_me` または `gh api user` で取得した GitHub ユーザー名を使用）
 - Issue 作成時は内容に適した既存ラベルを付与する
 - **Issue 作成は GitHub MCP ツール (`issue_write`) を使用する**（ラベル付与・アサインも同ツールで行う）
+- コミット・PR に closing keyword は使わない（Issue はマージ後に手動クローズする）。実装済みでも Issue が open のまま残ることがあるため、Issue 着手前にマージ済み PR がその番号を参照していないか確認し、解決済みなら検証コメントを添えてクローズする（例: #69 / #72 は PR #73 で実装済みのまま open だった）
 
 > 上記規則は `smart-commit` / `smart-issue-plan` / `smart-issue-resolve` / `smart-pr` の各 SKILL.md にも内蔵されている（`npx skills` 経由でインストールされた利用者がプロジェクト外ファイルを参照できないため）。本リポジトリで作業する際は CLAUDE.md（本セクション）が一次情報源。
 
 ## 記述ルール
 
 - ファイルパスにユーザー名を含めない。ホームディレクトリは `/Users/<name>/` ではなく `~/` で表記する（SKILL.md・コメント・ドキュメント・コミットメッセージ・PR 本文のいずれも同様）
+- 実装ノートは `docs/implementation-notes/YYYY-MM-DD-<タスクスラグ>.md` に作成し、変更と同じ PR でコミットする。ルート直下に `implementation-notes.md` を残さない（誤コミット防止のため .gitignore で除外済み）
 
 ## よく使うコマンド
 
@@ -76,6 +78,10 @@ head -5 skills/<skill-name>/SKILL.md
 # git pull が "unable to update local ref" で失敗した場合の復旧（マージ直後に発生することがある）
 # 注意: reset --hard は未コミット変更を破棄する。実行前に git status --short で clean を確認すること
 git update-ref refs/remotes/origin/main <merge-sha> && git reset --hard <merge-sha>
+
+# Workflow 雛形（references/agent-orchestration.md の js ブロック）の構文チェック
+# 正規表現・グロブ文字を含むため zsh 直打ちせず bash スクリプトファイル（または bash /dev/stdin）経由で実行する
+CHECKDIR=$(mktemp -d) && awk -v dir="$CHECKDIR" '/^```js$/{f=1; n++; next} /^```$/{f=0} f{print > (dir "/block-" n ".js")}' skills/<skill>/references/agent-orchestration.md && for b in "$CHECKDIR"/block-*.js; do { echo 'void (async () => {'; sed 's/^export const meta/const meta/' "$b"; echo '})'; } > "$b.wrapped.js"; mise exec node -- node --check "$b.wrapped.js" && echo "OK: $(basename "$b")"; done
 ```
 
 ## リポジトリ構造
@@ -115,7 +121,7 @@ dotfiles/                        # ホストマシンのグローバル設定（
     settings.json                # グローバル設定（hooks・permissions・statusLine・plugins 等）
     statusline-command.sh        # ステータスライン表示スクリプト
     rules/                       # CLAUDE.md から条件読み込みされる外部参照ルール（ふるまい・開発判断ガイドライン）
-docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
+docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/、implementation-notes/〔実装ノートのアーカイブ〕等）
 ```
 
 `skills/<skill>/` が配布 skill の唯一の正本（直接編集）。skill 名はリポジトリ全体で一意。スキルの説明・使用例・前提条件は各 `skills/<skill>/README.md` に書く（npx install でスキルと一緒に配布される）。旧 `packages/`（グループ README）は per-skill README と重複・陳腐化したため v2.0.2 で解体済み。
@@ -241,6 +247,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
   - `code-reviewer/references/agent-orchestration.md` — `--isolated` の単発隔離レビュー（`cr-isolated-review`）
   - `code-reviewer-adversarial/references/agent-orchestration.md` — `--claude-judge` の Breaker×Judge（`cra-claude-judge`）
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。
+- Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（2026-07-07 実測。#76 で雛形へのシム恒久化を追跡）。恒久化までは、起動するスクリプトの冒頭に `const $a = typeof args === 'string' ? JSON.parse(args) : (args || {})` を挿入し、`args.` 参照を `$a.` に置換してから起動する
 
 ## 新規スキル追加手順
 

@@ -7,3 +7,6 @@ node_modules/
 !**/tmp/.gitkeep
 docs/superpowers/
 .serena/
+
+# 実装ノートは docs/implementation-notes/ へ（ルート直下の旧方式ファイルは誤コミット防止で除外）
+/implementation-notes.md
