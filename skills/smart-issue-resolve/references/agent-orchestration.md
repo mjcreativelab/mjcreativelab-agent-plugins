@@ -351,7 +351,7 @@ const breakerPrompt = (round, auditNote) => `あなたは Breaker である。Gi
 2. ${diffNote}（ラウンド ${round}）
 ${prior()}${auditNote}
 ## 攻撃観点（横断する）
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出・Confused Deputy（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
 - 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
 - 回帰: 既存挙動・呼び出し元の破壊
 - 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
@@ -550,7 +550,7 @@ const breaker = await agent(`あなたは Breaker である。GitHub Issue #${ar
 2. ${diffNote}（ラウンド ${args.round}）
 ${args.priorSummary ? `\n## 前ラウンドまでの経緯\n${args.priorSummary}\n` : ''}${auditNote}
 ## 攻撃観点(横断する)
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
+- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出・Confused Deputy（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
 - 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
 - 回帰: 既存挙動・呼び出し元の破壊
 - 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
