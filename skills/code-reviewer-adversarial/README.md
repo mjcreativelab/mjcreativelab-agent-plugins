@@ -37,6 +37,7 @@
 /code-reviewer-adversarial main..HEAD                        # 現在ブランチの全コミット
 /code-reviewer-adversarial src/api/ -p N+1
 /code-reviewer-adversarial --test "pnpm test" feature/add-foo
+/code-reviewer-adversarial 42 --claude-judge                 # Judge も独立 Sonnet（Codex 不要）
 ```
 
 ## オプション
@@ -45,6 +46,7 @@
 | ----------------- | ---------------------------------------------------------- |
 | `--test <cmd>`    | 反例テスト実行に使うコマンド（自動検出より優先）           |
 | `-p <プロンプト>` | Breaker persona に追加注入する重点観点（例: `N+1`、`TOCTOU`）|
+| `--claude-judge`  | Judge を Codex ではなく独立 Sonnet エージェントにする claude-judge モード（Codex 不在時は自動フォールバック・Workflow 前提）|
 
 ## フェーズ構成
 
@@ -75,7 +77,7 @@
 | 低優先度   | 妥当だが重大度が低く、修正コストに見合わない                  | サマリに件数のみ                   |
 | ノイズ     | 反証不能・誤解・的外れ                                         | 除外（件数のみ報告）               |
 
-**Judge 利用不能時**（`codex:rescue` 未設定、または silent death から復旧不能等）は Phase 2 で停止し、Phase 3 を出力しない。Claude 側で Judge 裁定を模擬・代行してはならない（別系統モデルによる独立裁定が本スキルの核のため）。ハング時は即停止せず、まず judge-prompt.md の運用ノートに従って復旧（cancel → `--resume` 再投入）を試みる。
+**Judge 利用不能時**（`codex:rescue` 未設定、または silent death から復旧不能等）は、**Workflow が使えれば claude-judge モード（独立 Sonnet Breaker × Judge）に自動フォールバック**し、使えなければ Phase 2 で停止して Phase 3 を出力しない。いずれの場合も Claude（メインセッション）が Judge 裁定を模擬・代行してはならない（別系統モデルまたは隔離エージェントによる独立裁定が本スキルの核のため）。ハング時は即停止・フォールバックせず、まず judge-prompt.md の運用ノートに従って復旧（cancel → `--resume` 再投入）を試みる。
 
 ### Phase 3 — 最終出力
 
@@ -89,10 +91,20 @@
 - 識別マーカー `<!-- claude-code-review:code-reviewer-adversarial -->` を先頭に付与
 - approve / request_changes は人間レビュアーに残す
 
+## claude-judge モード（--claude-judge / Codex 不在時の自動フォールバック）
+
+`--claude-judge` を付けると、Judge を Codex ではなく **独立 Sonnet エージェント**にする。Breaker も独立 Sonnet エージェントになり、Phase 1・2 を **Workflow で起動する 2 体のエージェント**が単発で担う（プロンプトは smart-issue-resolve の claude 系レビューから移植）。`codex:rescue` が使えない環境で Judge 利用不能になったときも、Workflow が使えれば自動でこのモードにフォールバックする。
+
+- 独立性は **コンテキスト隔離 + 役割分離**で担保する（Breaker と Judge は互いに相手の思考を持たない fresh エージェント）。別系統モデル（Claude × Codex）の独立性はないため、**認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更ではデフォルトの codex-judge（実 Codex）を推奨**する
+- 単発（ループ・収束判定は持たない）。Phase 0・Phase 3・Phase 4 は codex-judge と共通で再利用する
+- `--claude-judge` を明示せず Codex が使えるなら、デフォルトは codex-judge（別系統モデルの独立性を優先）
+- Workflow ツールが前提。Workflow も Codex も使えない場合は Phase 2 で停止する（Claude が Judge を代行しない原則は維持）
+
 ## 前提条件
 
 - Git リポジトリ内で実行すること（差分取得・現在ブランチ判定・`origin` の解決に `git` CLI を使用）
-- `codex:rescue` スキルが呼び出し可能な環境（Codex CLI 設定済み）
+- `codex:rescue` スキルが呼び出し可能な環境（Codex CLI 設定済み）— デフォルトの codex-judge モードに必須。不在時は `--claude-judge` / 自動フォールバックで Workflow に切り替わる
+- `--claude-judge` モード（および Codex 不在時の自動フォールバック）には **Workflow ツール（Claude Code 本体機能）** が必要。Workflow も Codex も無い場合は Judge 裁定が得られず Phase 2 で停止する
 - `--test` 指定 or 自動検出可能なテストランナー（なければ「テスト記述のみモード」にフォールバック）
 - PR を対象にする場合（PR 番号指定での diff 取得・ブランチの open PR 検出・PR への投稿）は GitHub MCP の接続（投稿には書き込み権限も必要）
 

@@ -225,7 +225,7 @@ return { status: 'ok', impl, qa, designed: design !== null, archFindings: arch.i
 1 セット = 最大 3 ラウンド。「レビュー（標準: レビュワー / 敵対: Breaker→Judge）→ 開発者の採用判定・修正・テスト」を収束（採用 0 件）まで回し、収束時はセット内で最終 QA まで実施して返る。3 ラウンドごとの続行確認はオーケストレーターがセット間に行う。
 
 `args`: `{ workDir, issueNumber, branch, defaultBranch, mode, startRound, priorSummary, securityAudit, securityReason }`
-（`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true）
+（`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。監査役プロンプトに埋め込まれるため `securityAudit: true` のときは必ず渡す）
 
 ```js
 export const meta = {
@@ -484,12 +484,14 @@ return { converged, status, records, finalQa, specQuestions, auditFailed }
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
 
 > **同期ノート**: 雛形 B（`sir-claude-review-set`）の構造は `smart-issue-plan/references/agent-orchestration.md` の計画レビューセット雛形（`sip-plan-review-set`）へ移植済み。セット制御（`startRound` / `priorSummary` / `records`）・収束判定・null ガード・`auditFailed` / `specQuestions` の経路を**両者で同期する**（片方の構造を変えたら両方更新すること）。plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる。
+>
+> また、雛形 B の `reviewerPrompt` / `breakerPrompt` / `judgePrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。観点・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も同期する。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
 
 ## 雛形 C: codex 敵対モードの Breaker（sir-codex-breaker）
 
 codex 敵対モード（--codex-advs-review-loop / セキュリティ自動発動）のラウンドで、Judge（Codex）に渡す反例を独立 Sonnet エージェントが生成する。1 ラウンド 1 起動。
 
-`args`: `{ workDir, issueNumber, branch, defaultBranch, round, priorSummary, securityAudit, securityReason }`（`securityAudit` はセキュリティ自動発動時のラウンド 1 のみ true）
+`args`: `{ workDir, issueNumber, branch, defaultBranch, round, priorSummary, securityAudit, securityReason }`（`securityAudit` はセキュリティ自動発動時のラウンド 1 のみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。監査役プロンプトに埋め込まれるため `securityAudit: true` のときは必ず渡す）
 
 ```js
 export const meta = {

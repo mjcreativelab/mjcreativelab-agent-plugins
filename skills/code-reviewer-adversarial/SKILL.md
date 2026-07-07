@@ -1,8 +1,9 @@
 ---
 name: code-reviewer-adversarial
-description: Breaker（Claude）× Judge（Codex）の二者構造で、反例生成とテスト実行により「本当の欠陥」のみを抽出する敵対的コードレビュー。重要変更・最終ゲート・見逃したくない場面に使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。通常のレビューは /code-reviewer を使うこと。
-argument-hint: "[<PR番号|branch|ref..ref|path>] [--test <cmd>] [-p <重点観点>]"
+description: Breaker（Claude）× Judge（Codex）の二者構造で、反例生成とテスト実行により「本当の欠陥」のみを抽出する敵対的コードレビュー。重要変更・最終ゲート・見逃したくない場面に使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。--claude-judge で Breaker・Judge を独立 Sonnet エージェント（コンテキスト隔離）にした claude-judge モードも使える（Codex 不在時は自動でこのモードにフォールバック・Workflow 前提）。通常のレビューは /code-reviewer を使うこと。
+argument-hint: "[<PR番号|branch|ref..ref|path>] [--test <cmd>] [-p <重点観点>] [--claude-judge]"
 disable-model-invocation: true
+allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Skill, Workflow
 ---
 
 # 敵対的コードレビュー（Breaker × Judge）
@@ -21,7 +22,8 @@ disable-model-invocation: true
 
 1. `-p` がある場合 → `-p` より後の部分を `{重点観点}` として保持する（Breaker persona に追加注入する）
 2. `--test <cmd>` がある場合 → 以降の1トークンを `{テストコマンド}` として保持する（自動検出より優先）
-3. 残りの最初の位置引数を `{対象}` として解析する
+3. `--claude-judge` がある場合 → `{claude judge}` = true を立て、該当トークンを除去する（「## claude-judge モード」参照）
+4. 残りの最初の位置引数を `{対象}` として解析する
 
 ### `{対象}` の判別順
 
@@ -118,19 +120,22 @@ Judge には **分類理由** と **修正コスト見積（S/M/L）** を必ず
 
 #### Judge 利用不能時のフォールバック
 
-以下のいずれかに該当する場合、**Phase 2 で停止し、Phase 3 を出力しない**:
+Codex（`codex:rescue`）が Judge として使えないケース:
 
 - **呼び出し不能** — `codex:rescue` が呼び出せない環境（Codex CLI 未設定・ネットワーク断・サブエージェント内実行など）
 - **復旧不能なハング** — 呼び出し済みの裁定が返らず（silent death）、[assets/judge-prompt.md](assets/judge-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる）
 
-次の 2 点をユーザーに提示して終了する:
+分岐:
 
-1. Breaker 報告書（Phase 1 の成果物をそのまま）
-2. 完成した Judge 呼び出し用 task 文字列（`assets/judge-prompt.md` に従って埋めたもの）
+- **Workflow 利用可** → **claude-judge モードに自動でフォールバックする**（「## claude-judge モード」）。独立 Sonnet の Breaker × Judge で裁定するため、`codex:rescue` 未設定の環境でもレビューを完遂できる。ただしこれは別系統モデルの独立ではなくコンテキスト隔離 + 役割分離であるため、認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更では実 Codex での再実行を推奨する旨を 1 行明示する。**フォールバック前に、Phase 1（codex-judge の Breaker）が変更セットに残した `.breaker-probe.` を含む反例テストを取り除く**（`{テストコマンド}` が確定していると claude-judge の Breaker がそれらを再実行し、Phase 1 由来の failing テストを自身の検証済み反例〔verified: fail〕として誤帰属・二重計上するため）
+- **Workflow も不能** → **Phase 2 で停止し、Phase 3 を出力しない**。次の 2 点をユーザーに提示して終了する:
+  1. Breaker 報告書（Phase 1 の成果物をそのまま）
+  2. 完成した Judge 呼び出し用 task 文字列（`assets/judge-prompt.md` に従って埋めたもの）
+  ユーザーが別セッションで codex:rescue を呼ぶか、環境を整えて再実行することを案内する。
 
-Claude 側で Judge 裁定を模擬・代行してはならない（共犯化を回避するため、別系統モデルによる独立裁定が本スキルの核）。ユーザーが別セッションで codex:rescue を呼ぶか、環境を整えて再実行することを案内する。
+いずれの場合も **Claude 自身（メインセッション）が Judge 裁定を模擬・代行してはならない**（共犯化を回避するため、別系統モデルまたは隔離エージェントによる独立裁定が本スキルの核）。
 
-**このケースでは書き出しモードも自動的に無効化する**。Breaker 単独結果を PR に投稿すると共犯化回避の原則が崩れるため、投稿ゲート（Phase 4）まで到達させない。
+**Workflow も不能で停止したケースでは書き出しモードも自動的に無効化する**。Breaker 単独結果を PR に投稿すると共犯化回避の原則が崩れるため、投稿ゲート（Phase 4）まで到達させない（claude-judge にフォールバックできた場合は Judge 裁定が得られるため書き出しモードは有効なまま）。
 
 ### Phase 3 — 最終出力
 
@@ -168,6 +173,24 @@ Judge の修正コスト（S/M/L）と重大度から、着手順序の提案を
 書き出しモードが **有効** の場合に限り、Phase 3 の最終出力を PR へ投稿する。無効なら Phase 3 の出力後にスキルを終了する。Phase 2 のフォールバック（Judge 利用不能）で Phase 3 を出さなかった場合もここには到達しない。
 
 フロー・投稿ツール・本文テンプレート・確認ゲート UX・フォールバックは `## PR 書き出しモード` に従う。
+
+## claude-judge モード（--claude-judge / Codex 不在時の自動フォールバック）
+
+`{claude judge}` = true のとき、または Codex が使えず Workflow が使えるとき（「Judge 利用不能時のフォールバック」）、Phase 1（Breaker）と Phase 2（Judge）を **Workflow で起動する独立 Sonnet エージェント 2 体**に置き換える。Judge も別系統モデル（Codex）ではなく独立 Sonnet になるため、独立性は**コンテキスト隔離 + 役割分離**で担保する（別系統モデルの独立性はない → 認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更では実 Codex ＝デフォルトの codex-judge を推奨）。
+
+- **単発**（ループ・収束判定は持たない。このスキルはループスキルではない）。[references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cra-claude-judge`）を起動する:
+  1. **Breaker（独立 Sonnet / effort max）** — Phase 0 で確定した `{対象}` / diff の取り方 / `{テストコマンド}` / `{重点観点}` を `args`（`{ target, diffBase, testCmd, focus }`）で渡す。攻撃観点・反例テスト（`.breaker-probe.` 命名）の規律はプロンプトに内蔵（smart-issue-resolve 雛形 B の breakerPrompt からの移植）
+  2. **Judge（別の独立 Sonnet / effort max）** — Breaker の反例リストを実コードと照合し、4 カテゴリ（真の欠陥 / 仕様未定 / 低優先度 / ノイズ）に裁定する（雛形 B の judgePrompt からの移植・防御基準は同一）
+- Phase 0（前提把握・テストランナー確定・ゲート出力）、Phase 3（最終出力）、Phase 4（PR 投稿ゲート）は codex-judge と共通で再利用する。Workflow 返却の `items`（真の欠陥 / 仕様未定）・`dismissed`（低優先度 / ノイズの件数）を Phase 3 の構造に整形する。Phase 3 サマリの「Judge:」欄は `Codex (via codex:rescue)` の代わりに `独立 Sonnet エージェント（コンテキスト隔離）` と記す
+- Phase 3 の出力・Phase 4 の投稿の前に、`.breaker-probe.` を含む反例テストが変更セットに残っていれば取り除く（単発レビューの使い捨て。回帰テスト化するかは呼び出し元の判断）
+- `{claude judge}` を明示せず Codex が利用可能なら、デフォルトは codex-judge（別系統モデルの独立性を優先）
+- Workflow の `agent()` が `null`（ユーザースキップ / 終端エラー）を返した場合は 1 回だけ `resumeFromRunId` で再開を試み、それでも失敗なら「Judge 利用不能時のフォールバック」の停止ケース（Workflow も不能）と同様に扱う
+
+> **共犯化の回避**: claude-judge でも Breaker と Judge は**別々の** fresh エージェント（互いに相手の思考を持たない）。メインセッションがどちらかを模擬・代行しない。
+
+### 同期ノート
+
+claude-judge モードの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）は smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の breakerPrompt / judgePrompt からの移植である。攻撃観点・裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。
 
 ## PR 書き出しモード
 

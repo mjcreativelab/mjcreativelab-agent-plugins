@@ -1,8 +1,9 @@
 ---
 name: code-reviewer
-description: 実装されたコードを仕様整合・設計適合・可読性の観点でレビューする。PR / 変更差分のレビュー、コミット前のセルフレビューに使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。重要変更は Codex クロスチェックを推奨する。
-argument-hint: "[<PR番号|branch|ref..ref|path>]"
+description: 実装されたコードを仕様整合・設計適合・可読性の観点でレビューする。PR / 変更差分のレビュー、コミット前のセルフレビューに使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。重要変更は Codex クロスチェックを推奨する。--isolated でコンテキスト隔離した Sonnet（effort max）エージェントによる単発レビューも可能（Workflow 前提・不能時はメインセッションに degrade）。
+argument-hint: "[<PR番号|branch|ref..ref|path>] [--isolated]"
 disable-model-invocation: true
+allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 ---
 
 # コードレビュー
@@ -11,7 +12,10 @@ disable-model-invocation: true
 
 ## 引数の解析
 
-`$ARGUMENTS` の最初の位置引数を `{対象}` として解析する。本スキルは位置引数のみを受け取り、`-p` / `--test` 等のオプション（`code-reviewer-adversarial` 用）が混じっていても無視してよい（警告や `AskUserQuestion` は不要）。
+`$ARGUMENTS` を解析する:
+
+- `--isolated`（または `-iso`）があれば `{隔離モード}` = true を立て、該当トークンを除去する（「## エージェント隔離モード（--isolated）」参照）。無ければ `{隔離モード}` = false（現行どおりメインセッションでレビューする）
+- 残りの最初の位置引数を `{対象}` とする。`-p` / `--test` 等のオプション（`code-reviewer-adversarial` 用）が混じっていても無視してよい（警告や `AskUserQuestion` は不要）
 
 | 判定 | 解釈 | 書き出しモード |
 |---|---|---|
@@ -44,6 +48,22 @@ disable-model-invocation: true
 4. **観点別チェック** — `## 観点` 節の 6 観点（仕様整合 / 設計適合 / 可読性 / テスト / オーバーエンジニアリング / 横断影響）で確認する
 5. **指摘の出力** — `## 出力フォーマット` に従い指摘を整理し、チャットに表示する
 6. **PR 投稿ゲート** — 書き出しモードが有効なら `## PR 書き出しモード` に従い、本文を生成・投稿する。無効ならここで終了する
+
+`{隔離モード}` = true のときは、手順 4（観点別チェック）を「## エージェント隔離モード（--isolated）」に従って隔離エージェントに委ねる（手順 1〜3・5〜6 はオーケストレーターが担う）。
+
+## エージェント隔離モード（--isolated）
+
+`{隔離モード}` = true のとき、手順 4（観点別チェック）を**メインセッションではなく Workflow で起動する単発レビューエージェント**（sonnet / effort max・コンテキスト隔離）に委ねる。会話・実装の文脈によるバイアスを排除した独立レビューが欲しい場合に使う。
+
+- **Workflow 利用可** → [references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cr-isolated-review`）を起動する。手順 1 で確定した `{対象}` と diff の取り方を `args`（`{ target, diffBase, focus }`）で渡し、エージェントが自分で diff を取得して本スキルの 6 観点でレビューし、5 区分の markdown を返す。オーケストレーター（メインセッション）が返却を受け取り、手順 5（出力）・手順 6（PR 投稿ゲート）を通常どおり実施する（**投稿・コミットはオーケストレーターの責務**。エージェントにはさせない）
+- **Workflow 不能**（他エージェント・旧バージョン等）→ メインセッションでの通常レビュー（手順 4）に **degrade** し、その旨を 1 行明示する
+- `{隔離モード}` = false（デフォルト）→ 現行どおりメインセッションでレビューする（会話コンテキストを活用する）
+
+> 隔離コンテキストでの独立監査は `code-reviewer` subagent でも得られるが、そちらは effort を指定できない。`--isolated` は Workflow の `agent()` で effort max を指定でき、本スキルの PR 投稿ゲートもそのまま使える点が異なる。
+
+### 同期ノート
+
+本モードの隔離レビュー観点（6 観点のうち可読性を除いた実装欠陥系の骨格）は、smart-issue-resolve 雛形 B（`sir-claude-review-set`）の reviewerPrompt と共通の骨格を持つ。この骨格は本ファイルの `cr-isolated-review` を含む複数スキルへ意図的に二重化されている。骨格を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（`cr-isolated-review` を含む 4 スキル）をすべて同期する。可読性を観点に含めるかは各スキルの identity として意図的に異なる（本スキルは含む）。
 
 ## 観点
 - **仕様整合**: 要件・設計ドキュメントとの一致

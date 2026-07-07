@@ -66,6 +66,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - PR 本文のレビュアー向け補足に `🤖 Codex レビュー済み（…）` / `🤖 Claude レビュー済み（…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Sonnet…）` を記載する
 - `codex:rescue` が使えない環境では Claude がレビュー・裁定を代行せず、従来の完了案内（コミット・PR は手動）にフォールバックする（レビュー済み表記なし）。ただしセキュリティ自動発動のケースに限り claude 敵対レビューで代替する。claude 系が使えない（Workflow なし）場合も同様に代行せずフォールバックする
 - 実装とは独立に敵対的レビューだけ行いたい場合は `/code-reviewer-adversarial` を直接使う
+- claude 系レビューのレビュワー・Breaker・Judge プロンプトは `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へも移植されている（`smart-issue-plan` の `sip-plan-review-set` も同骨格の変種）。観点・裁定基準を変えるときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（4 スキル）をすべて同期する
 
 ## 関連スキル
 
