@@ -128,7 +128,6 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 #### 1. 要件確認 & 設計
 - 主担当: **Claude Code**（あるべき設計・仕様の言語化）
 - skill: `/software-architect`
-- 実装観点レビュー: **Codex**（既存コードベースでの成立性・変更影響）
 - 補助: Cursor（手元で設計メモを開きながら検証）
 
 #### 2. 実装（タスク特性で振り分け）
@@ -142,17 +141,13 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 - skill: `/code-reviewer`（通常利用）
 - agent: `code-reviewer`（コンテキスト隔離での独立監査が必要な場合のみ）
 - **横断影響の検出**: Codex 実装後、skills・設定・関連ドメインへの影響漏れがないか確認する
-- クロスチェック（重要変更のみ）: **Codex**（別系統モデルによる相互監査）
 - 補助観点: Gemini（セカンドオピニオン・必要時）
-- 「重要変更」の例: 認証・決済・データスキーマ・外部API変更
 - 横断影響漏れ発見時は Cursor で追加対応
-- **どの作業においても、最終ステップとして必ず Codex によるレビューを実施する**
 
 #### 4. セキュリティチェック
 - 脅威モデル・認可・データフロー・設計リスク: **Claude Code**
 - skill: `/security-auditor`（通常利用）
 - agent: `security-auditor`（コンテキスト隔離での独立監査が必要な場合のみ）
-- 実装レベルの危険箇所（インジェクション・秘密情報・依存脆弱性）: **Codex**
 - 盲点の補完・別系統の観点追加: **Gemini**
 - 単一モデル集中を避け、役割で分割する
 
@@ -175,11 +170,9 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 ### 運用上の注意
 - **Codex の横断影響の制約**: Codex は渡されたタスク範囲内で動き、`.claude/` 配下（skills・agents・rules）や他ドメインの連動更新を自発的に行わない。これがタスク特性による振り分けの根拠
 - タスク振り分けは設計フェーズで Claude Code が判断する。判断が微妙な場合は Codex に出してレビューで検出する
-- クロスチェック発動基準（「重要変更」の定義）はプロジェクト側で具体化する
 - Gemini に主担当を持たせない。マルチモーダル検証や観点追加に限定する
 - **Codex の非同期実行と結果回収**: `codex:rescue` 経由のレビュー/タスクは非同期実行になり得る。companion のジョブレジストリ（`status`/`result`）は拡張機能アップデートで `direct startup` にリセットされ結果を失うことがあるが、Codex CLI 本体の rollout transcript `~/.codex/sessions/YYYY/MM/DD/rollout-*-<threadId>.jsonl`（最終 `agent_message` / `task_complete`）から回収できる。stall 判定は `updatedAt` 固定（`elapsed` は進行）+ `kill -0 <pid>` + ログ mtime で確認する
 - **Codex silent death からの復旧（resume が最効率）**: stall 確定後、transcript 末尾が `reasoning` / `function_call` で途切れていたら未完。companion の cancel（`/codex:cancel`）で stale ジョブを落とす → `task-resume-candidate` が `available: true` に復活 → `--resume` 付きで再投入する（コンテキストを引き継いで続きから実行されるため fresh 再実行より大幅に速い）。復旧 2 回で完了しなければ fresh または手動回収に切り替える
 - **Codex silent death の予防**: companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長いレビューが親側から切られる）。長時間が見込まれるタスクは `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
-- **Codex への PR レビュー依頼は diff 基準を `origin/main...HEAD` と明示**する。ローカル `main` は origin より古いことが多く、`main..HEAD` だとマージ済みの無関係変更を誤検出させる
 - **`codex:rescue` サブエージェントの Bash 許可が relay 拒否されるとき**: companion `task` を呼ぶサブエージェントの Bash が許可ゲートで止まり、承認要求テキストを返して終了することがある（SendMessage 不在で継続不可）。回避は **main ループから companion を直接実行**: `node "<plugin>/codex-companion.mjs" task "$(cat /tmp/prompt.md)"`（Bash tool の timeout を 600000 に明示。プロンプトは `"$(cat file)"` で渡すとバッククォート・特殊文字がリテラル保持される）。companion は Codex を同期実行しレビュー結果を inline 返却する。ループ各ラウンドは fresh thread で `task` を都度呼べばよい
 - **`smart-commit` / `smart-pr` は `disable-model-invocation`**: Skill ツール（モデル発火）からは呼べず `cannot be used with Skill tool due to disable-model-invocation` で失敗する。`smart-issue-resolve --codex-review-loop` / `--codex-advs-review-loop`（旧 `-codex-loop`）等が「収束後にコミット/PR を自動実行」する局面では、`git` / `gh` で直接コミット・PR する（プロジェクトの git-conventions ＝ conventional commit・closing keyword 不使用・作成者アサインに従う）。ユーザーが手動で `/smart-commit` `/smart-pr` を打つ経路は従来どおり有効
