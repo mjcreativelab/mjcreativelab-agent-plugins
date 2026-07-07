@@ -114,6 +114,7 @@ dotfiles/                        # ホストマシンのグローバル設定（
     CLAUDE.md                    # グローバル Claude Code 指示ファイル
     settings.json                # グローバル設定（hooks・permissions・statusLine・plugins 等）
     statusline-command.sh        # ステータスライン表示スクリプト
+    rules/                       # CLAUDE.md から条件読み込みされる外部参照ルール（ふるまい・開発判断ガイドライン）
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/ 等）
 ```
 
@@ -130,7 +131,7 @@ docs/                            # 設計・移行ドキュメント（migration
 
 - 内部 skill（リポジトリ自身の運用用。例: `auto-release`）は **`internal/<skill>/` に置く**（npx の標準探索ルート外のため、リモート探索にも `--skill '*'` にも含まれない）。保険として frontmatter に `metadata.internal: true` も付ける（標準ルートに置かれても `--list` から隠れる）。
   - **`skills/` や `.claude/skills/` には置かない**: どちらも npx リモート探索の優先ルートで、internal flag があっても `--skill '*'` で install されてしまう（v2.0.1 では `skills/` に置いていた）。
-  - ローカルでこのリポジトリ自身に `/auto-release` を使う場合は `npx skills add ./internal/auto-release --skill auto-release -g` で global install して呼ぶ（auto-release 改修時は同コマンドで再 add）。
+  - ローカルでこのリポジトリ自身に internal skill（`/auto-release`・`/global-config-pull`・`/global-config-push`）を使う場合は `npx skills add ./internal/<skill> --skill <skill> -g` で global install して呼ぶ（skill 改修時は同コマンドで再 add）。`internal/` は探索ルート外のため、リポジトリに置くだけではスラッシュコマンドとして認識されない。
 - 配布先に symlink を作らない。skill 内のサポートファイル参照は `${CLAUDE_SKILL_DIR}` ではなく SKILL.md からの相対パスを基本にすると各エージェントで解決しやすい。
 - npx のデフォルト探索は浅い（全階層走査は `--full-depth`）。
 - **`@` は ref ではなく skill フィルタ**: `owner/repo@X` の `@X` は `--skill X` 相当（CLI v1.5.9 の source-parser で確認）。バージョン pin は fragment 構文 **`owner/repo#v<X.Y.Z>`**（zsh ではソース全体を引用符で囲む。`#ref@skill` の複合も可）。`#ref` は探索・install に効き、lock（skills-lock.json）に `ref` が記録され `npx skills update` も pin に従う。ただし blob fast path（skills.sh download API）が ref を渡さない既知問題があり（[vercel-labs/skills#1123](https://github.com/vercel-labs/skills/pull/1123) で修正中）、ref の中身の権威確認は `git ls-tree -r origin/<ref> --name-only` で行う。

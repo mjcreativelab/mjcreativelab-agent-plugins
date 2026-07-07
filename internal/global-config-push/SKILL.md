@@ -14,6 +14,7 @@ metadata:
 - `dotfiles/claude/CLAUDE.md` → `~/.claude/CLAUDE.md`
 - `dotfiles/claude/settings.json` → `~/.claude/settings.json`
 - `dotfiles/claude/statusline-command.sh` → `~/.claude/statusline-command.sh`
+- `dotfiles/claude/rules/*.md` → `~/.claude/rules/`（CLAUDE.md から条件読み込みされる外部参照ルール一式）
 
 ## 手順
 
@@ -22,6 +23,7 @@ metadata:
    diff dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md
    diff dotfiles/claude/settings.json ~/.claude/settings.json
    diff dotfiles/claude/statusline-command.sh ~/.claude/statusline-command.sh
+   diff -r dotfiles/claude/rules ~/.claude/rules
    ```
    差分サマリを日本語で提示し、ユーザーに反映の意思を確認する（`AskUserQuestion` を使う）。
 
@@ -31,6 +33,7 @@ metadata:
    cp ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak.${TS}
    cp ~/.claude/settings.json ~/.claude/settings.json.bak.${TS}
    cp ~/.claude/statusline-command.sh ~/.claude/statusline-command.sh.bak.${TS} 2>/dev/null || true
+   cp -R ~/.claude/rules ~/.claude/rules.bak.${TS} 2>/dev/null || true
    ```
 
 3. **コピー実行:**
@@ -38,6 +41,7 @@ metadata:
    cp dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md
    cp dotfiles/claude/settings.json ~/.claude/settings.json
    cp dotfiles/claude/statusline-command.sh ~/.claude/statusline-command.sh
+   mkdir -p ~/.claude/rules && cp dotfiles/claude/rules/*.md ~/.claude/rules/
    ```
 
 4. **確認:**
@@ -45,5 +49,6 @@ metadata:
    diff dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md && echo "CLAUDE.md: OK"
    diff dotfiles/claude/settings.json ~/.claude/settings.json && echo "settings.json: OK"
    diff dotfiles/claude/statusline-command.sh ~/.claude/statusline-command.sh && echo "statusline-command.sh: OK"
+   diff -r dotfiles/claude/rules ~/.claude/rules && echo "rules/: OK"
    ```
-   結果を日本語で報告する。バックアップパスも提示すること。
+   結果を日本語で報告する。バックアップパスも提示すること。rules/ の diff で `Only in ~/.claude/rules` が出た場合は、ミラー対象外（*.md 以外・ローカル限定）のファイルを示すだけなので、*.md が一致していれば反映は成功と判断してよい。
