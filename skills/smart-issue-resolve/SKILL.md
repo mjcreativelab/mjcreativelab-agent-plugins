@@ -228,7 +228,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 > `{ループ明示}` = false（フラグ未指定でセキュリティ検出により発動）の場合、レビューは実施するが **収束後のコミット・PR 自動実行は行わない**（手順 7 の通常完了案内に切り替える）。外部への副作用（push・PR）を伴う自動化は明示オプトイン時のみ。
 
-セキュリティ自動発動時は、敵対的レビューの初回にセキュリティ監査役（雛形 B は `securityAudit: true`、codex 系は雛形 C のラウンド 1 で同フラグ）が STRIDE・認可・データフローの観点を Breaker に注入する。監査役エージェントが失敗した場合（返却の `auditFailed: true`）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
+セキュリティ自動発動時は、敵対的レビューの初回にセキュリティ監査役（雛形 B は `securityAudit: true`、codex 系は雛形 C のラウンド 1 で同フラグ）が STRIDE・認可・データフローの観点を Breaker に注入する。claude 系（雛形 B）・codex 系（雛形 C）いずれも、上で明示した発動理由（検出したシグナル）を `securityReason` として Workflow の `args` に渡す（監査役プロンプトに「自動発動の理由」として埋め込まれるため。渡し忘れると理由が `undefined` になる）。監査役エージェントが失敗した場合（返却の `auditFailed: true`）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
 
 ### ループ手順（共通骨格）
 
@@ -273,6 +273,8 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 雛形 B（sir-claude-review-set）で実行する。標準モードは Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする（観点は codex 標準と同一）。敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort max）の二者構造で、裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
+
+> **同期ノート**: 雛形 B/C のレビュワー・Breaker・Judge プロンプト（レビュー観点・攻撃観点・4 分類裁定基準）は、単体スキル `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へ移植済み。観点・裁定基準を変更したら、それらの `references/agent-orchestration.md` も同期する（マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の同期ノート）。
 
 ### 収束後のコミット・PR 作成
 

@@ -9,13 +9,14 @@
 - 特定パスの差分だけレビューしたい
 - ブランチ全体の commit 範囲をまとめてレビューしたい
 - Codex と併用してクロスチェックしたい（重要変更時）
+- 会話バイアスを排除した独立レビューが欲しい → `--isolated`（コンテキスト隔離した Sonnet エージェント）
 
 使わない場面:
 
 - **認証・認可・決済・データスキーマ・外部 API** 等の重要変更の最終ゲート → `/code-reviewer-adversarial`
 - 設計レベルの検討 → `/software-architect`
 - 設計レベルのセキュリティ監査 → `/security-auditor`
-- コンテキスト隔離での独立監査（会話バイアスを排除したい）→ `code-reviewer` subagent
+- コンテキスト隔離での独立監査（会話バイアスを排除したい）→ `--isolated` オプション、または `code-reviewer` subagent
 
 ## 使い方
 
@@ -34,6 +35,7 @@
 /code-reviewer 42                                # PR #42
 /code-reviewer main..HEAD                        # 現在ブランチの全コミット
 /code-reviewer src/api/                          # 特定パス
+/code-reviewer 42 --isolated                     # PR #42 をコンテキスト隔離した Sonnet(effort max) で単発レビュー
 ```
 
 ## 引数
@@ -76,6 +78,16 @@
 - approve / request_changes は **人間レビュアーの判断に残す**（Claude は投稿しない）
 
 失敗時（MCP 未接続 / 権限不足 / 複数 PR 等）は書き出しモードを無効化し、ローカル出力のみ残す。**PR 投稿が失敗してもレビュー処理自体は止めない**。
+
+## エージェント隔離モード（--isolated）
+
+`--isolated`（または `-iso`）を付けると、レビュー本体を **Workflow で起動する単発エージェント**（Sonnet / effort max・コンテキスト隔離）に委ねる。会話・実装の文脈によるバイアスを排除した独立レビューが欲しいときに使う。
+
+- Workflow 利用可 → 隔離エージェントが diff を取得し 6 観点でレビューし、5 区分の結果を返す。出力・PR 投稿ゲートはメインセッションが担う（投稿はエージェントにさせない）
+- Workflow 不能（他エージェント・旧バージョン等）→ メインセッションの通常レビューに degrade（その旨を明示）
+- 付けない場合（デフォルト）→ 現行どおりメインセッションで会話コンテキストを活用してレビュー
+
+隔離コンテキストでの独立監査は `code-reviewer` subagent でも得られるが、`--isolated` は effort max を指定でき、本スキルの PR 投稿ゲートもそのまま使える点が異なる。Workflow ツール（Claude Code 本体機能）が前提で、無ければメインセッションレビューに degrade する。
 
 ## 関連スキル
 
