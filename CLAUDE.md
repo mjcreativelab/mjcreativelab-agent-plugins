@@ -105,6 +105,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   code-reviewer/                 # 仕様整合・設計適合・可読性の観点でレビュー
   code-reviewer-adversarial/     # Breaker (Claude) × Judge (Codex) の敵対的レビュー
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
+  branch-visualize/              # ブランチ差分の構成図可視化（Mermaid / D2 / HTML 自動選定）
   # デザイン
   game-ui-design/                # ゲーム UI（HUD / メニュー / コントローラーナビ等）の設計観点
   # システムメンテナンス
