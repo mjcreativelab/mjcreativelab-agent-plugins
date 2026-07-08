@@ -5,7 +5,7 @@ code-reviewer の `--isolated` モードで起動する、コンテキスト隔�
 ## 前提とゲート
 
 - スクリプトはこの雛形を**そのまま** `script`（または本ファイルから抽出した `scriptPath`）に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
-- `args` は JSON 値として渡す（文字列化した JSON を渡さない）
+- `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
 - レビュー結果の出力（チャット表示）と PR 投稿ゲートはオーケストレーター（メインセッション）が担う。エージェントはレビュー結果（5 区分 markdown）を返すだけで、投稿・コミットはしない
 
@@ -20,6 +20,9 @@ export const meta = {
   description: 'code-reviewer --isolated の単発隔離レビュー（Sonnet / effort max）',
   phases: [{ title: 'Review', detail: 'コンテキスト隔離した単発レビュー' }],
 }
+
+// args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
+args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const review = await agent(`あなたは実装コードのレビュワーである。会話・実装の文脈を持たない独立の立場から、仕様整合・設計適合・可読性を担保するレビューを行う。
 ## レビュー対象

@@ -8,7 +8,7 @@ smart-issue-plan の **claude 系計画レビューループ**を担う役割別
 
 - 起動前に `{作業Dir}/context.md` と `{作業Dir}/plan.md` が両方存在すること（SKILL.md の claude 系レビューループ節で作成）。どちらか無ければ Workflow を起動せず、作成に戻る
 - スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
-- `args` は JSON 値として渡す（文字列化した JSON を渡さない）
+- `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
 - ツール結果に返る `scriptPath` を控えておくと、同じ雛形の再起動（レビューセット続行など）は `{scriptPath, args}` で再送できる。中断・失敗からの再開は `resumeFromRunId` を使う
 
@@ -61,6 +61,9 @@ export const meta = {
     { title: 'Edit', detail: 'plan-editor による採用判定・計画修正' },
   ],
 }
+
+// args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
+args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const ctx = args.workDir + '/context.md'
 const plan = args.workDir + '/plan.md'

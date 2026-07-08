@@ -247,7 +247,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
   - `code-reviewer/references/agent-orchestration.md` — `--isolated` の単発隔離レビュー（`cr-isolated-review`）
   - `code-reviewer-adversarial/references/agent-orchestration.md` — `--claude-judge` の Breaker×Judge（`cra-claude-judge`）
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。
-- Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（2026-07-07 実測。#76 で雛形へのシム恒久化を追跡）。恒久化までは、起動するスクリプトの冒頭に `const $a = typeof args === 'string' ? JSON.parse(args) : (args || {})` を挿入し、`args.` 参照を `$a.` に置換してから起動する
+- Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（`typeof args === 'string'`。プローブで実測）。全雛形（resolve 雛形 A〜E・`sip-plan-review-set`・`cr-isolated-review`・`cra-claude-judge`）は meta 直後に正規化シム `args = typeof args === 'string' ? JSON.parse(args) : (args || {})` を内蔵済みのため、起動時に手動でシムを挿入する必要はない（文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する）。「`args` は JSON 値として渡す（文字列化した JSON を渡さない）」契約は維持する
 
 ## 新規スキル追加手順
 
