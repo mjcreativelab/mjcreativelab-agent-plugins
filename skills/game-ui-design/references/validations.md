@@ -193,9 +193,9 @@ regex
 ### **Pattern**
 animation-?[Dd]uration[:\s=]+["']?([5-9][0-9]{2}|[1-9][0-9]{3,})(ms)?["']?|animation-?[Dd]uration[:\s=]+["']?([1-9])(s)["']?
 ### **Message**
-Animation longer than 500ms. May cause motion discomfort for sensitive players.
+Transition animation longer than 500ms. May cause motion discomfort for sensitive players.
 ### **Fix Action**
-Keep UI animations under 300ms. Provide reduced motion option in settings.
+Keep HUD feedback under 300ms and per-element transitions under 500ms; build longer sequences from staggered short steps (see motion.md). Slow ambient loops are exempt — suffix them `-ambient` and pause them under reduced motion. Provide reduced motion option in settings.
 ### **Applies To**
   - *.css
   - *.scss
