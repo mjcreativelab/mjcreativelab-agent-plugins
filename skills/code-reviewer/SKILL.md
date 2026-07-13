@@ -136,7 +136,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 {「出力フォーマット」で生成した 5 区分（🚫 / ⚠️ / 💬 / ✅ / 🔄 横断影響）の markdown をそのまま埋め込む。該当すれば「Codex クロスチェック推奨」節も含める}
 
 ---
-_このレビューは Claude Code プラグイン `mjc-code-develop-tools` が生成しました。approve / request_changes 判断は含みません。_
+_このレビューは Claude Code スキル `/code-reviewer` が生成しました。approve / request_changes 判断は含みません。_
 ````
 
 - 識別マーカー `<!-- claude-code-review:code-reviewer -->` は必ず先頭に入れる（HTML コメントなので PR 表示上は不可視）

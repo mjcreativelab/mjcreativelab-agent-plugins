@@ -218,7 +218,7 @@ Phase 4 で Phase 3 の最終出力を PR へ投稿する際の仕様。
 {Phase 3 の最終出力をそのままコピーして貼る。サマリ / 🚫 真の欠陥 / ❓ 仕様未定 / 📉 低優先度 / 🔇 ノイズ / 💡 修正推奨の順序}
 
 ---
-_このレビューは Claude Code プラグイン `mjc-code-develop-tools` が生成しました。approve / request_changes 判断は含みません。_
+_このレビューは Claude Code スキル `/code-reviewer-adversarial` が生成しました。approve / request_changes 判断は含みません。_
 ````
 
 - 識別マーカー `<!-- claude-code-review:code-reviewer-adversarial -->` は必ず先頭に入れる（HTML コメントなので PR 表示上は不可視）
