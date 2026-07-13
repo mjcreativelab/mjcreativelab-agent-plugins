@@ -50,17 +50,6 @@ npx skills update
 - pin した install は lock に ref が記録され、`npx skills update` も pin に従う（タグ pin は据え置き）。新しいタグへ上げるときは `#v<新タグ>` で再 add する。
 - 内部 skill `auto-release`（本リポジトリ専用のリリース用）は `internal/` 配下にあり配布対象外（リモート探索・`--skill '*'` のいずれにも含まれない）。
 
-### 旧 marketplace からの移行
-
-旧 `/plugin install` は**パッケージ単位**、新 `npx skills` は**skill 単位**。旧パッケージに含まれていた skill を `--skill` で指定し直す:
-
-| 旧（廃止） | 新（`npx skills add mjcreativelab/mjcreativelab-agent-prompts ... -g`） |
-|---|---|
-| `/plugin install mjc-git-workflow-tools@…` | `--skill smart-commit --skill smart-pr --skill smart-git-sync --skill smart-issue-resolve --skill smart-issue-plan --skill smart-review --skill smart-review-apply` |
-| `/plugin install mjc-claude-improver-tools@…` | `--skill skill-improver --skill empirical-prompt-tuning --skill claude-code-update-review` |
-| `/plugin install mjc-code-develop-tools@…` | `--skill software-architect --skill code-reviewer --skill code-reviewer-adversarial --skill security-auditor` |
-| `/plugin install mjc-design-tools@…` | `--skill game-ui-design` |
-
 ## ライセンス
 
 [MIT](LICENSE)
