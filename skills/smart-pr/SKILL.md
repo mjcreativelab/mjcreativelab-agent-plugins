@@ -192,7 +192,7 @@ git diff <default-branch>...HEAD --stat
 2. 1. で抽出できなければコミットメッセージ本文の `#NN` 表記を `git log` で検索
 3. 2. でも見つからなければ `search_issues` で候補を探し、ユーザーに紐づけるか確認
 
-`Closes #XX`（自動クローズ）または `Refs #XX`（参照のみ）を本文に記載。
+`Closes #XX`（完全解決時。自動クローズ）または `Refs #XX`（参照のみ・部分対応）を本文に記載する。地の文で close / fix / resolve 系の語を Issue 番号に直接続けない（意図しない auto-close を避ける。詳細は git-conventions.md）。
 
 ### 6-N. ラベル選定
 

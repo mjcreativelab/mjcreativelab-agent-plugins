@@ -9,5 +9,6 @@
 <!-- 不要ならセクションごと省略 -->
 
 <!-- 関連 Issue が無ければ以下のセクション全体を省略 -->
+<!-- 完全解決時は Closes、参照のみ/部分対応は Refs。他セクションの地の文で close/fix/resolve 系の語を Issue 番号に直接続けない（意図しない auto-close を避ける） -->
 ## 関連 Issue
 Closes #XX
