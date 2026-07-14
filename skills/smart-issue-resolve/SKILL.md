@@ -31,7 +31,7 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
 | 開発者 | Workflow エージェント | opus / max | 手順 6 の実装フロー。レビュー指摘の採用 / 不採用判定と修正（レビュイー） |
 | 独立 QA | Workflow エージェント | sonnet / high | 開発者の自己申告に依存しないテスト・lint の独立実行と受け入れ基準検証。自動コミット前の最終ゲート |
 | レビュワー（claude 標準） | Workflow エージェント | sonnet / max | diff レビュー（codex 標準と同一観点） |
-| Breaker / Judge（敵対） | Workflow エージェント | sonnet / max | 反例生成（Breaker）と裁定（Judge）。コンテキスト隔離で実装文脈から独立 |
+| Breaker / Judge（敵対） | Workflow エージェント | sonnet / max・high | 反例生成（Breaker・max）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立 |
 | セキュリティ監査役 | Workflow エージェント | sonnet / max | セキュリティ自動発動時に STRIDE・認可・データフローの観点を敵対的レビューへ注入 |
 | レビュワー / Judge（codex 系） | codex:rescue | -（別系統モデル） | Codex によるレビュー・裁定（従来どおり） |
 
@@ -210,7 +210,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 ## レビューループ（codex 系 / claude 系）
 
-`{レビューモード}` が `off` 以外の場合に実施する。目的は**実装文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max）がレビュー・裁定を担う。**実装側（オーケストレーター・開発者エージェント）がレビュー・裁定を模擬・代行してはならない**（唯一の例外: codex 敵対モードの degraded 環境における Breaker 代行。裁定者 Judge=Codex の独立性が保たれるため許容する）。
+`{レビューモード}` が `off` 以外の場合に実施する。目的は**実装文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max。敵対 Judge のみ Breaker 反例を ≤4 件/バッチに分割した並列裁定で effort high）がレビュー・裁定を担う。**実装側（オーケストレーター・開発者エージェント）がレビュー・裁定を模擬・代行してはならない**（唯一の例外: codex 敵対モードの degraded 環境における Breaker 代行。裁定者 Judge=Codex の独立性が保たれるため許容する）。
 
 いずれのモード・系統でも、返ってきた指摘に対する **採用 / 不採用（過剰対応かどうか）の判定は、レビュイーである開発者エージェントが行う**（degraded 実装時はメインセッション。この不変則はモード・系統によらず変わらない）。
 
@@ -270,7 +270,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 #### claude 系（--claude-review-loop / --claude-adv-review-loop）
 
-雛形 B（sir-claude-review-set）で実行する。標準モードは Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする（観点は codex 標準と同一）。敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort max）の二者構造で、裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。
+雛形 B（sir-claude-review-set）で実行する。標準モードは Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする（観点は codex 標準と同一）。敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Judge は Breaker の反例を ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし、単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
 
@@ -280,7 +280,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 `{ループ明示}` = true の場合のみ実施する（セキュリティ自動発動のみで発動した場合は手順 7 に切り替える）。`smart-commit` / `smart-pr` は `disable-model-invocation` のため Skill ツールから自動呼び出しできない。ここではコミット・push を `git` で行い、PR 作成・作成者アサインは GitHub MCP（利用不能時は `gh`）で直接行う。プロジェクトの Git 規約に従う（conventional commit・closing keyword は使わない・作成者を自動アサイン。プロジェクト独自規約があればそれを優先）:
 
-1. **最終 QA ゲート** — 自動コミットの前に独立 QA で最終検証する（claude 系の収束時は雛形 B が内蔵実行。codex 系、および claude 系で打ち切りを選んだ場合は雛形 E を 1 回起動する — 起動前に、変更セットに残った `.breaker-probe.` ファイルを取り除いておく。Workflow 不能な degraded 環境では起動できないため省略し、その旨を完了報告に明記する）。`pass: false` なら自動コミット・PR を**中止**し、QA の指摘を提示してユーザーに相談する
+1. **最終 QA ゲート** — 自動コミットの前に独立 QA で最終検証する（claude 系の収束時は雛形 B が内蔵実行。codex 系、および claude 系で打ち切りを選んだ場合は雛形 E を 1 回起動する — 起動前に、変更セットに残った `.breaker-probe.` ファイルを取り除いておく。Workflow 不能な degraded 環境では起動できないため省略し、その旨を完了報告に明記する）。`pass: false` なら自動コミット・PR を**中止**し、QA の指摘を提示してユーザーに相談する。claude 敵対モードで雛形 B の返却に `judgeDegraded: true` が立っている場合も、未裁定の反例が残るため収束していても自動コミット前にユーザーへ確認する（[references/agent-orchestration.md](references/agent-orchestration.md) の「返却の扱い」参照）
 2. **コミット** — 変更を Issue の作業単位でコミットする。コミット前に `git status` で、反例検証用テスト（`.breaker-probe.` を含むファイル。採用欠陥の回帰テスト化済みのものを除く）や一時成果物が変更セットに混ざっていないか確認する。機密ファイルの混入チェック・pre-commit hook 失敗への対応などの安全系確認は省略しない。`--no-verify` は使わない
 3. **push・PR 作成** — feature ブランチを push し、PR を作成する。作成者を自動アサインし、レビュアー向け補足に次を記載する:
    - codex 標準・収束時: `🤖 Codex レビュー済み（標準, N ラウンド, 最終ラウンド採用指摘 0 件）`

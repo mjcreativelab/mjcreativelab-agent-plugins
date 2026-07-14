@@ -35,7 +35,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | 設計役 | opus / max | 計画が無い/粗い場合の設計方針確定 + 実装後の設計整合・保守性・可用性レビュー（兼任） |
 | 開発者 | opus / max | 実装（調査→ベースライン→実装→動作確認）とレビュー指摘の採用判定・修正（レビュイー） |
 | 独立 QA | sonnet / high | 自己申告に依存しないテスト・lint の独立実行、受け入れ基準検証、自動コミット前の最終ゲート |
-| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | sonnet / max | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う） |
+| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | sonnet / max（claude 敵対 Judge のみ high） | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う。claude 敵対 Judge は反例を ≤4 件/バッチに分割し並列裁定） |
 | セキュリティ監査役 | sonnet / max | セキュリティ自動発動時に STRIDE・認可・データフロー観点を敵対的レビューへ注入 |
 | レビュワー / Judge（codex 系） | Codex（別系統モデル） | `codex:rescue` 経由のレビュー・裁定（従来どおり） |
 
@@ -58,7 +58,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - **codex 標準（`-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で diff をレビューする
 - **codex 敵対（`-cdxarl`）**: Breaker（独立 Sonnet エージェント。実装文脈から隔離）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。Workflow が使えない環境ではメインセッションが Breaker を代行する（従来動作）
 - **claude 標準（`-cldrl`）**: Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする。観点は codex 標準と同一
-- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Sonnet（effort max）エージェントが担う。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
+- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Sonnet エージェントが担う（Breaker=effort max、Judge=effort high で Breaker の反例を ≤4 件/バッチに分割し並列裁定。単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
 - **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や変更ファイルから検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示。Codex 不在なら claude 系で代替）。ただしこの自動発動のみのケースでは**コミット・PR は自動実行せず**、従来の完了案内に切り替える（外部副作用の自動化は明示オプトイン時のみ）
 - claude 系は 1 セット（最大 3 ラウンド）を 1 つの Workflow で実行し、3 ラウンドごとの続行確認はセット間にオーケストレーターが行う（サブエージェントはユーザーに質問できないため）
 - 敵対モードの裁定「仕様未定」（仕様が曖昧で要確認の指摘）は、対話できないエージェントに握り潰させず、オーケストレーターが AskUserQuestion でユーザーに確認して確定内容を context.md に反映する

@@ -175,20 +175,24 @@ ${prior()}${auditNote}
 - 構造化出力の scenarios に同じ内容を返す。各シナリオに unaddressed（計画のどの手順・前提が対処できていないか）を必ず付す
 制約: 計画・コードを変更しない。コミットしない。`
 
-const judgePrompt = (round, breaker) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した設計への攻撃シナリオを、リポジトリの実コードと計画本文に照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは計画作成にも攻撃シナリオ生成にも関与していない。
+const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した設計への攻撃シナリオを、リポジトリの実コードと計画本文に照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは計画作成にも攻撃シナリオ生成にも関与していない。これはラウンド ${round} の攻撃シナリオをバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
 1. ${ctx} を読む（Issue 要件・追加指示・プロジェクト固有基準）
 2. ${target}（ラウンド ${round}）
-3. Breaker の攻撃シナリオ（詳細は ${args.workDir}/breaker-round-${round}.md）:
-${JSON.stringify(breaker.scenarios, null, 2)}
+3. このバッチで裁定する攻撃シナリオ（これ以外は扱わない）:
+${JSON.stringify(batch, null, 2)}
 ${prior()}
 ## 裁定タスク
-1. 各シナリオを実コードと計画本文に照合し、次の 4 カテゴリに分類する:
-   - 真の欠陥: 計画が対処すべきなのに手順・前提に欠落・誤りがあり、修正価値がある（仕様違反・セキュリティ・後方互換性・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反）
-   - 仕様未定: 要件・仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
-   - 低優先度: 妥当だが重大度が低く、計画に反映するコストに見合わない
-   - ノイズ: 反証不能・誤解・的外れ、または計画が既に対処済み（除外）
-2. Breaker が見落とした計画の欠陥があれば、独立レビューとして追加で挙げる（同じ 4 カテゴリで分類する）
+各シナリオを実コードと計画本文に照合し、次の 4 カテゴリに分類する:
+- 真の欠陥: 計画が対処すべきなのに手順・前提に欠落・誤りがあり、修正価値がある（仕様違反・セキュリティ・後方互換性・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反）
+- 仕様未定: 要件・仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
+- 低優先度: 妥当だが重大度が低く、計画に反映するコストに見合わない
+- ノイズ: 反証不能・誤解・的外れ、または計画が既に対処済み（除外）
+## 照合の限定（着実に進める）
+- 裁定対象は上記インラインのバッチのシナリオのみ。他バッチのシナリオ・${args.workDir}/breaker-round-${round}.md の他項目は読まない・扱わない
+- 照合は各シナリオの evidence が指すファイル / 行・計画の該当箇所に限定する。evidence が無いシナリオは計画本文とシナリオ本文が名指しする箇所に照合を限定する。いずれの場合も無関係な広域 grep・全サービス横断の探索はしない
+- 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
+- Breaker が見落とした計画の欠陥の独立探索はこのバッチでは行わない（バッチ間の重複を避けるため）
 ## 制約
 - 指摘は計画の欠陥に限定する（文体・体裁・好みは対象外）
 - 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 実装時に何が起きるか (2) なぜ計画のその手順・前提が脆弱か (3) 想定される影響 (4) 計画をどう直せばリスクが下がるか。答えられない懸念は低優先度またはノイズに分類する
@@ -226,6 +230,7 @@ if (args.securityAudit) {
 
 let converged = false
 let status = 'ok'
+let judgeDegraded = false
 const specQuestions = []
 
 for (let i = 0; i < 3; i++) {
@@ -235,7 +240,17 @@ for (let i = 0; i < 3; i++) {
   if (args.mode === 'adversarial') {
     const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
     if (breaker === null) { status = 'agent-failed'; break }
-    findings = await agent(judgePrompt(round, breaker), { label: `judge:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+    const scen = breaker.scenarios || []
+    const BATCH = 4
+    const batches = []
+    for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
+    const batchResults = batches.length === 0 ? [] : await parallel(batches.map((batch, bi) => () =>
+      agent(judgeBatchPrompt(round, batch, bi + 1, batches.length),
+        { label: `judge:r${round}-b${bi + 1}`, phase: 'Review', model: 'sonnet', effort: 'high', schema: FINDINGS_SCHEMA })))
+    const ok = batchResults.filter(Boolean)
+    if (batches.length > 0 && ok.length === 0) { status = 'agent-failed'; break }
+    if (ok.length < batches.length) { judgeDegraded = true; log(`judge r${round}: ${batches.length - ok.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定のシナリオあり）`) }
+    findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
     findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
   }
@@ -258,15 +273,16 @@ for (let i = 0; i < 3; i++) {
   if (fix.adopted.length === 0) { converged = true; break }
 }
 
-return { converged, status, records, specQuestions, auditFailed }
+return { converged, status, records, specQuestions, auditFailed, judgeDegraded }
 ```
 
 返却の扱い:
 
-- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す）。空なら収束確定 → オーケストレーターが `{作業Dir}/plan.md` を読んで投稿する（計画レビューのため最終 QA は回さない）
+- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す）。空なら収束確定 → オーケストレーターが `{作業Dir}/plan.md` を読んで投稿する（計画レビューのため最終 QA は回さない）。`judgeDegraded: true` のときは未裁定のシナリオが残るため、投稿前にユーザーへ確認する（下記 `judgeDegraded`）
 - `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動する。打ち切りなら未収束のまま投稿（表記は「未収束で打ち切り」）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セットで plan-editor が `plan.md` へ反映する
 - `auditFailed: true` → セキュリティ監査役が失敗し、Breaker 内蔵のセキュリティ観点のみで実施された。完了報告に明記する
+- `judgeDegraded: true` → 一部の Judge バッチが失敗し、その攻撃シナリオ（最大 4 件/バッチ）が未裁定のまま収束扱いになった。計画レビューは最終 QA を持たず未裁定の欠陥をバックストップできないため、完了報告に明記し `plan.md` 投稿前にユーザーへ確認する（`auditFailed` と同型の劣化伝播）
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら SKILL.md の「フォールバック（claude 系）」へ
 
 ## 完了報告への反映
@@ -276,6 +292,7 @@ return { converged, status, records, specQuestions, auditFailed }
 - レビューループ: 各ラウンドのモード・指摘数・採用数・不採用理由（`records`）
 - `specQuestions` でユーザーに確認した仕様と、その反映
 - `auditFailed: true` の場合はその旨
+- `judgeDegraded: true` の場合は一部の攻撃シナリオが未裁定である旨（失敗バッチ数はログ参照）
 
 ## 同期ノート
 
@@ -284,6 +301,7 @@ return { converged, status, records, specQuestions, auditFailed }
 - セット制御: `startRound` / `priorSummary` / `records` / `history()` / `prior()` の経緯引き継ぎ
 - 収束判定: レビュー指摘 0 件 → 収束、`category: '仕様未定'` を除いた真の欠陥 0 件 → 収束、採用 0 件 → 収束（3 ラウンド 1 セット）
 - null ガード（各 `agent()` 返却の null 判定と `status: 'agent-failed'`）・`auditFailed` フラグ・`specQuestions` の返却経路・セキュリティ監査役の注入（`securityAudit` / `securityReason`）
+- 敵対モード Judge のバッチ並列化: Breaker 出力を ≤4 件/バッチに分割し `parallel` で並列裁定する（`judgeBatchPrompt` / `effort: 'high'` / evidence 限定照合。全バッチ失敗のみ `agent-failed`、一部失敗は部分裁定で続行し `judgeDegraded` フラグで伝播）。Breaker のフィールド名だけ意図的に異なる（resolve = `counterexamples`、plan = `scenarios`）
 
 同期しないもの（**意図的に異なる**）:
 

@@ -373,20 +373,24 @@ ${prior()}${auditNote}
 - 構造化出力の counterexamples に同じ内容を返す
 制約: 反例テスト以外のコード変更をしない。コミットしない。`
 
-const judgePrompt = (round, breaker) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。
+const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これはラウンド ${round} の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
 1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
 2. ${diffNote}（ラウンド ${round}）
-3. Breaker の反例リスト（詳細は ${args.workDir}/breaker-round-${round}.md）:
-${JSON.stringify(breaker.counterexamples, null, 2)}
+3. このバッチで裁定する反例（これ以外は扱わない）:
+${JSON.stringify(batch, null, 2)}
 ${prior()}
 ## 裁定タスク
-1. 各反例を実コードと照合し、次の 4 カテゴリに分類する:
-   - 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反として妥当で、修正価値がある
-   - 仕様未定: 仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
-   - 低優先度: 妥当だが重大度が低く、修正コストに見合わない
-   - ノイズ: 反証不能・誤解・的外れ（除外）
-2. Breaker が見落とした欠陥があれば、独立レビューとして追加で挙げる（同じ 4 カテゴリで分類する）
+各反例を実コードと照合し、次の 4 カテゴリに分類する:
+- 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反として妥当で、修正価値がある
+- 仕様未定: 仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
+- 低優先度: 妥当だが重大度が低く、修正コストに見合わない
+- ノイズ: 反証不能・誤解・的外れ（除外）
+## 照合の限定（着実に進める）
+- 裁定対象は上記インラインのバッチの反例のみ。他バッチの反例・${args.workDir}/breaker-round-${round}.md の他項目は読まない・扱わない
+- 照合は各反例の evidence が指すファイル / 行に限定する。evidence が無い反例は diff の変更範囲とシナリオ本文が名指しする箇所に照合を限定する。いずれの場合も無関係な広域 grep・全サービス横断の探索はしない
+- 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
+- Breaker が見落とした欠陥の独立探索はこのバッチでは行わない（バッチ間の重複を避けるため）
 ## 制約
 - 可読性・命名・スタイルは対象外
 - 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
@@ -434,6 +438,7 @@ if (args.securityAudit) {
 
 let converged = false
 let status = 'ok'
+let judgeDegraded = false
 const specQuestions = []
 
 for (let i = 0; i < 3; i++) {
@@ -443,7 +448,17 @@ for (let i = 0; i < 3; i++) {
   if (args.mode === 'adversarial') {
     const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
     if (breaker === null) { status = 'agent-failed'; break }
-    findings = await agent(judgePrompt(round, breaker), { label: `judge:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+    const scen = breaker.counterexamples || []
+    const BATCH = 4
+    const batches = []
+    for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
+    const batchResults = batches.length === 0 ? [] : await parallel(batches.map((batch, bi) => () =>
+      agent(judgeBatchPrompt(round, batch, bi + 1, batches.length),
+        { label: `judge:r${round}-b${bi + 1}`, phase: 'Review', model: 'sonnet', effort: 'high', schema: FINDINGS_SCHEMA })))
+    const ok = batchResults.filter(Boolean)
+    if (batches.length > 0 && ok.length === 0) { status = 'agent-failed'; break }
+    if (ok.length < batches.length) { judgeDegraded = true; log(`judge r${round}: ${batches.length - ok.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定の反例あり）`) }
+    findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
     findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
   }
@@ -477,21 +492,22 @@ if (converged) {
   if (finalQa === null) status = 'agent-failed'
 }
 
-return { converged, status, records, finalQa, specQuestions, auditFailed }
+return { converged, status, records, finalQa, specQuestions, auditFailed, judgeDegraded }
 ```
 
 返却の扱い:
 
-- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す。この経路ではコミットしない）。空なら `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）
+- `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す。この経路ではコミットしない）。空なら `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）。加えて `judgeDegraded: true` のときは未裁定の反例が残るため、収束していても自動コミット前にユーザーへ確認する（下記 `judgeDegraded`）
 - `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動
 - `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セット（または開発者修正 1 回 + 再収束確認）へ進む
 - `auditFailed: true` → セキュリティ監査役が失敗し、Breaker 内蔵のセキュリティ観点のみで実施された。完了報告に明記する
+- `judgeDegraded: true` → 一部の Judge バッチが失敗し、その反例（最大 4 件/バッチ）が未裁定のまま収束扱いになった。`finalQa` はテスト・受け入れ基準の検証で、敵対レビューが対象とする設計・保守・可用性クラスの未裁定欠陥はバックストップしない。完了報告に明記し、自動コミット前にユーザーへ確認する（`auditFailed` と同型の劣化伝播）
 - `status: 'tests-failing'` → テストが壊れたままなので状況を提示して相談（そのまま次セットへ進まない）
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
 
-> **同期ノート**: 雛形 B（`sir-claude-review-set`）の構造は `smart-issue-plan/references/agent-orchestration.md` の計画レビューセット雛形（`sip-plan-review-set`）へ移植済み。セット制御（`startRound` / `priorSummary` / `records`）・収束判定・null ガード・`auditFailed` / `specQuestions` の経路を**両者で同期する**（片方の構造を変えたら両方更新すること）。plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる。
+> **同期ノート**: 雛形 B（`sir-claude-review-set`）の構造は `smart-issue-plan/references/agent-orchestration.md` の計画レビューセット雛形（`sip-plan-review-set`）へ移植済み。セット制御（`startRound` / `priorSummary` / `records`）・収束判定・null ガード・`auditFailed` / `specQuestions` / `judgeDegraded` の経路・敵対モード Judge のバッチ並列化（Breaker 出力を ≤4 件/バッチに分割し `parallel` で並列裁定・`effort: 'high'`・evidence 限定照合・一部バッチ失敗は `judgeDegraded` フラグで伝播）を**両者で同期する**（片方の構造を変えたら両方更新すること）。plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる。
 >
-> また、雛形 B の `reviewerPrompt` / `breakerPrompt` / `judgePrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。観点・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も同期する。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
+> また、雛形 B の `reviewerPrompt` / `breakerPrompt` / `judgeBatchPrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。観点・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も同期する（バッチ並列化は resolve/plan 間の構造同期であり、裁定基準を変えないため単体スキルへの同期は不要）。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
 
 ## 雛形 C: codex 敵対モードの Breaker（sir-codex-breaker）
 

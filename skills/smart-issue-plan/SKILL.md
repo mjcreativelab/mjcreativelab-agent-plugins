@@ -189,7 +189,7 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
 
 ## レビューループ（codex 系 / claude 系）
 
-`{レビューモード}` が `off` 以外の場合に実施する。目的は**計画作成の文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max）がレビュー・裁定を担う。**Claude 自身（オーケストレーター）がレビュー・裁定を模擬・代行してはならない**。
+`{レビューモード}` が `off` 以外の場合に実施する。目的は**計画作成の文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max。敵対 Judge のみ Breaker の攻撃シナリオを ≤4 件/バッチに分割した並列裁定で effort high）がレビュー・裁定を担う。**Claude 自身（オーケストレーター）がレビュー・裁定を模擬・代行してはならない**。
 
 いずれのモード・系統でも、返ってきた指摘に対する **採用 / 不採用（過剰対応かどうか）の判定は、レビュイーが行う**（codex 系はオーケストレーター、claude 系は plan-editor エージェント。この不変則はモード・系統によらず変わらない）。
 
@@ -268,7 +268,7 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
 レビュー内容:
 
 - 標準モードは Sonnet（effort max）のレビュワーエージェントが単独で計画をレビューする（観点は codex 標準と同一: 実現可能性・影響範囲の抜け・手順の妥当性・リスクの見落とし・運用/保守/可用性・データ整合性/性能・テストカバレッジ・アーキテクチャ境界・プロジェクト固有基準との整合）
-- 敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort max）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を用い（反例テストは書かない）、Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
+- 敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を用い（反例テストは書かない）、Judge は Breaker の攻撃シナリオを ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし無進捗ウォッチドッグへのストールを防ぐ）。Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
 - 採用判定・計画修正は plan-editor エージェントが `{作業Dir}/plan.md` を編集して行う。収束後はオーケストレーターが `plan.md` を読んで投稿する
 
 Workflow 返却の扱い（詳細は [references/agent-orchestration.md](references/agent-orchestration.md)）:
@@ -277,6 +277,7 @@ Workflow 返却の扱い（詳細は [references/agent-orchestration.md](referen
 - `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動
 - `specQuestions` が空でない → 裁定「仕様未定」の項目をオーケストレーターが AskUserQuestion で確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になれば未収束として次セットへ回す（`converged: true` で返っていても投稿しない）
 - `auditFailed: true` → セキュリティ監査役の失敗を完了報告に明記する
+- `judgeDegraded: true` → 一部の Judge バッチが失敗し攻撃シナリオが未裁定のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗ならフォールバック（claude 系）へ
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge・plan-editor は互いに fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
