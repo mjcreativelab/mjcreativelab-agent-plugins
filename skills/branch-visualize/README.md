@@ -19,8 +19,10 @@ git ブランチ単位で実装内容を可視化するスキル。対象ブラ�
 /branch-visualize                          # 現在のブランチ vs 自動解決した比較先
 /branch-visualize feature/foo              # feature/foo vs 自動解決した比較先
 /branch-visualize feature/foo --base develop
+/branch-visualize #100                     # PR 番号で指定（head / base を自動解決）
 /branch-visualize --format html            # フォーマットを明示指定
 /branch-visualize --models                 # モデル詳細図（クラス図 / ER 図）
+/branch-visualize #100 --models            # PR のモデル詳細図
 ```
 
 比較先（`--base` 省略時）は「対象ブランチの open PR の base → リポジトリのデフォルトブランチ」の順で自動解決する。
@@ -58,6 +60,6 @@ git ブランチ単位で実装内容を可視化するスキル。対象ブラ�
 ## 前提条件
 
 - git リポジトリ内で実行すること
-- 比較先の PR 自動解決には GitHub MCP 接続が必要（無ければデフォルトブランチにフォールバック）
+- 比較先の PR 自動解決・PR 番号指定（`#100`）には GitHub MCP 接続が必要（`--base` 省略時の自動解決は無ければデフォルトブランチにフォールバック、`#番号` 指定はエラー）
 - D2 の SVG 化にはローカル `d2` CLI が必要（無ければ `.d2` ソースのみ保存）
 - コード内容を外部レンダリング API に送信しない

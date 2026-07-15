@@ -5,10 +5,11 @@ description: >
   変更モジュール・ライブラリ増減・データ/ドメインモデルと直接の関連範囲を
   Mermaid / D2 / HTML（ノード数で自動選定、--format で明示指定可）の構成図として
   docs/branch-diagrams/ に出力する。--models でモデルの内部構造（クラス図/ER 図・
-  メンバー単位の差分マーカー付き）も描ける。レビュー準備・作業内容の俯瞰に使う。
+  メンバー単位の差分マーカー付き）も描ける。対象はブランチ名のほか PR 番号（#123）
+  でも指定できる。レビュー準備・作業内容の俯瞰に使う。
   リポジトリ全体のアーキテクチャ図は作らない（変更箇所と直接関連範囲に限定）。
   ユーザーが「ブランチを可視化して」「変更内容を図にして」「/branch-visualize」と言ったら起動する。
-argument-hint: "[<branch>] [--base <branch>] [--format mermaid|d2|html] [--models]"
+argument-hint: "[<branch> | #<pr-number>] [--base <branch>] [--format mermaid|d2|html] [--models]"
 disable-model-invocation: true
 allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 ---
@@ -24,7 +25,8 @@ allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 - `--format mermaid|d2|html` → `{フォーマット}`。これ以外の値が指定されたら AskUserQuestion で確認する（使えないエージェントではテキストで確認する。以降の AskUserQuestion も同様）。無ければ `{フォーマット}` = auto
 - `--base <branch>` → `{比較先}`
 - `--models` → `{モデル詳細}` = true（モジュール依存図の代わりにクラス図/ER 図を生成する）
-- 残りの最初の位置引数 → `{対象ブランチ}`。無ければ `git rev-parse --abbrev-ref HEAD` の結果
+- `#<数字>`（例: `#100`）→ `{PR番号}`。GitHub MCP の `pull_request_read`（method: get）で PR を取得し、head ブランチを `{対象ブランチ}`、base ブランチを `{比較先}` とする（`--base` 指定があればそちらを優先）。MCP 未接続、または PR が存在しない場合はエラーを表示して終了する
+- 残りの最初の位置引数 → `{対象ブランチ}`。`{PR番号}` と両方指定された場合は AskUserQuestion でどちらを対象にするか確認する。どちらも無ければ `git rev-parse --abbrev-ref HEAD` の結果
 
 `{比較先}` が未指定の場合、次の順で解決する:
 
@@ -44,6 +46,8 @@ allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 比較先: <比較先ブランチ>
 フォーマット: <auto | mermaid | d2 | html>
 ```
+
+`{PR番号}` 指定時は「対象」行に `（PR #<番号>）` を併記する。
 
 ### 2. 差分取得
 
@@ -146,7 +150,9 @@ edges: [{ from, to, type: calls|imports|depends_on,           # {モデル詳細
 | git リポジトリでない / 対象ブランチが存在しない | エラーを表示して終了 |
 | 比較先との diff が空 | 「差分なし」と表示して終了（ファイルを生成しない） |
 | `--base` 省略時に open PR が複数 | AskUserQuestion で対象を選ばせる |
-| GitHub MCP 未接続 | PR 解決をスキップしデフォルトブランチ解決へ（エラーにしない） |
+| GitHub MCP 未接続（`--base` 省略時の自動解決） | PR 解決をスキップしデフォルトブランチ解決へ（エラーにしない） |
+| `#<番号>` 指定だが GitHub MCP 未接続 / PR が存在しない | エラーを表示して終了 |
+| `#<番号>` とブランチ名の両方が指定された | AskUserQuestion でどちらを対象にするか確認する |
 | `d2` CLI が無い（d2 選定時） | `.d2` ソースのみ保存し、レポートに案内を書く |
 | `docs/branch-diagrams/` が無い | AskUserQuestion で作成可否を確認する |
 
