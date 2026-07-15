@@ -4,10 +4,11 @@ description: >
   git ブランチ単位で実装内容を可視化する。対象ブランチとマージ先ブランチの差分を分析し、
   変更モジュール・ライブラリ増減・データ/ドメインモデルと直接の関連範囲を
   Mermaid / D2 / HTML（ノード数で自動選定、--format で明示指定可）の構成図として
-  docs/branch-diagrams/ に出力する。レビュー準備・作業内容の俯瞰に使う。
+  docs/branch-diagrams/ に出力する。--models でモデルの内部構造（クラス図/ER 図・
+  メンバー単位の差分マーカー付き）も描ける。レビュー準備・作業内容の俯瞰に使う。
   リポジトリ全体のアーキテクチャ図は作らない（変更箇所と直接関連範囲に限定）。
   ユーザーが「ブランチを可視化して」「変更内容を図にして」「/branch-visualize」と言ったら起動する。
-argument-hint: "[<branch>] [--base <branch>] [--format mermaid|d2|html]"
+argument-hint: "[<branch>] [--base <branch>] [--format mermaid|d2|html] [--models]"
 disable-model-invocation: true
 allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 ---
@@ -22,6 +23,7 @@ allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 
 - `--format mermaid|d2|html` → `{フォーマット}`。これ以外の値が指定されたら AskUserQuestion で確認する（使えないエージェントではテキストで確認する。以降の AskUserQuestion も同様）。無ければ `{フォーマット}` = auto
 - `--base <branch>` → `{比較先}`
+- `--models` → `{モデル詳細}` = true（モジュール依存図の代わりにクラス図/ER 図を生成する）
 - 残りの最初の位置引数 → `{対象ブランチ}`。無ければ `git rev-parse --abbrev-ref HEAD` の結果
 
 `{比較先}` が未指定の場合、次の順で解決する:
@@ -57,19 +59,23 @@ allowed-tools: Read, Bash, Grep, Glob, Write, AskUserQuestion
 
 ### 4. 変更内容の分析
 
+- **ノード化するのは開発コードとその依存のみ**（モジュール / コンポーネント / データモデル / ライブラリ）。ドキュメント（`*.md` 等）・CI / ビルド設定・画像などの非コード資産はノードにせず、レポートの「その他の変更」節に一覧する（無言で落とさない）
 - 変更ファイルを読み、モジュール / コンポーネント / データモデル（エンティティ・DTO・スキーマ・クラス構造）を識別する
 - **直接の関連範囲**: 変更箇所の呼び出し元・呼び出し先を Grep で特定し、図の理解に必要なファイルだけ追加で読む。2 ホップ以上は辿らない
 - `{巨大差分}` = true の場合: 全ファイルは読まず、ディレクトリ / パッケージ単位でグルーピングして 1 ノードにまとめる。詳細読み込みを省略したファイル数と対象ディレクトリを記録し、レポートに明記する（無言の切り詰めをしない）
+- `{モデル詳細}` = true の場合: モジュール依存の分析の代わりに、変更ファイル中のモデル定義（クラス / interface / enum / テーブル定義）を対象として、メンバー（フィールド・メソッド・カラム）単位の差分と、モデル間の関係（継承 / 実装 / 参照 / FK）を diff から抽出する。関連範囲の未変更モデルは名前のみ拾う（メンバーは読まない）
 
 ### 5. 構造化
 
 分析結果を次の中間表現に整理する（作業メモ。ファイル保存は不要）:
 
 ```
-nodes: [{ id, label, type: module|library|model|component,
+nodes: [{ id, label, type: module|library|model|component,   # {モデル詳細} 時は class|interface|enum|table
           status: added|modified|removed|unchanged,
+          members: [{ name, type, status }],                  # {モデル詳細} 時のみ
           detail: { path, description, lines } }]
-edges: [{ from, to, type: calls|imports|depends_on }]
+edges: [{ from, to, type: calls|imports|depends_on,           # {モデル詳細} 時は inherits|implements|composes|references|fk
+          label }]                                            # 任意: 関係種別・カルディナリティ（"1..n" 等）
 ```
 
 - 関連範囲として図に含める未変更要素は `status: unchanged` とする
@@ -89,7 +95,7 @@ edges: [{ from, to, type: calls|imports|depends_on }]
 
 - 出力先 `docs/branch-diagrams/` が無ければ AskUserQuestion で作成可否を確認する（拒否されたら出力先ディレクトリを尋ねる）
 - ファイル名: `<branch-slug>-<date>`。`<branch-slug>` はブランチ名の `/` を `-` に置換したもの、`<date>` は `TZ=Asia/Tokyo date +%Y-%m-%d`
-- 色・雛形・生成方法は [references/format-guide.md](references/format-guide.md) に従う:
+- 色・雛形・生成方法は [references/format-guide.md](references/format-guide.md) に従う。`{モデル詳細}` = true の場合は同ガイドの「モデル詳細図（--models）」節に従い、クラス図 / ER 図の種別をモデルの出自で判定する（混在時は併記）:
   - **mermaid** → レポート本文にコードブロックとして埋め込む
   - **d2** → `<branch-slug>-<date>.d2` を生成する。`command -v d2` が成功したら `d2 <file>.d2 <file>.svg` で SVG も生成する。無ければソースのみ保存し、レポートに「ローカルで `d2` CLI を実行すれば図化できる」旨を書く（外部レンダリング API は使わない）
   - **html** → [assets/diagram-template.html](assets/diagram-template.html) を読み、`__TITLE__` と `__GRAPH_JSON__` を置換して `<branch-slug>-<date>.html` を生成する（GRAPH JSON スキーマ・エスケープ規則は format-guide.md 参照。配色・レイアウトはテンプレートが内蔵しており生成側の座標計算は不要）
@@ -105,6 +111,7 @@ edges: [{ from, to, type: calls|imports|depends_on }]
 
 ## 凡例
 🟢 追加 / 🟡 変更 / 🔴 削除（破線枠）/ ⚪ 関連（未変更）
+（{モデル詳細} = true のときは追記: メンバー `[+]` 追加 / `[-]` 削除 / `[*]` 変更）
 
 ## 構成図
 （mermaid はここに埋め込み。d2 / html は相対リンク + 図の要点 2〜3 文）
@@ -118,6 +125,9 @@ edges: [{ from, to, type: calls|imports|depends_on }]
 | モデル | 状態 | 概要 |
 |---|---|---|
 （該当が無ければ「該当なし」と 1 行書く）
+
+## その他の変更（図の対象外）
+（ドキュメント・CI / ビルド設定など非コードの変更ファイルを 1 行ずつ。該当が無ければ節ごと省略）
 
 ## 省略した範囲
 （{巨大差分} = true のときのみ: 省略したファイル数・対象ディレクトリ）

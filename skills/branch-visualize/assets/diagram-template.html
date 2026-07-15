@@ -28,6 +28,8 @@
   header .summary { font-size: 12px; color: var(--muted); }
   .legend { display: flex; gap: 14px; font-size: 11.5px; margin-left: auto; align-items: center; color: var(--muted); }
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; border: 1.5px solid; vertical-align: -1px; }
+  .legend .member-legend { color: var(--faint); }
+  .legend .member-legend::before { display: none; }
   .legend .added::before { background: rgba(63,185,80,.10); border-color: var(--added); }
   .legend .modified::before { background: rgba(210,153,34,.10); border-color: var(--modified); }
   .legend .removed::before { background: rgba(248,81,73,.08); border-color: var(--removed); border-style: dashed; }
@@ -45,9 +47,17 @@
   .node.removed rect { fill: rgba(248,81,73,.08); stroke: var(--removed); stroke-dasharray: 5 3; }
   .node.unchanged rect { stroke: var(--unchanged); }
   .node.selected rect { stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(121,192,255,.35)); }
+  .node line.sep { stroke: var(--border); }
+  .node text.member { font-size: 11px; }
+  .node text.member.added { fill: #7ee2a8; }
+  .node text.member.removed { fill: #ff9d96; text-decoration: line-through; }
+  .node text.member.modified { fill: #e8c06d; }
+  .node text.member.unchanged { fill: var(--muted); }
   path.edge { stroke: var(--edge); stroke-width: 1.3; fill: none; marker-end: url(#arrow); transition: opacity .15s ease-out; }
+  text.edge-label { font-size: 9.5px; font-family: var(--mono); fill: var(--faint); text-anchor: middle; transition: opacity .15s ease-out; }
   svg.focus .node:not(.hi) { opacity: .18; }
   svg.focus path.edge:not(.hi) { opacity: .10; }
+  svg.focus text.edge-label:not(.hi) { opacity: .10; }
   svg.focus path.edge.hi { stroke: var(--accent); stroke-width: 1.8; marker-end: url(#arrow-hi); }
   #panel { position: absolute; top: 14px; right: 14px; width: 330px; max-height: 75%; overflow: auto; background: rgba(17,22,31,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
   #panel h2 { font-size: 13.5px; font-family: var(--mono); margin-bottom: 10px; padding-right: 20px; word-break: break-all; }
@@ -55,6 +65,11 @@
   #panel dt { color: var(--faint); font-size: 12px; }
   #panel dd { word-break: break-all; color: var(--muted); }
   #panel dd.path { font-family: var(--mono); font-size: 12px; }
+  #panel ul.members { list-style: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 12px; }
+  #panel ul.members li { margin: 3px 0; color: var(--muted); word-break: break-all; }
+  #panel ul.members li.added { color: #7ee2a8; }
+  #panel ul.members li.removed { color: #ff9d96; text-decoration: line-through; }
+  #panel ul.members li.modified { color: #e8c06d; }
   #panel .close { position: absolute; top: 12px; right: 14px; cursor: pointer; border: none; background: none; font-size: 14px; color: var(--faint); }
   #panel .close:hover { color: var(--text); }
   #controls { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 6px; }
@@ -96,13 +111,22 @@ var GRAPH = __GRAPH_JSON__;
 
 var NODE_W = 190;
 var NODE_H = 54;
+var HEAD_H = 44;
+var ROW_H = 17;
 var H_GAP = 120;
 var V_GAP = 26;
 var DUMMY_GAP = 18;
 var MARGIN = 48;
 var SVG_NS = "http://www.w3.org/2000/svg";
-var TYPE_LABELS = { module: "モジュール", library: "ライブラリ", model: "モデル", component: "コンポーネント" };
+var TYPE_LABELS = { module: "モジュール", library: "ライブラリ", model: "モデル", component: "コンポーネント", "class": "クラス", "interface": "インターフェース", "enum": "列挙型", table: "テーブル" };
 var STATUS_LABELS = { added: "追加", modified: "変更", removed: "削除", unchanged: "関連（未変更）" };
+var MEMBER_PREFIX = { added: "+", removed: "−", modified: "*", unchanged: "·" };
+
+// members 付きノードは行数に応じた可変高、無ければ従来の固定高
+function heightOf(n) {
+  var m = n.members ? n.members.length : 0;
+  return m ? HEAD_H + 24 + (m - 1) * ROW_H : NODE_H;
+}
 
 var svg = document.getElementById("canvas");
 var viewport = document.getElementById("viewport");
@@ -112,6 +136,12 @@ document.getElementById("title").textContent = GRAPH.title;
 document.title = GRAPH.title;
 document.getElementById("summary").textContent =
   "変更 " + GRAPH.summary.files + " ファイル / +" + GRAPH.summary.insertions + " −" + GRAPH.summary.deletions;
+if (GRAPH.nodes.some(function (n) { return n.members && n.members.length; })) {
+  var memberLegend = document.createElement("span");
+  memberLegend.className = "member-legend";
+  memberLegend.textContent = "メンバー: + 追加 / − 削除 / * 変更";
+  document.querySelector(".legend").appendChild(memberLegend);
+}
 
 /* ---------- レイアウト: レイヤリング（Sugiyama 系） ---------- */
 
@@ -166,7 +196,7 @@ var layers = [];
 for (var li = 0; li <= maxLayer; li++) layers.push([]);
 var itemOf = {};
 GRAPH.nodes.forEach(function (n) {
-  var it = { node: n, layer: layerOf[n.id], up: [], down: [] };
+  var it = { node: n, layer: layerOf[n.id], h: heightOf(n), up: [], down: [] };
   layers[it.layer].push(it);
   itemOf[n.id] = it;
 });
@@ -215,7 +245,7 @@ for (var s = 0; s < 4; s++) { sweep(true); sweep(false); }
 
 var colHeights = layers.map(function (items) {
   var h = 0;
-  items.forEach(function (it) { h += it.dummy ? DUMMY_GAP : NODE_H + V_GAP; });
+  items.forEach(function (it) { h += it.dummy ? DUMMY_GAP : it.h + V_GAP; });
   return Math.max(0, h - (items.length && !items[items.length - 1].dummy ? V_GAP : 0));
 });
 var maxColH = Math.max.apply(null, colHeights.concat([0]));
@@ -224,17 +254,17 @@ layers.forEach(function (items, l) {
   items.forEach(function (it) {
     it.x = MARGIN + l * (NODE_W + H_GAP);
     it.y = y;
-    y += it.dummy ? DUMMY_GAP : NODE_H + V_GAP;
+    y += it.dummy ? DUMMY_GAP : it.h + V_GAP;
   });
 });
 
 // ポート: ノード辺上に接続点を分散して線の重なりを防ぐ
 function portYs(item, segs, otherEndY) {
   var k = segs.length;
-  var span = Math.min(14, (NODE_H - 24) / Math.max(k - 1, 1));
+  var span = Math.min(14, (item.h - 24) / Math.max(k - 1, 1));
   segs.sort(function (a, b) { return otherEndY(a) - otherEndY(b); });
   segs.forEach(function (seg, i) {
-    seg.portY = item.y + NODE_H / 2 + (i - (k - 1) / 2) * span;
+    seg.portY = item.y + item.h / 2 + (i - (k - 1) / 2) * span;
   });
 }
 GRAPH.nodes.forEach(function (n) {
@@ -245,8 +275,8 @@ GRAPH.nodes.forEach(function (n) {
     if (le.chain[0] === it) outSegs.push({ le: le, next: le.chain[1] });
     if (le.chain[le.chain.length - 1] === it) inSegs.push({ le: le, next: le.chain[le.chain.length - 2] });
   });
-  portYs(it, outSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + NODE_H / 2; });
-  portYs(it, inSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + NODE_H / 2; });
+  portYs(it, outSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + s.next.h / 2; });
+  portYs(it, inSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + s.next.h / 2; });
   outSegs.forEach(function (s) { s.le.srcPort = { x: it.x + NODE_W, y: s.portY }; });
   inSegs.forEach(function (s) { s.le.dstPort = { x: it.x, y: s.portY }; });
 });
@@ -278,6 +308,19 @@ ledges.forEach(function (le) {
   viewport.appendChild(path);
   edgeEls[le.orig.from].push(path);
   edgeEls[le.orig.to].push(path);
+  if (le.orig.label) {
+    var mi = (pts.length - 1) / 2;
+    var pa = pts[Math.floor(mi)];
+    var pb = pts[Math.ceil(mi)];
+    var lbl = document.createElementNS(SVG_NS, "text");
+    lbl.setAttribute("x", (pa.x + pb.x) / 2);
+    lbl.setAttribute("y", (pa.y + pb.y) / 2 - 5);
+    lbl.setAttribute("class", "edge-label");
+    lbl.textContent = le.orig.label;
+    viewport.appendChild(lbl);
+    edgeEls[le.orig.from].push(lbl);
+    edgeEls[le.orig.to].push(lbl);
+  }
   nbrIds[le.orig.from].push(le.orig.to);
   nbrIds[le.orig.to].push(le.orig.from);
 });
@@ -308,7 +351,7 @@ GRAPH.nodes.forEach(function (n) {
 
   var rect = document.createElementNS(SVG_NS, "rect");
   rect.setAttribute("width", NODE_W);
-  rect.setAttribute("height", NODE_H);
+  rect.setAttribute("height", it.h);
   rect.setAttribute("rx", 10);
   g.appendChild(rect);
 
@@ -324,6 +367,25 @@ GRAPH.nodes.forEach(function (n) {
   label.setAttribute("y", 38);
   label.textContent = truncateLabel(n.label, 24);
   g.appendChild(label);
+
+  if (n.members && n.members.length) {
+    var sep = document.createElementNS(SVG_NS, "line");
+    sep.setAttribute("x1", 1);
+    sep.setAttribute("x2", NODE_W - 1);
+    sep.setAttribute("y1", HEAD_H);
+    sep.setAttribute("y2", HEAD_H);
+    sep.setAttribute("class", "sep");
+    g.appendChild(sep);
+    n.members.forEach(function (m, i) {
+      var row = document.createElementNS(SVG_NS, "text");
+      row.setAttribute("x", 12);
+      row.setAttribute("y", HEAD_H + 14 + i * ROW_H);
+      row.setAttribute("class", "member " + (m.status || "unchanged"));
+      row.textContent = truncateLabel(
+        (MEMBER_PREFIX[m.status] || "·") + " " + m.name + (m.type ? ": " + m.type : ""), 25);
+      g.appendChild(row);
+    });
+  }
 
   var tip = document.createElementNS(SVG_NS, "title");
   tip.textContent = n.label;
@@ -382,6 +444,17 @@ function selectNode(n, g) {
   panel.appendChild(close);
   panel.appendChild(h2);
   panel.appendChild(dl);
+  if (n.members && n.members.length) {
+    var ul = document.createElement("ul");
+    ul.className = "members";
+    n.members.forEach(function (m) {
+      var li = document.createElement("li");
+      li.className = m.status || "unchanged";
+      li.textContent = (MEMBER_PREFIX[m.status] || "·") + " " + m.name + (m.type ? ": " + m.type : "");
+      ul.appendChild(li);
+    });
+    panel.appendChild(ul);
+  }
   panel.style.display = "block";
 }
 function closePanel() {
