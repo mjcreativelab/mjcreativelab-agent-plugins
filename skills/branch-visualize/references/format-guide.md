@@ -1,6 +1,6 @@
 # フォーマット別生成ガイド
 
-branch-visualize の手順 7（図とレポートの生成）から参照される。3 フォーマット共通のダークパレットと、各フォーマットの生成方法を定義する。
+branch-visualize の手順 7（図とレポートの生成）から参照される。3 フォーマット共通のダークパレットと、各フォーマットの生成方法を定義する。`--models`（モデル詳細図）の生成規則は末尾の「モデル詳細図（--models）」節を参照。
 
 ## 共通: ダークパレット（状態別カラー）
 
@@ -117,15 +117,133 @@ mods.authsvc -> mods.usersvc
     {
       "id": "n1", "label": "UserService",
       "type": "module", "status": "modified",
+      "members": [ { "name": "retry", "type": "RetryPolicy", "status": "added" } ],
       "detail": { "path": "src/services/user.ts", "description": "認証フローに再試行処理を追加", "lines": "+40 −12" }
     }
   ],
-  "edges": [ { "from": "n1", "to": "n2", "type": "calls" } ]
+  "edges": [ { "from": "n1", "to": "n2", "type": "calls", "label": "1..n" } ]
 }
 ```
 
-- `type`: `module` | `library` | `model` | `component`
+- `type`: `module` | `library` | `model` | `component` | `class` | `interface` | `enum` | `table`（後ろ 4 つは `--models` 用）
 - `status`: `added` | `modified` | `removed` | `unchanged`
-- `edges` の `from` / `to` は「from が to に依存する（calls / imports / depends_on）」の向きで書く（レイアウトは from が左・to が右になる）
+- `members`（任意・`--models` 用）: 指定するとノードがメンバー行付きの可変高で描画される（行頭記号と色は status からテンプレートが決める。`[+]` 等のマーカー文字列を含めない）。省略時は従来の固定高ノード
+- `edges[].label`（任意）: エッジ中点に表示する小ラベル（関係種別 `inherits` やカルディナリティ `1..n` 等）
+- `edges` の `from` / `to` は「from が to に依存する」の向きで書く（レイアウトは from が左・to が右になる）
 - 存在しないノード ID を参照するエッジ・自己参照エッジは描画されない（テンプレート側で除外される）。循環依存はあってもよい（レイアウト計算時に自動処理される）
 - **エスケープ**: JSON 文字列中に `</script>` 相当の並びを出現させない（`</` は `<\/` にエスケープする）
+
+## モデル詳細図（--models）
+
+`--models` 指定時はモジュール依存図の代わりに、変更モデルの内部構造（メンバー）とモデル間の関係を描く。
+
+### 図種の判定
+
+モデルの**出自**で決める:
+
+| 出自 | 図種 |
+|---|---|
+| DB スキーマ定義由来（migration / DDL / schema.prisma / ORM スキーマ / schema.rb 等） | ER 図 |
+| コードのクラス / interface / enum / DTO 由来 | クラス図 |
+
+両種が混在する差分では、無理に 1 つへ統合せず**クラス図と ER 図を同一レポートに併記**する（コード⇔テーブルの対応は HTML では 1 図に共存できる）。
+
+### 共通表示規則
+
+- **メンバー差分マーカー**: `[+]` 追加 / `[-]` 削除 / `[*]` 変更（型・制約の変更）。行末に付ける。`[~]` は使わない（mermaid classDiagram のジェネリクス記号 `~` と衝突する・検証済み）。HTML のみマーカー文字列不要（`members[].status` からテンプレートが記号と色を描く）
+- 変更メンバーは全件表示。未変更メンバーは 8 件を目安に超過分を省略し、末尾に「…他 N 件」の行を置く（無言で切り詰めない）
+- 関連範囲の未変更モデルは**名前のみ**（メンバー省略）で図を軽く保つ
+- ノード数の閾値（フォーマット自動判定）は通常モードと同じ表を使う
+
+### Mermaid クラス図
+
+`classDiagram` + `:::` で共通ダークチップの classDef を流用する。関係: `--|>` 継承 / `..|>` 実装 / `-->` 参照 / `*--` コンポジション。メソッド行の末尾マーカーは戻り値スロットに表示される（`verifyEmail() : [+]`）が許容。
+
+```mermaid
+classDiagram
+  direction LR
+  class User {
+    id: UUID
+    email: string [+]
+    nickname: string [-]
+    verifyEmail() [+]
+  }
+  class AdminUser {
+    role: Role [+]
+  }
+  class Role {
+    <<enumeration>>
+    ADMIN
+    MEMBER
+  }
+  AdminUser --|> User : inherits
+  AdminUser --> Role : references
+  class User:::modified
+  class AdminUser:::added
+  class Role:::added
+  classDef added fill:#12261c,stroke:#3fb950,color:#7ee2a8
+  classDef modified fill:#2a2012,stroke:#d29922,color:#e8c06d
+  classDef removed fill:#2b1518,stroke:#f85149,stroke-dasharray:5 3,color:#ff9d96
+  classDef unchanged fill:#161b26,stroke:#3d4654,color:#9aa7b8
+```
+
+### Mermaid ER 図
+
+`erDiagram` はエンティティ単位の色分けに対応しない（mermaid の制約）。状態は属性のコメント欄マーカーと、レポート本文の凡例・表で補足する。
+
+```mermaid
+erDiagram
+  USER {
+    uuid id PK
+    string email "[+]"
+    string nickname "[-]"
+  }
+  ORDER {
+    uuid id PK
+    uuid user_id FK
+  }
+  USER ||--o{ ORDER : "1..n"
+```
+
+### D2
+
+**全モデルを `shape: sql_table` で統一する**（`shape: class` はダークテーマでフィールド名が低コントラストになるため使わない・d2 v0.7 で実測）。クラスのメソッドは `name(): 戻り値` の行として書く。sql_table では `fill` がヘッダー背景・`stroke` が行背景に割り当たるため、モデル図専用の `m-*` classes を使う（ヘッダー = 状態色タント / 行 = ダーク固定）:
+
+```d2
+vars: { d2-config: { theme-id: 200 } }
+
+direction: right
+
+style.fill: "#0b0f16"
+
+classes: {
+  m-added: { style: { fill: "#12261c"; stroke: "#141b26"; font-color: "#7ee2a8" } }
+  m-modified: { style: { fill: "#2a2012"; stroke: "#141b26"; font-color: "#e8c06d" } }
+  m-removed: { style: { fill: "#2b1518"; stroke: "#141b26"; font-color: "#ff9d96" } }
+  m-unchanged: { style: { fill: "#161b26"; stroke: "#141b26"; font-color: "#9aa7b8" } }
+}
+
+User: {
+  class: m-modified
+  shape: sql_table
+  id: UUID
+  email: "string [+]"
+  nickname: "string [-]"
+  verifyEmail(): void
+}
+
+users: {
+  class: m-modified
+  shape: sql_table
+  id: uuid { constraint: primary_key }
+  email: "varchar(255) [+]"
+}
+
+User -> users: maps
+
+(** -> **)[*].style.stroke: "#8b98a9"
+```
+
+### HTML
+
+通常モードと同じテンプレートを使う。GRAPH JSON スキーマの `nodes[].members` と `edges[].label` を付けるだけでよい（可変高ノード・行色・凡例追記はテンプレートが自動処理する）。クラスとテーブルの対応（`maps` 等）も 1 図に共存できるため、混在差分でも HTML は 1 ファイルでよい。
