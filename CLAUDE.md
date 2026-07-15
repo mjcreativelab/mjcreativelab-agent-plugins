@@ -46,7 +46,8 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 - PR・Issue 作成時は作成者を自動アサインする（GitHub MCP の `get_me` または `gh api user` で取得した GitHub ユーザー名を使用）
 - Issue 作成時は内容に適した既存ラベルを付与する
 - **Issue 作成は GitHub MCP ツール (`issue_write`) を使用する**（ラベル付与・アサインも同ツールで行う）
-- コミット・PR に closing keyword は使わない（Issue はマージ後に手動クローズする）。実装済みでも Issue が open のまま残ることがあるため、Issue 着手前にマージ済み PR がその番号を参照していないか確認し、解決済みなら検証コメントを添えてクローズする（例: #69 / #72 は PR #73 で実装済みのまま open だった）
+- コミット・PR で closing keyword（`Closes`/`Fixes`/`Resolves` + `#NN`）を意図的に使うのは問題ない（対象 Issue を完全に解決する PR で、独立した行として明記する場合）。避けるべきは、Issue に言及する説明文（背景・関連 Issue の言及など）が偶然 closing keyword のパターンと一致し、意図せず auto-close されること — 地の文では「Issue #NN」のような中立表現を使い、close / fix / resolve 系の語を Issue 番号に直接続けない
+- PR が Issue を部分的にしか解決しない場合は closing keyword を使わず、マージ後に手動でクローズ判断する（実装済みでも Issue が open のまま残ることがあるため、Issue 着手前にマージ済み PR がその番号を参照していないか確認し、解決済みなら検証コメントを添えてクローズする。例: #69 / #72 は PR #73 で実装済みのまま open だった）
 
 > 上記規則は `smart-commit` / `smart-issue-plan` / `smart-issue-resolve` / `smart-pr` の各 SKILL.md にも内蔵されている（`npx skills` 経由でインストールされた利用者がプロジェクト外ファイルを参照できないため）。本リポジトリで作業する際は CLAUDE.md（本セクション）が一次情報源。
 

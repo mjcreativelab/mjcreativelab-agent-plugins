@@ -278,7 +278,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 ### 収束後のコミット・PR 作成
 
-`{ループ明示}` = true の場合のみ実施する（セキュリティ自動発動のみで発動した場合は手順 7 に切り替える）。`smart-commit` / `smart-pr` は `disable-model-invocation` のため Skill ツールから自動呼び出しできない。ここではコミット・push を `git` で行い、PR 作成・作成者アサインは GitHub MCP（利用不能時は `gh`）で直接行う。プロジェクトの Git 規約に従う（conventional commit・closing keyword は使わない・作成者を自動アサイン。プロジェクト独自規約があればそれを優先）:
+`{ループ明示}` = true の場合のみ実施する（セキュリティ自動発動のみで発動した場合は手順 7 に切り替える）。`smart-commit` / `smart-pr` は `disable-model-invocation` のため Skill ツールから自動呼び出しできない。ここではコミット・push を `git` で行い、PR 作成・作成者アサインは GitHub MCP（利用不能時は `gh`）で直接行う。プロジェクトの Git 規約に従う（conventional commit・closing keyword は対象 Issue を完全に解決する場合のみ意図的に使用・地の文での偶然の一致による意図しない auto-close は避ける・作成者を自動アサイン。プロジェクト独自規約があればそれを優先）:
 
 1. **最終 QA ゲート** — 自動コミットの前に独立 QA で最終検証する（claude 系の収束時は雛形 B が内蔵実行。codex 系、および claude 系で打ち切りを選んだ場合は雛形 E を 1 回起動する — 起動前に、変更セットに残った `.breaker-probe.` ファイルを取り除いておく。Workflow 不能な degraded 環境では起動できないため省略し、その旨を完了報告に明記する）。`pass: false` なら自動コミット・PR を**中止**し、QA の指摘を提示してユーザーに相談する。claude 敵対モードで雛形 B の返却に `judgeDegraded: true` が立っている場合も、未裁定の反例が残るため収束していても自動コミット前にユーザーへ確認する（[references/agent-orchestration.md](references/agent-orchestration.md) の「返却の扱い」参照）
 2. **コミット** — 変更を Issue の作業単位でコミットする。コミット前に `git status` で、反例検証用テスト（`.breaker-probe.` を含むファイル。採用欠陥の回帰テスト化済みのものを除く）や一時成果物が変更セットに混ざっていないか確認する。機密ファイルの混入チェック・pre-commit hook 失敗への対応などの安全系確認は省略しない。`--no-verify` は使わない

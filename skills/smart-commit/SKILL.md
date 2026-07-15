@@ -132,7 +132,7 @@ EOF
   - 破壊的変更がある（migration 手順や影響範囲を明示）
   - バグ修正で根本原因を記録したい
   - 複数ファイル/モジュールにまたがる構造変更で、subject だけでは意図が伝わらない
-  - 関連 Issue / PR への参照（`Refs: #123`, `Closes: #456`）
+  - 関連 Issue / PR への参照。対象 Issue を完全に解決するときは `Closes: #456`（auto-close）、参照のみ・部分対応にとどまるときは `Refs: #123` を使う。本文中で Issue に言及する説明文では close / fix / resolve 系の語を Issue 番号に直接続けない（意図しない auto-close を避ける）。プロジェクト側に独自の closing keyword 運用規則（CLAUDE.md 等）があればそれを優先する
 
 GitMoji と type の対応: [references/gitmoji-types.md](references/gitmoji-types.md)
 
