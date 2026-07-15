@@ -5,38 +5,62 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
+  :root {
+    --bg: #0b0f16;
+    --surface: #11161f;
+    --node-fill: #141b26;
+    --border: #222b3a;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --faint: #6e7b8f;
+    --added: #3fb950;
+    --modified: #d29922;
+    --removed: #f85149;
+    --unchanged: #3d4654;
+    --edge: #4a566a;
+    --accent: #79c0ff;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: #f6f8fa; color: #1f2328; height: 100vh; display: flex; flex-direction: column; }
-  header { padding: 10px 16px; background: #fff; border-bottom: 1px solid #d1d9e0; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
-  header h1 { font-size: 15px; font-weight: 600; }
-  header .summary { font-size: 12px; color: #59636e; }
-  .legend { display: flex; gap: 12px; font-size: 12px; margin-left: auto; align-items: center; }
-  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; border: 1.5px solid; vertical-align: -1px; }
-  .legend .added::before { background: #dafbe1; border-color: #1a7f37; }
-  .legend .modified::before { background: #fff8c5; border-color: #9a6700; }
-  .legend .removed::before { background: #ffebe9; border-color: #cf222e; border-style: dashed; }
-  .legend .unchanged::before { background: #fff; border-color: #d1d9e0; }
+  body { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 12px 18px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 13px; font-weight: 600; font-family: var(--mono); letter-spacing: .01em; }
+  header .summary { font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; margin-left: auto; align-items: center; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; border: 1.5px solid; vertical-align: -1px; }
+  .legend .added::before { background: rgba(63,185,80,.10); border-color: var(--added); }
+  .legend .modified::before { background: rgba(210,153,34,.10); border-color: var(--modified); }
+  .legend .removed::before { background: rgba(248,81,73,.08); border-color: var(--removed); border-style: dashed; }
+  .legend .unchanged::before { background: var(--node-fill); border-color: var(--unchanged); }
   main { flex: 1; position: relative; overflow: hidden; }
   svg#canvas { width: 100%; height: 100%; cursor: grab; display: block; }
   svg#canvas.dragging { cursor: grabbing; }
   .node { cursor: pointer; }
-  .node rect { stroke-width: 1.5; }
-  .node text { font-size: 12px; pointer-events: none; }
-  .node text.type-label { font-size: 9px; fill: #59636e; }
-  .node.added rect { fill: #dafbe1; stroke: #1a7f37; }
-  .node.modified rect { fill: #fff8c5; stroke: #9a6700; }
-  .node.removed rect { fill: #ffebe9; stroke: #cf222e; stroke-dasharray: 5 3; }
-  .node.unchanged rect { fill: #fff; stroke: #d1d9e0; }
-  .node.selected rect { stroke-width: 3; }
-  path.edge { stroke: #8c959f; stroke-width: 1.2; fill: none; marker-end: url(#arrow); }
-  #panel { position: absolute; top: 12px; right: 12px; width: 320px; max-height: 75%; overflow: auto; background: #fff; border: 1px solid #d1d9e0; border-radius: 8px; padding: 14px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,.08); display: none; }
-  #panel h2 { font-size: 14px; margin-bottom: 8px; padding-right: 20px; }
-  #panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; }
-  #panel dt { color: #59636e; }
-  #panel dd { word-break: break-all; }
-  #panel .close { position: absolute; top: 10px; right: 12px; cursor: pointer; border: none; background: none; font-size: 14px; color: #59636e; }
-  #controls { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 6px; }
-  #controls button { width: 32px; height: 32px; border: 1px solid #d1d9e0; background: #fff; border-radius: 6px; cursor: pointer; font-size: 15px; }
+  .node rect { fill: var(--node-fill); stroke-width: 1.5; transition: opacity .15s ease-out, filter .15s ease-out; }
+  .node:hover rect { filter: brightness(1.3); }
+  .node text { font-size: 12px; font-family: var(--mono); fill: var(--text); pointer-events: none; }
+  .node text.type-label { font-size: 9px; letter-spacing: .12em; fill: var(--faint); }
+  .node.added rect { fill: rgba(63,185,80,.10); stroke: var(--added); }
+  .node.modified rect { fill: rgba(210,153,34,.10); stroke: var(--modified); }
+  .node.removed rect { fill: rgba(248,81,73,.08); stroke: var(--removed); stroke-dasharray: 5 3; }
+  .node.unchanged rect { stroke: var(--unchanged); }
+  .node.selected rect { stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(121,192,255,.35)); }
+  path.edge { stroke: var(--edge); stroke-width: 1.3; fill: none; marker-end: url(#arrow); transition: opacity .15s ease-out; }
+  svg.focus .node:not(.hi) { opacity: .18; }
+  svg.focus path.edge:not(.hi) { opacity: .10; }
+  svg.focus path.edge.hi { stroke: var(--accent); stroke-width: 1.8; marker-end: url(#arrow-hi); }
+  #panel { position: absolute; top: 14px; right: 14px; width: 330px; max-height: 75%; overflow: auto; background: rgba(17,22,31,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
+  #panel h2 { font-size: 13.5px; font-family: var(--mono); margin-bottom: 10px; padding-right: 20px; word-break: break-all; }
+  #panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
+  #panel dt { color: var(--faint); font-size: 12px; }
+  #panel dd { word-break: break-all; color: var(--muted); }
+  #panel dd.path { font-family: var(--mono); font-size: 12px; }
+  #panel .close { position: absolute; top: 12px; right: 14px; cursor: pointer; border: none; background: none; font-size: 14px; color: var(--faint); }
+  #panel .close:hover { color: var(--text); }
+  #controls { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 6px; }
+  #controls button { width: 32px; height: 32px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 15px; transition: border-color .15s ease-out, color .15s ease-out; }
+  #controls button:hover { border-color: var(--accent); color: var(--text); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
@@ -51,7 +75,10 @@
   <svg id="canvas">
     <defs>
       <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-        <path d="M0,0 L10,5 L0,10 z" fill="#8c959f"></path>
+        <path d="M0,0 L10,5 L0,10 z" fill="#4a566a"></path>
+      </marker>
+      <marker id="arrow-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#79c0ff"></path>
       </marker>
     </defs>
     <g id="viewport"></g>
@@ -60,15 +87,19 @@
   <div id="controls">
     <button id="zoom-in" title="拡大">＋</button>
     <button id="zoom-out" title="縮小">－</button>
-    <button id="zoom-reset" title="リセット">⟲</button>
+    <button id="zoom-reset" title="全体表示">⟲</button>
   </div>
 </main>
 <script>
 "use strict";
 var GRAPH = __GRAPH_JSON__;
 
-var NODE_W = 170;
-var NODE_H = 52;
+var NODE_W = 190;
+var NODE_H = 54;
+var H_GAP = 120;
+var V_GAP = 26;
+var DUMMY_GAP = 18;
+var MARGIN = 48;
 var SVG_NS = "http://www.w3.org/2000/svg";
 var TYPE_LABELS = { module: "モジュール", library: "ライブラリ", model: "モデル", component: "コンポーネント" };
 var STATUS_LABELS = { added: "追加", modified: "変更", removed: "削除", unchanged: "関連（未変更）" };
@@ -82,73 +113,242 @@ document.title = GRAPH.title;
 document.getElementById("summary").textContent =
   "変更 " + GRAPH.summary.files + " ファイル / +" + GRAPH.summary.insertions + " −" + GRAPH.summary.deletions;
 
+/* ---------- レイアウト: レイヤリング（Sugiyama 系） ---------- */
+
 var nodeById = {};
 GRAPH.nodes.forEach(function (n) { nodeById[n.id] = n; });
-
-GRAPH.edges.forEach(function (e) {
-  var a = nodeById[e.from];
-  var b = nodeById[e.to];
-  if (!a || !b) return;
-  var x1, y1, x2, y2;
-  if (b.x >= a.x + NODE_W) {
-    x1 = a.x + NODE_W; y1 = a.y + NODE_H / 2;
-    x2 = b.x;          y2 = b.y + NODE_H / 2;
-  } else if (a.x >= b.x + NODE_W) {
-    x1 = a.x;          y1 = a.y + NODE_H / 2;
-    x2 = b.x + NODE_W; y2 = b.y + NODE_H / 2;
-  } else if (b.y > a.y) {
-    x1 = a.x + NODE_W / 2; y1 = a.y + NODE_H;
-    x2 = b.x + NODE_W / 2; y2 = b.y;
-  } else {
-    x1 = a.x + NODE_W / 2; y1 = a.y;
-    x2 = b.x + NODE_W / 2; y2 = b.y + NODE_H;
-  }
-  var mx = (x1 + x2) / 2;
-  var my = (y1 + y2) / 2;
-  var d;
-  if (y1 === y2 || x1 === x2) {
-    d = "M" + x1 + "," + y1 + " L" + x2 + "," + y2;
-  } else if (Math.abs(x2 - x1) >= Math.abs(y2 - y1)) {
-    d = "M" + x1 + "," + y1 + " C" + mx + "," + y1 + " " + mx + "," + y2 + " " + x2 + "," + y2;
-  } else {
-    d = "M" + x1 + "," + y1 + " C" + x1 + "," + my + " " + x2 + "," + my + " " + x2 + "," + y2;
-  }
-  var path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", d);
-  path.setAttribute("class", "edge");
-  viewport.appendChild(path);
+var edges = GRAPH.edges.filter(function (e) {
+  return nodeById[e.from] && nodeById[e.to] && e.from !== e.to;
 });
 
+// 循環除去: DFS で後退エッジを検出し、レイアウト計算上だけ向きを反転する
+var adjOut = {};
+GRAPH.nodes.forEach(function (n) { adjOut[n.id] = []; });
+edges.forEach(function (e, i) { adjOut[e.from].push({ to: e.to, idx: i }); });
+var visitState = {};
+var reversedIdx = {};
+function markBackEdges(id) {
+  visitState[id] = 1;
+  adjOut[id].forEach(function (a) {
+    if (visitState[a.to] === 1) reversedIdx[a.idx] = true;
+    else if (!visitState[a.to]) markBackEdges(a.to);
+  });
+  visitState[id] = 2;
+}
+GRAPH.nodes.forEach(function (n) { if (!visitState[n.id]) markBackEdges(n.id); });
+
+var ledges = edges.map(function (e, i) {
+  return reversedIdx[i]
+    ? { from: e.to, to: e.from, orig: e, rev: true }
+    : { from: e.from, to: e.to, orig: e, rev: false };
+});
+
+// 最長パス法でレイヤー（カラム）を決定
+var layerOf = {};
+var indeg = {};
+var louts = {};
+GRAPH.nodes.forEach(function (n) { layerOf[n.id] = 0; indeg[n.id] = 0; louts[n.id] = []; });
+ledges.forEach(function (le) { indeg[le.to]++; louts[le.from].push(le.to); });
+var queue = [];
+GRAPH.nodes.forEach(function (n) { if (indeg[n.id] === 0) queue.push(n.id); });
+while (queue.length) {
+  var cur = queue.shift();
+  louts[cur].forEach(function (t) {
+    if (layerOf[cur] + 1 > layerOf[t]) layerOf[t] = layerOf[cur] + 1;
+    if (--indeg[t] === 0) queue.push(t);
+  });
+}
+
+// レイヤー配列 + 長いエッジ用のダミー点
+var maxLayer = 0;
+GRAPH.nodes.forEach(function (n) { if (layerOf[n.id] > maxLayer) maxLayer = layerOf[n.id]; });
+var layers = [];
+for (var li = 0; li <= maxLayer; li++) layers.push([]);
+var itemOf = {};
 GRAPH.nodes.forEach(function (n) {
+  var it = { node: n, layer: layerOf[n.id], up: [], down: [] };
+  layers[it.layer].push(it);
+  itemOf[n.id] = it;
+});
+ledges.forEach(function (le) {
+  var chain = [itemOf[le.from]];
+  for (var l = layerOf[le.from] + 1; l < layerOf[le.to]; l++) {
+    var d = { dummy: true, layer: l, up: [], down: [] };
+    layers[l].push(d);
+    chain.push(d);
+  }
+  chain.push(itemOf[le.to]);
+  for (var ci = 0; ci + 1 < chain.length; ci++) {
+    chain[ci].down.push(chain[ci + 1]);
+    chain[ci + 1].up.push(chain[ci]);
+  }
+  le.chain = chain;
+});
+
+// バリセンタ法で交差を減らす
+function assignPos() {
+  layers.forEach(function (items) {
+    items.forEach(function (it, i) { it.pos = i; });
+  });
+}
+function sweep(useUp) {
+  var range = [];
+  for (var l = 0; l <= maxLayer; l++) range.push(l);
+  if (!useUp) range.reverse();
+  range.forEach(function (l) {
+    var items = layers[l];
+    items.forEach(function (it) {
+      var nbrs = useUp ? it.up : it.down;
+      if (!nbrs.length) { it.bary = it.pos; return; }
+      var sum = 0;
+      nbrs.forEach(function (nb) { sum += nb.pos; });
+      it.bary = sum / nbrs.length;
+    });
+    items.sort(function (a, b) { return a.bary - b.bary; });
+    items.forEach(function (it, i) { it.pos = i; });
+  });
+}
+assignPos();
+for (var s = 0; s < 4; s++) { sweep(true); sweep(false); }
+
+/* ---------- レイアウト: 座標割当 ---------- */
+
+var colHeights = layers.map(function (items) {
+  var h = 0;
+  items.forEach(function (it) { h += it.dummy ? DUMMY_GAP : NODE_H + V_GAP; });
+  return Math.max(0, h - (items.length && !items[items.length - 1].dummy ? V_GAP : 0));
+});
+var maxColH = Math.max.apply(null, colHeights.concat([0]));
+layers.forEach(function (items, l) {
+  var y = MARGIN + (maxColH - colHeights[l]) / 2;
+  items.forEach(function (it) {
+    it.x = MARGIN + l * (NODE_W + H_GAP);
+    it.y = y;
+    y += it.dummy ? DUMMY_GAP : NODE_H + V_GAP;
+  });
+});
+
+// ポート: ノード辺上に接続点を分散して線の重なりを防ぐ
+function portYs(item, segs, otherEndY) {
+  var k = segs.length;
+  var span = Math.min(14, (NODE_H - 24) / Math.max(k - 1, 1));
+  segs.sort(function (a, b) { return otherEndY(a) - otherEndY(b); });
+  segs.forEach(function (seg, i) {
+    seg.portY = item.y + NODE_H / 2 + (i - (k - 1) / 2) * span;
+  });
+}
+GRAPH.nodes.forEach(function (n) {
+  var it = itemOf[n.id];
+  var outSegs = [];
+  var inSegs = [];
+  ledges.forEach(function (le) {
+    if (le.chain[0] === it) outSegs.push({ le: le, next: le.chain[1] });
+    if (le.chain[le.chain.length - 1] === it) inSegs.push({ le: le, next: le.chain[le.chain.length - 2] });
+  });
+  portYs(it, outSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + NODE_H / 2; });
+  portYs(it, inSegs, function (s) { return s.next.dummy ? s.next.y : s.next.y + NODE_H / 2; });
+  outSegs.forEach(function (s) { s.le.srcPort = { x: it.x + NODE_W, y: s.portY }; });
+  inSegs.forEach(function (s) { s.le.dstPort = { x: it.x, y: s.portY }; });
+});
+
+/* ---------- 描画 ---------- */
+
+function pathThrough(pts) {
+  var d = "M" + pts[0].x + "," + pts[0].y;
+  for (var i = 1; i < pts.length; i++) {
+    var a = pts[i - 1], b = pts[i];
+    var mx = (a.x + b.x) / 2;
+    d += " C" + mx + "," + a.y + " " + mx + "," + b.y + " " + b.x + "," + b.y;
+  }
+  return d;
+}
+
+var edgeEls = {};   // node.id -> [path]
+var nbrIds = {};    // node.id -> [id]
+GRAPH.nodes.forEach(function (n) { edgeEls[n.id] = []; nbrIds[n.id] = []; });
+
+ledges.forEach(function (le) {
+  var pts = [le.srcPort];
+  le.chain.slice(1, -1).forEach(function (d) { pts.push({ x: d.x + NODE_W / 2, y: d.y }); });
+  pts.push(le.dstPort);
+  if (le.rev) pts.reverse();
+  var path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", pathThrough(pts));
+  path.setAttribute("class", "edge");
+  viewport.appendChild(path);
+  edgeEls[le.orig.from].push(path);
+  edgeEls[le.orig.to].push(path);
+  nbrIds[le.orig.from].push(le.orig.to);
+  nbrIds[le.orig.to].push(le.orig.from);
+});
+
+function displayWidth(str) {
+  var u = 0;
+  for (var i = 0; i < str.length; i++) u += str.charCodeAt(i) > 255 ? 2 : 1;
+  return u;
+}
+function truncateLabel(str, maxUnits) {
+  if (displayWidth(str) <= maxUnits) return str;
+  var u = 0, out = "";
+  for (var i = 0; i < str.length; i++) {
+    var w = str.charCodeAt(i) > 255 ? 2 : 1;
+    if (u + w > maxUnits - 1) return out + "…";
+    u += w;
+    out += str.charAt(i);
+  }
+  return out;
+}
+
+var nodeGs = {};
+GRAPH.nodes.forEach(function (n) {
+  var it = itemOf[n.id];
   var g = document.createElementNS(SVG_NS, "g");
   g.setAttribute("class", "node " + n.status);
-  g.setAttribute("transform", "translate(" + n.x + "," + n.y + ")");
+  g.setAttribute("transform", "translate(" + it.x + "," + it.y + ")");
 
   var rect = document.createElementNS(SVG_NS, "rect");
   rect.setAttribute("width", NODE_W);
   rect.setAttribute("height", NODE_H);
-  rect.setAttribute("rx", 6);
+  rect.setAttribute("rx", 10);
   g.appendChild(rect);
 
   var typeText = document.createElementNS(SVG_NS, "text");
-  typeText.setAttribute("x", 10);
-  typeText.setAttribute("y", 16);
+  typeText.setAttribute("x", 12);
+  typeText.setAttribute("y", 18);
   typeText.setAttribute("class", "type-label");
   typeText.textContent = TYPE_LABELS[n.type] || n.type;
   g.appendChild(typeText);
 
   var label = document.createElementNS(SVG_NS, "text");
-  label.setAttribute("x", 10);
-  label.setAttribute("y", 36);
-  label.textContent = n.label.length > 22 ? n.label.slice(0, 21) + "…" : n.label;
+  label.setAttribute("x", 12);
+  label.setAttribute("y", 38);
+  label.textContent = truncateLabel(n.label, 24);
   g.appendChild(label);
+
+  var tip = document.createElementNS(SVG_NS, "title");
+  tip.textContent = n.label;
+  g.appendChild(tip);
 
   g.addEventListener("click", function (ev) {
     ev.stopPropagation();
     selectNode(n, g);
   });
+  g.addEventListener("mouseenter", function () { setFocus(n.id, true); });
+  g.addEventListener("mouseleave", function () { setFocus(n.id, false); });
   viewport.appendChild(g);
+  nodeGs[n.id] = g;
 });
+
+function setFocus(id, on) {
+  svg.classList.toggle("focus", on);
+  var mark = function (el) { el.classList.toggle("hi", on); };
+  mark(nodeGs[id]);
+  nbrIds[id].forEach(function (nid) { mark(nodeGs[nid]); });
+  edgeEls[id].forEach(mark);
+  if (!on) {
+    viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
+  }
+}
 
 var selectedG = null;
 function selectNode(n, g) {
@@ -165,16 +365,17 @@ function selectNode(n, g) {
   h2.textContent = n.label;
   var dl = document.createElement("dl");
   [
-    ["種別", TYPE_LABELS[n.type] || n.type],
-    ["状態", STATUS_LABELS[n.status] || n.status],
-    ["パス", detail.path || "-"],
-    ["変更行", detail.lines || "-"],
-    ["概要", detail.description || "-"]
+    ["種別", TYPE_LABELS[n.type] || n.type, ""],
+    ["状態", STATUS_LABELS[n.status] || n.status, ""],
+    ["パス", detail.path || "-", "path"],
+    ["変更行", detail.lines || "-", "path"],
+    ["概要", detail.description || "-", ""]
   ].forEach(function (row) {
     var dt = document.createElement("dt");
     dt.textContent = row[0];
     var dd = document.createElement("dd");
     dd.textContent = row[1];
+    if (row[2]) dd.className = row[2];
     dl.appendChild(dt);
     dl.appendChild(dd);
   });
@@ -188,9 +389,20 @@ function closePanel() {
   if (selectedG) { selectedG.classList.remove("selected"); selectedG = null; }
 }
 
+/* ---------- ズーム・パン ---------- */
+
 var scale = 1, tx = 20, ty = 20;
 function applyTransform() {
   viewport.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + scale + ")");
+}
+function fitToView() {
+  var w = MARGIN * 2 + (maxLayer + 1) * NODE_W + maxLayer * H_GAP;
+  var h = MARGIN * 2 + maxColH;
+  var r = svg.getBoundingClientRect();
+  scale = Math.min(1, (r.width - 40) / w, (r.height - 40) / h);
+  tx = (r.width - w * scale) / 2;
+  ty = (r.height - h * scale) / 2;
+  applyTransform();
 }
 function zoomAt(cx, cy, factor) {
   var next = Math.min(4, Math.max(0.2, scale * factor));
@@ -229,10 +441,8 @@ document.getElementById("zoom-out").addEventListener("click", function () {
   var r = svg.getBoundingClientRect();
   zoomAt(r.width / 2, r.height / 2, 0.8);
 });
-document.getElementById("zoom-reset").addEventListener("click", function () {
-  scale = 1; tx = 20; ty = 20; applyTransform();
-});
-applyTransform();
+document.getElementById("zoom-reset").addEventListener("click", fitToView);
+fitToView();
 </script>
 </body>
 </html>

@@ -92,7 +92,7 @@ edges: [{ from, to, type: calls|imports|depends_on }]
 - 色・雛形・生成方法は [references/format-guide.md](references/format-guide.md) に従う:
   - **mermaid** → レポート本文にコードブロックとして埋め込む
   - **d2** → `<branch-slug>-<date>.d2` を生成する。`command -v d2` が成功したら `d2 <file>.d2 <file>.svg` で SVG も生成する。無ければソースのみ保存し、レポートに「ローカルで `d2` CLI を実行すれば図化できる」旨を書く（外部レンダリング API は使わない）
-  - **html** → [assets/diagram-template.html](assets/diagram-template.html) を読み、`__TITLE__` と `__GRAPH_JSON__` を置換して `<branch-slug>-<date>.html` を生成する（レイアウト座標の計算式・エスケープ規則は format-guide.md 参照）
+  - **html** → [assets/diagram-template.html](assets/diagram-template.html) を読み、`__TITLE__` と `__GRAPH_JSON__` を置換して `<branch-slug>-<date>.html` を生成する（GRAPH JSON スキーマ・エスケープ規則は format-guide.md 参照。配色・レイアウトはテンプレートが内蔵しており生成側の座標計算は不要）
 - レポート本体 `<branch-slug>-<date>.md` を以下の構成で生成する:
 
 ```markdown
