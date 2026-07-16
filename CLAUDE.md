@@ -107,6 +107,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   code-reviewer-adversarial/     # Breaker (Claude) × Judge (Codex) の敵対的レビュー
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   branch-visualize/              # ブランチ差分の構成図可視化（Mermaid / D2 / HTML 自動選定）
+  structure-visualize/           # 指定内容（インフラ構成 / ER / コンポーネント等）の構造を HTML 構成図で可視化
   # 事業企画
   business-ideation/             # ビジネス・サービス案の発散→深掘り→評価（汎用・notes 正本方式）
   # デザイン
@@ -245,6 +246,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 - スキルの手順に `rm -f` 等の破壊的コマンドを含めない。一時ファイルは OS の一時領域に任せること
 - `-p` 等のオプション引数を持つスキルには「引数の解析」セクションを設ける（smart-commit の形式を参照）。同一グループ内で引数パースの書き方を統一すること
 - スキル改修時は frontmatter を確認する: 副作用のあるスキルに `disable-model-invocation: true` があるか、`allowed-tools` が設定されているか、`description` に類似スキルとの差別化文言があるか
+- **diagram-template.html の系譜**: branch-visualize と structure-visualize の `assets/diagram-template.html` は同系譜の fork（配色・グルーピングの意味論は意図的に異なるため逐語同期はしない）。レイアウトエンジン（レイヤリング・交差削減・ポート分散・ズーム/パン）の不具合を片方で修正したら、もう片方にも該当するか確認する
 - **レビュープロンプトの二重化と同期（マスター）**: 敵対レビューの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）と標準レビュー観点の骨格は、スキル間ファイル参照不可・Skill 合成不可の制約から意図的に複数スキルへ二重化している。次のいずれかを変更したら対応箇所をすべて同期すること（可読性を観点に含めるか等、各スキルの identity として意図的に異なる部分は除く）:
   - `smart-issue-resolve/references/agent-orchestration.md` — 雛形 B（`sir-claude-review-set`）の reviewerPrompt / breakerPrompt / judgeBatchPrompt、雛形 C（`sir-codex-breaker`）の Breaker
   - `smart-issue-plan/references/agent-orchestration.md` — `sip-plan-review-set`（計画テキスト用に適応した変種）

@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg: #0b0f16;
+    --surface: #11161f;
+    --node-fill: #141b26;
+    --border: #222b3a;
+    --text: #e6edf3;
+    --muted: #8b98a9;
+    --faint: #6e7b8f;
+    --edge: #4a566a;
+    --accent: #79c0ff;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+  header { padding: 12px 18px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 13px; font-weight: 600; font-family: var(--mono); letter-spacing: .01em; }
+  header .summary { font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; margin-left: auto; align-items: center; color: var(--muted); flex-wrap: wrap; }
+  .legend .chip i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; border: 1.5px solid; vertical-align: -1px; }
+  main { flex: 1; position: relative; overflow: hidden; }
+  svg#canvas { width: 100%; height: 100%; cursor: grab; display: block; }
+  svg#canvas.dragging { cursor: grabbing; }
+  .box rect { stroke-width: 1.5; }
+  .box text { font-size: 11px; font-family: var(--mono); letter-spacing: .08em; }
+  .node { cursor: pointer; }
+  .node rect { fill: var(--node-fill); stroke-width: 1.5; transition: opacity .15s ease-out, filter .15s ease-out; }
+  .node:hover rect { filter: brightness(1.3); }
+  .node text { font-size: 12px; font-family: var(--mono); fill: var(--text); pointer-events: none; }
+  .node text.type-label { font-size: 9px; letter-spacing: .12em; fill: var(--faint); }
+  .node.selected rect { stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(121,192,255,.35)); }
+  .node line.sep { stroke: var(--border); }
+  .node text.member { font-size: 11px; fill: var(--muted); }
+  path.edge { stroke: var(--edge); stroke-width: 1.3; fill: none; marker-end: url(#arrow); transition: opacity .15s ease-out; }
+  text.edge-label { font-size: 9.5px; font-family: var(--mono); fill: var(--faint); text-anchor: middle; transition: opacity .15s ease-out; }
+  svg.focus .node:not(.hi) { opacity: .18; }
+  svg.focus .box { opacity: .35; }
+  svg.focus path.edge:not(.hi) { opacity: .10; }
+  svg.focus text.edge-label:not(.hi) { opacity: .10; }
+  svg.focus path.edge.hi { stroke: var(--accent); stroke-width: 1.8; marker-end: url(#arrow-hi); }
+  #panel { position: absolute; top: 14px; right: 14px; width: 330px; max-height: 75%; overflow: auto; background: rgba(17,22,31,.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.45); display: none; }
+  #panel h2 { font-size: 13.5px; font-family: var(--mono); margin-bottom: 10px; padding-right: 20px; word-break: break-all; }
+  #panel dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; }
+  #panel dt { color: var(--faint); font-size: 12px; }
+  #panel dd { word-break: break-all; color: var(--muted); }
+  #panel dd.path { font-family: var(--mono); font-size: 12px; }
+  #panel ul.members { list-style: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--mono); font-size: 12px; }
+  #panel ul.members li { margin: 3px 0; color: var(--muted); word-break: break-all; }
+  #panel .close { position: absolute; top: 12px; right: 14px; cursor: pointer; border: none; background: none; font-size: 14px; color: var(--faint); }
+  #panel .close:hover { color: var(--text); }
+  #controls { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 6px; }
+  #controls button { width: 32px; height: 32px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 8px; cursor: pointer; font-size: 15px; transition: border-color .15s ease-out, color .15s ease-out; }
+  #controls button:hover { border-color: var(--accent); color: var(--text); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <span class="summary" id="summary"></span>
+  <div class="legend" id="legend"></div>
+</header>
+<main>
+  <svg id="canvas">
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#4a566a"></path>
+      </marker>
+      <marker id="arrow-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="#79c0ff"></path>
+      </marker>
+    </defs>
+    <g id="viewport"></g>
+  </svg>
+  <div id="panel"></div>
+  <div id="controls">
+    <button id="zoom-in" title="拡大">＋</button>
+    <button id="zoom-out" title="縮小">－</button>
+    <button id="zoom-reset" title="全体表示">⟲</button>
+  </div>
+</main>
+<script>
+"use strict";
+var GRAPH = __GRAPH_JSON__;
+
+var NODE_W = 190;
+var NODE_H = 54;
+var HEAD_H = 44;
+var ROW_H = 17;
+var H_GAP = 110;
+var V_GAP = 26;
+var DUMMY_GAP = 18;
+var MARGIN = 48;
+var BOX_PAD = 20;
+var BOX_LABEL_H = 28;
+var GROUP_H_GAP = 90;
+var INNER_H_GAP = 90;
+var SVG_NS = "http://www.w3.org/2000/svg";
+
+/* カテゴリ配色（group の並び順に割当・8 超は循環）。tint = ノード塗り / wash = エリア枠塗り */
+var PALETTE = [
+  { stroke: "#4d8edb", text: "#9ecbff", tint: "rgba(77,142,219,.10)",  wash: "rgba(77,142,219,.05)" },
+  { stroke: "#3fb950", text: "#7ee2a8", tint: "rgba(63,185,80,.10)",   wash: "rgba(63,185,80,.05)" },
+  { stroke: "#d29922", text: "#e8c06d", tint: "rgba(210,153,34,.10)",  wash: "rgba(210,153,34,.05)" },
+  { stroke: "#a371f7", text: "#d2b6ff", tint: "rgba(163,113,247,.10)", wash: "rgba(163,113,247,.05)" },
+  { stroke: "#39c5cf", text: "#9ae8ef", tint: "rgba(57,197,207,.10)",  wash: "rgba(57,197,207,.05)" },
+  { stroke: "#db61a2", text: "#ffadd6", tint: "rgba(219,97,162,.10)",  wash: "rgba(219,97,162,.05)" },
+  { stroke: "#e8734a", text: "#ffb491", tint: "rgba(232,115,74,.10)",  wash: "rgba(232,115,74,.05)" },
+  { stroke: "#2ea28d", text: "#8fe3c9", tint: "rgba(46,162,141,.10)",  wash: "rgba(46,162,141,.05)" }
+];
+var NEUTRAL = { stroke: "#3d4654", text: "#9aa7b8", tint: "#141b26", wash: "rgba(61,70,84,.05)" };
+
+/* ---------- 入力の正規化 ---------- */
+
+var nodes = GRAPH.nodes || [];
+var nodeById = {};
+nodes.forEach(function (n) { nodeById[n.id] = n; });
+var edges = (GRAPH.edges || []).filter(function (e) {
+  return nodeById[e.from] && nodeById[e.to] && e.from !== e.to;
+});
+
+/* groups: GRAPH.groups の順 → nodes の初出順で補完（ノードを持つものだけ） */
+var groupOrder = [];
+var groupIdx = {};
+function addGroup(id, label) {
+  if (id == null || groupIdx[id] != null) return;
+  groupIdx[id] = groupOrder.length;
+  groupOrder.push({ id: id, label: label != null ? label : String(id) });
+}
+(GRAPH.groups || []).forEach(function (g) {
+  if (nodes.some(function (n) { return n.group === g.id; })) addGroup(g.id, g.label);
+});
+nodes.forEach(function (n) { if (n.group != null) addGroup(n.group, null); });
+
+function colorOf(gid) { return gid == null ? NEUTRAL : PALETTE[groupIdx[gid] % PALETTE.length]; }
+function groupLabelOf(gid) { return gid == null ? null : groupOrder[groupIdx[gid]].label; }
+
+var layoutMode = GRAPH.layout === "flow" ? "flow"
+  : GRAPH.layout === "areas" ? "areas"
+  : (groupOrder.length ? "areas" : "flow");
+if (layoutMode === "areas" && !groupOrder.length) layoutMode = "flow";
+
+/* members 付きノードは行数に応じた可変高、無ければ固定高 */
+function heightOf(n) {
+  var m = n.members ? n.members.length : 0;
+  return m ? HEAD_H + 24 + (m - 1) * ROW_H : NODE_H;
+}
+function sizeOfStd(n) { return { w: NODE_W, h: heightOf(n) }; }
+
+var svg = document.getElementById("canvas");
+var viewport = document.getElementById("viewport");
+var panel = document.getElementById("panel");
+
+document.getElementById("title").textContent = GRAPH.title;
+document.title = GRAPH.title;
+var summaryText = "ノード " + nodes.length + " / エッジ " + edges.length;
+if (GRAPH.subtitle) summaryText += " — " + GRAPH.subtitle;
+document.getElementById("summary").textContent = summaryText;
+
+var legendEl = document.getElementById("legend");
+groupOrder.forEach(function (g) {
+  var c = colorOf(g.id);
+  var chip = document.createElement("span");
+  chip.className = "chip";
+  var sw = document.createElement("i");
+  sw.style.background = c.tint;
+  sw.style.borderColor = c.stroke;
+  chip.appendChild(sw);
+  chip.appendChild(document.createTextNode(g.label));
+  legendEl.appendChild(chip);
+});
+
+/* ---------- レイアウトエンジン（DOM 非依存の純関数） ----------
+   ns/es を階層配置（循環除去 → 最長パス法 → ダミー中継 → バリセンタ交差削減 →
+   可変幅カラム座標 → ポート分散）し、座標とエッジ経路を返す */
+function layoutGraph(ns, es, sizeOf, opts) {
+  opts = opts || {};
+  var margin = opts.margin != null ? opts.margin : MARGIN;
+  var hGap = opts.hGap != null ? opts.hGap : H_GAP;
+  var res = { pos: {}, epaths: [], w: margin * 2, h: margin * 2 };
+  if (!ns.length) return res;
+
+  var adjOut = {};
+  ns.forEach(function (n) { adjOut[n.id] = []; });
+  es.forEach(function (e, i) { adjOut[e.from].push({ to: e.to, idx: i }); });
+  var visitState = {};
+  var reversedIdx = {};
+  function markBackEdges(id) {
+    visitState[id] = 1;
+    adjOut[id].forEach(function (a) {
+      if (visitState[a.to] === 1) reversedIdx[a.idx] = true;
+      else if (!visitState[a.to]) markBackEdges(a.to);
+    });
+    visitState[id] = 2;
+  }
+  ns.forEach(function (n) { if (!visitState[n.id]) markBackEdges(n.id); });
+  var ledges = es.map(function (e, i) {
+    return reversedIdx[i]
+      ? { from: e.to, to: e.from, orig: e, rev: true }
+      : { from: e.from, to: e.to, orig: e, rev: false };
+  });
+
+  var layerOf = {};
+  var indeg = {};
+  var louts = {};
+  ns.forEach(function (n) { layerOf[n.id] = 0; indeg[n.id] = 0; louts[n.id] = []; });
+  ledges.forEach(function (le) { indeg[le.to]++; louts[le.from].push(le.to); });
+  var queue = [];
+  ns.forEach(function (n) { if (indeg[n.id] === 0) queue.push(n.id); });
+  while (queue.length) {
+    var cur = queue.shift();
+    louts[cur].forEach(function (t) {
+      if (layerOf[cur] + 1 > layerOf[t]) layerOf[t] = layerOf[cur] + 1;
+      if (--indeg[t] === 0) queue.push(t);
+    });
+  }
+
+  var maxLayer = 0;
+  ns.forEach(function (n) { if (layerOf[n.id] > maxLayer) maxLayer = layerOf[n.id]; });
+  var layers = [];
+  for (var li = 0; li <= maxLayer; li++) layers.push([]);
+  var itemOf = {};
+  ns.forEach(function (n) {
+    var s = sizeOf(n);
+    var it = { node: n, layer: layerOf[n.id], w: s.w, h: s.h, up: [], down: [] };
+    layers[it.layer].push(it);
+    itemOf[n.id] = it;
+  });
+  ledges.forEach(function (le) {
+    var chain = [itemOf[le.from]];
+    for (var l = layerOf[le.from] + 1; l < layerOf[le.to]; l++) {
+      var d = { dummy: true, layer: l, w: 0, h: 0, up: [], down: [] };
+      layers[l].push(d);
+      chain.push(d);
+    }
+    chain.push(itemOf[le.to]);
+    for (var ci = 0; ci + 1 < chain.length; ci++) {
+      chain[ci].down.push(chain[ci + 1]);
+      chain[ci + 1].up.push(chain[ci]);
+    }
+    le.chain = chain;
+  });
+
+  layers.forEach(function (items) {
+    items.forEach(function (it, i) { it.pos = i; });
+  });
+  function sweep(useUp) {
+    var range = [];
+    for (var l = 0; l <= maxLayer; l++) range.push(l);
+    if (!useUp) range.reverse();
+    range.forEach(function (l) {
+      var items = layers[l];
+      items.forEach(function (it) {
+        var nbrs = useUp ? it.up : it.down;
+        if (!nbrs.length) { it.bary = it.pos; return; }
+        var sum = 0;
+        nbrs.forEach(function (nb) { sum += nb.pos; });
+        it.bary = sum / nbrs.length;
+      });
+      items.sort(function (a, b) { return a.bary - b.bary; });
+      items.forEach(function (it, i) { it.pos = i; });
+    });
+  }
+  for (var s = 0; s < 4; s++) { sweep(true); sweep(false); }
+
+  var colW = layers.map(function (items) {
+    var w = 0;
+    items.forEach(function (it) { if (it.w > w) w = it.w; });
+    return w;
+  });
+  var colX = [];
+  var xAcc = margin;
+  for (var cl = 0; cl <= maxLayer; cl++) { colX[cl] = xAcc; xAcc += colW[cl] + hGap; }
+  var colHeights = layers.map(function (items) {
+    var h = 0;
+    items.forEach(function (it) { h += it.dummy ? DUMMY_GAP : it.h + V_GAP; });
+    return Math.max(0, h - (items.length && !items[items.length - 1].dummy ? V_GAP : 0));
+  });
+  var maxColH = Math.max.apply(null, colHeights.concat([0]));
+  layers.forEach(function (items, l) {
+    var y = margin + (maxColH - colHeights[l]) / 2;
+    items.forEach(function (it) {
+      it.x = colX[l];
+      it.y = y;
+      y += it.dummy ? DUMMY_GAP : it.h + V_GAP;
+    });
+  });
+
+  function portYs(item, segs, otherEndY) {
+    var k = segs.length;
+    var span = Math.min(14, (item.h - 24) / Math.max(k - 1, 1));
+    segs.sort(function (a, b) { return otherEndY(a) - otherEndY(b); });
+    segs.forEach(function (seg, i) {
+      seg.portY = item.y + item.h / 2 + (i - (k - 1) / 2) * span;
+    });
+  }
+  ns.forEach(function (n) {
+    var it = itemOf[n.id];
+    var outSegs = [];
+    var inSegs = [];
+    ledges.forEach(function (le) {
+      if (le.chain[0] === it) outSegs.push({ le: le, next: le.chain[1] });
+      if (le.chain[le.chain.length - 1] === it) inSegs.push({ le: le, next: le.chain[le.chain.length - 2] });
+    });
+    portYs(it, outSegs, function (sg) { return sg.next.dummy ? sg.next.y : sg.next.y + sg.next.h / 2; });
+    portYs(it, inSegs, function (sg) { return sg.next.dummy ? sg.next.y : sg.next.y + sg.next.h / 2; });
+    outSegs.forEach(function (sg) { sg.le.srcPort = { x: it.x + it.w, y: sg.portY }; });
+    inSegs.forEach(function (sg) { sg.le.dstPort = { x: it.x, y: sg.portY }; });
+  });
+
+  ns.forEach(function (n) {
+    var it = itemOf[n.id];
+    res.pos[n.id] = { x: it.x, y: it.y, w: it.w, h: it.h };
+  });
+  ledges.forEach(function (le) {
+    var pts = [le.srcPort];
+    le.chain.slice(1, -1).forEach(function (d) { pts.push({ x: d.x + colW[d.layer] / 2, y: d.y }); });
+    pts.push(le.dstPort);
+    if (le.rev) pts.reverse();
+    res.epaths.push({ edge: le.orig, pts: pts });
+  });
+  res.w = xAcc - hGap + margin;
+  res.h = margin * 2 + maxColH;
+  return res;
+}
+
+/* ---------- 描画ヘルパ ---------- */
+
+function pathThrough(pts) {
+  var d = "M" + pts[0].x + "," + pts[0].y;
+  for (var i = 1; i < pts.length; i++) {
+    var a = pts[i - 1], b = pts[i];
+    var mx = (a.x + b.x) / 2;
+    d += " C" + mx + "," + a.y + " " + mx + "," + b.y + " " + b.x + "," + b.y;
+  }
+  return d;
+}
+
+function displayWidth(str) {
+  var u = 0;
+  for (var i = 0; i < str.length; i++) u += str.charCodeAt(i) > 255 ? 2 : 1;
+  return u;
+}
+function truncateLabel(str, maxUnits) {
+  if (displayWidth(str) <= maxUnits) return str;
+  var u = 0, out = "";
+  for (var i = 0; i < str.length; i++) {
+    var w = str.charCodeAt(i) > 255 ? 2 : 1;
+    if (u + w > maxUnits - 1) return out + "…";
+    u += w;
+    out += str.charAt(i);
+  }
+  return out;
+}
+
+var edgeEls = {};
+var nbrIds = {};
+nodes.forEach(function (n) { edgeEls[n.id] = []; nbrIds[n.id] = []; });
+
+function drawEdge(edge, pts) {
+  var path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", pathThrough(pts));
+  path.setAttribute("class", "edge");
+  viewport.appendChild(path);
+  edgeEls[edge.from].push(path);
+  edgeEls[edge.to].push(path);
+  if (edge.label) {
+    var mi = (pts.length - 1) / 2;
+    var pa = pts[Math.floor(mi)];
+    var pb = pts[Math.ceil(mi)];
+    var lx = (pa.x + pb.x) / 2;
+    var ly = (pa.y + pb.y) / 2 - 5;
+    /* 直線経路（グループ間エッジ）の中点はグループを跨いだ先の無関係なノードに
+       重なることがあるため、衝突時は当該ノードの上下に逃がす */
+    /* ラベル退避は single-pass（同一カラムの縦間隔 V_GAP=26 > 最大退避 12px が前提。定数変更時は要再検証）。drawEdge は finalPos 充填後に呼ぶ */
+    Object.keys(finalPos).forEach(function (id) {
+      if (id === edge.from || id === edge.to) return;
+      var b = finalPos[id];
+      if (lx < b.x || lx > b.x + b.w || ly < b.y - 10 || ly > b.y + b.h + 4) return;
+      ly = ly < b.y + b.h / 2 ? b.y - 6 : b.y + b.h + 12;
+    });
+    var lbl = document.createElementNS(SVG_NS, "text");
+    lbl.setAttribute("x", lx);
+    lbl.setAttribute("y", ly);
+    lbl.setAttribute("class", "edge-label");
+    lbl.textContent = edge.label;
+    viewport.appendChild(lbl);
+    edgeEls[edge.from].push(lbl);
+    edgeEls[edge.to].push(lbl);
+  }
+  nbrIds[edge.from].push(edge.to);
+  nbrIds[edge.to].push(edge.from);
+}
+
+var nodeGs = {};
+function drawNode(n, p) {
+  var c = colorOf(n.group);
+  var g = document.createElementNS(SVG_NS, "g");
+  g.setAttribute("class", "node");
+  g.setAttribute("transform", "translate(" + p.x + "," + p.y + ")");
+
+  var rect = document.createElementNS(SVG_NS, "rect");
+  rect.setAttribute("width", p.w);
+  rect.setAttribute("height", p.h);
+  rect.setAttribute("rx", 10);
+  rect.style.fill = c.tint;
+  rect.setAttribute("stroke", c.stroke);
+  g.appendChild(rect);
+
+  if (n.type) {
+    var typeText = document.createElementNS(SVG_NS, "text");
+    typeText.setAttribute("x", 12);
+    typeText.setAttribute("y", 18);
+    typeText.setAttribute("class", "type-label");
+    typeText.textContent = truncateLabel(n.type, 26);
+    g.appendChild(typeText);
+  }
+
+  var label = document.createElementNS(SVG_NS, "text");
+  label.setAttribute("x", 12);
+  label.setAttribute("y", 38);
+  label.style.fill = c.text;
+  label.textContent = truncateLabel(n.label, 24);
+  g.appendChild(label);
+
+  if (n.members && n.members.length) {
+    var sep = document.createElementNS(SVG_NS, "line");
+    sep.setAttribute("x1", 1);
+    sep.setAttribute("x2", p.w - 1);
+    sep.setAttribute("y1", HEAD_H);
+    sep.setAttribute("y2", HEAD_H);
+    sep.setAttribute("class", "sep");
+    g.appendChild(sep);
+    n.members.forEach(function (m, i) {
+      var row = document.createElementNS(SVG_NS, "text");
+      row.setAttribute("x", 12);
+      row.setAttribute("y", HEAD_H + 14 + i * ROW_H);
+      row.setAttribute("class", "member");
+      row.textContent = truncateLabel(m.name + (m.type ? ": " + m.type : ""), 25);
+      g.appendChild(row);
+    });
+  }
+
+  var tip = document.createElementNS(SVG_NS, "title");
+  tip.textContent = n.label;
+  g.appendChild(tip);
+
+  g.addEventListener("click", function (ev) {
+    ev.stopPropagation();
+    selectNode(n, g);
+  });
+  g.addEventListener("mouseenter", function () { setFocus(n.id, true); });
+  g.addEventListener("mouseleave", function () { setFocus(n.id, false); });
+  viewport.appendChild(g);
+  nodeGs[n.id] = g;
+}
+
+/* ---------- レイアウト実行 ---------- */
+
+var contentW = MARGIN * 2;
+var contentH = MARGIN * 2;
+var finalPos = {};
+var boxRects = {};
+
+if (layoutMode === "flow") {
+  var flowRes = layoutGraph(nodes, edges, sizeOfStd, {});
+  finalPos = flowRes.pos;
+  flowRes.epaths.forEach(function (ep) { drawEdge(ep.edge, ep.pts); });
+  nodes.forEach(function (n) { drawNode(n, finalPos[n.id]); });
+  contentW = flowRes.w;
+  contentH = flowRes.h;
+} else {
+  /* areas: グループ内レイアウト → グループ間レイアウト（2 段適用） */
+  var containerOf = {};
+  nodes.forEach(function (n) { containerOf[n.id] = n.group != null ? "g:" + n.group : n.id; });
+
+  var groupLayouts = {};
+  groupOrder.forEach(function (g) {
+    var sub = nodes.filter(function (n) { return n.group === g.id; });
+    var subEdges = edges.filter(function (e) {
+      return containerOf[e.from] === "g:" + g.id && containerOf[e.to] === "g:" + g.id;
+    });
+    groupLayouts[g.id] = layoutGraph(sub, subEdges, sizeOfStd, { margin: 0, hGap: INNER_H_GAP });
+  });
+
+  var superNodes = groupOrder.map(function (g) { return { id: "g:" + g.id, gid: g.id }; })
+    .concat(nodes.filter(function (n) { return n.group == null; }));
+  function sizeOfSuper(sn) {
+    if (sn.gid != null) {
+      var L = groupLayouts[sn.gid];
+      return { w: L.w + BOX_PAD * 2, h: L.h + BOX_PAD * 2 + BOX_LABEL_H };
+    }
+    return sizeOfStd(sn);
+  }
+  var pairSeen = {};
+  var superEdges = [];
+  edges.forEach(function (e) {
+    var a = containerOf[e.from], b = containerOf[e.to];
+    if (a === b) return;
+    var k = a + "→" + b;
+    if (pairSeen[k]) return;
+    pairSeen[k] = true;
+    superEdges.push({ from: a, to: b });
+  });
+  var superRes = layoutGraph(superNodes, superEdges, sizeOfSuper, { hGap: GROUP_H_GAP });
+
+  nodes.forEach(function (n) {
+    if (n.group != null) {
+      var box = superRes.pos["g:" + n.group];
+      var lp = groupLayouts[n.group].pos[n.id];
+      finalPos[n.id] = { x: box.x + BOX_PAD + lp.x, y: box.y + BOX_LABEL_H + BOX_PAD + lp.y, w: lp.w, h: lp.h };
+    } else {
+      finalPos[n.id] = superRes.pos[n.id];
+    }
+  });
+
+  /* 枠（背面に描く） */
+  groupOrder.forEach(function (g) {
+    var p = superRes.pos["g:" + g.id];
+    boxRects[g.id] = p;
+    var c = colorOf(g.id);
+    var bg = document.createElementNS(SVG_NS, "g");
+    bg.setAttribute("class", "box");
+    var rect = document.createElementNS(SVG_NS, "rect");
+    rect.setAttribute("x", p.x);
+    rect.setAttribute("y", p.y);
+    rect.setAttribute("width", p.w);
+    rect.setAttribute("height", p.h);
+    rect.setAttribute("rx", 14);
+    rect.setAttribute("fill", c.wash);
+    rect.setAttribute("stroke", c.stroke);
+    bg.appendChild(rect);
+    var lbl = document.createElementNS(SVG_NS, "text");
+    lbl.setAttribute("x", p.x + 14);
+    lbl.setAttribute("y", p.y + 19);
+    lbl.setAttribute("fill", c.text);
+    lbl.textContent = truncateLabel(g.label, Math.max(8, Math.floor((p.w - 24) / 6.5)));
+    bg.appendChild(lbl);
+    viewport.appendChild(bg);
+  });
+
+  /* グループ内エッジ（枠内・ダミー中継あり） */
+  groupOrder.forEach(function (g) {
+    var box = superRes.pos["g:" + g.id];
+    var ox = box.x + BOX_PAD;
+    var oy = box.y + BOX_LABEL_H + BOX_PAD;
+    groupLayouts[g.id].epaths.forEach(function (ep) {
+      drawEdge(ep.edge, ep.pts.map(function (pt) { return { x: pt.x + ox, y: pt.y + oy }; }));
+    });
+  });
+
+  /* グループ間エッジ（実ノードのポート間を直接ベジェ・枠をまたぐ） */
+  var interEdges = edges.filter(function (e) { return containerOf[e.from] !== containerOf[e.to]; });
+  var sidePorts = {};
+  interEdges.forEach(function (e) {
+    var sp = finalPos[e.from], dp = finalPos[e.to];
+    var srcRight = dp.x + dp.w / 2 >= sp.x + sp.w / 2;
+    e._src = { id: e.from, side: srcRight ? "R" : "L", otherY: dp.y + dp.h / 2 };
+    e._dst = { id: e.to, side: srcRight ? "L" : "R", otherY: sp.y + sp.h / 2 };
+    [e._src, e._dst].forEach(function (end) {
+      var m = sidePorts[end.id] || (sidePorts[end.id] = { R: [], L: [] });
+      m[end.side].push(end);
+    });
+  });
+  Object.keys(sidePorts).forEach(function (id) {
+    var p = finalPos[id];
+    ["R", "L"].forEach(function (side) {
+      var ends = sidePorts[id][side];
+      if (!ends.length) return;
+      var k = ends.length;
+      var span = Math.min(14, (p.h - 24) / Math.max(k - 1, 1));
+      ends.sort(function (a, b) { return a.otherY - b.otherY; });
+      ends.forEach(function (end, i) {
+        end.x = side === "R" ? p.x + p.w : p.x;
+        end.y = p.y + p.h / 2 + (i - (k - 1) / 2) * span;
+      });
+    });
+  });
+  interEdges.forEach(function (e) {
+    drawEdge(e, [{ x: e._src.x, y: e._src.y }, { x: e._dst.x, y: e._dst.y }]);
+  });
+
+  nodes.forEach(function (n) { drawNode(n, finalPos[n.id]); });
+  contentW = superRes.w;
+  contentH = superRes.h;
+}
+
+/* 検証・デバッグ用ハンドル（レイアウト結果の公開） */
+window.__SV_DEBUG__ = { mode: layoutMode, nodes: finalPos, boxes: boxRects, size: { w: contentW, h: contentH } };
+
+/* ---------- インタラクション ---------- */
+
+function setFocus(id, on) {
+  svg.classList.toggle("focus", on);
+  var mark = function (el) { el.classList.toggle("hi", on); };
+  mark(nodeGs[id]);
+  nbrIds[id].forEach(function (nid) { mark(nodeGs[nid]); });
+  edgeEls[id].forEach(mark);
+  if (!on) {
+    viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
+  }
+}
+
+var selectedG = null;
+function selectNode(n, g) {
+  if (selectedG) selectedG.classList.remove("selected");
+  selectedG = g;
+  g.classList.add("selected");
+  var detail = n.detail || {};
+  panel.innerHTML = "";
+  var close = document.createElement("button");
+  close.className = "close";
+  close.textContent = "✕";
+  close.addEventListener("click", closePanel);
+  var h2 = document.createElement("h2");
+  h2.textContent = n.label;
+  var dl = document.createElement("dl");
+  [
+    ["種別", n.type || "-", ""],
+    ["グループ", groupLabelOf(n.group) || "-", ""],
+    ["出典", detail.source || "-", "path"],
+    ["概要", detail.description || "-", ""]
+  ].forEach(function (row) {
+    var dt = document.createElement("dt");
+    dt.textContent = row[0];
+    var dd = document.createElement("dd");
+    dd.textContent = row[1];
+    if (row[2]) dd.className = row[2];
+    dl.appendChild(dt);
+    dl.appendChild(dd);
+  });
+  panel.appendChild(close);
+  panel.appendChild(h2);
+  panel.appendChild(dl);
+  if (n.members && n.members.length) {
+    var ul = document.createElement("ul");
+    ul.className = "members";
+    n.members.forEach(function (m) {
+      var li = document.createElement("li");
+      li.textContent = m.name + (m.type ? ": " + m.type : "");
+      ul.appendChild(li);
+    });
+    panel.appendChild(ul);
+  }
+  panel.style.display = "block";
+}
+function closePanel() {
+  panel.style.display = "none";
+  if (selectedG) { selectedG.classList.remove("selected"); selectedG = null; }
+}
+
+/* ---------- ズーム・パン ---------- */
+
+var scale = 1, tx = 20, ty = 20;
+function applyTransform() {
+  viewport.setAttribute("transform", "translate(" + tx + "," + ty + ") scale(" + scale + ")");
+}
+function fitToView() {
+  var r = svg.getBoundingClientRect();
+  scale = Math.min(1, (r.width - 40) / contentW, (r.height - 40) / contentH);
+  tx = (r.width - contentW * scale) / 2;
+  ty = (r.height - contentH * scale) / 2;
+  applyTransform();
+}
+function zoomAt(cx, cy, factor) {
+  var next = Math.min(4, Math.max(0.2, scale * factor));
+  tx = cx - (cx - tx) * (next / scale);
+  ty = cy - (cy - ty) * (next / scale);
+  scale = next;
+  applyTransform();
+}
+svg.addEventListener("wheel", function (ev) {
+  ev.preventDefault();
+  var r = svg.getBoundingClientRect();
+  zoomAt(ev.clientX - r.left, ev.clientY - r.top, ev.deltaY < 0 ? 1.1 : 1 / 1.1);
+}, { passive: false });
+
+var drag = null;
+svg.addEventListener("mousedown", function (ev) {
+  drag = { x: ev.clientX, y: ev.clientY, tx: tx, ty: ty };
+  svg.classList.add("dragging");
+});
+window.addEventListener("mousemove", function (ev) {
+  if (!drag) return;
+  tx = drag.tx + (ev.clientX - drag.x);
+  ty = drag.ty + (ev.clientY - drag.y);
+  applyTransform();
+});
+window.addEventListener("mouseup", function () {
+  drag = null;
+  svg.classList.remove("dragging");
+});
+svg.addEventListener("click", closePanel);
+document.getElementById("zoom-in").addEventListener("click", function () {
+  var r = svg.getBoundingClientRect();
+  zoomAt(r.width / 2, r.height / 2, 1.25);
+});
+document.getElementById("zoom-out").addEventListener("click", function () {
+  var r = svg.getBoundingClientRect();
+  zoomAt(r.width / 2, r.height / 2, 0.8);
+});
+document.getElementById("zoom-reset").addEventListener("click", fitToView);
+fitToView();
+</script>
+</body>
+</html>
