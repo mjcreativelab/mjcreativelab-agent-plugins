@@ -10,7 +10,7 @@
   流儀に合わせ、塗りを rgba タント（例: blue 系統 `rgba(77,142,219,.10)`）で実装した。枠色・文字色は
   スペックの HEX 値をそのまま採用している（`#4d8edb` / `#9ecbff` 等）。ダーク背景での見え方はスペック案と
   同等であることを実機スクリーンショットで確認済み
-- **ノード塗り・ラベル色のバグ修正**（Task 2 レビュー・Opus が検出): ノードの塗りとラベル色を SVG
+- **ノード塗り・ラベル色のバグ修正**（Task 2 レビュー・Opus が検出）: ノードの塗りとラベル色を SVG
   presentation attribute（`rect.setAttribute("fill", ...)` / `label.setAttribute("fill", ...)`）で
   設定していたため、CSS ルール（`.node rect { fill: var(--node-fill) }` 等）に負けてカテゴリ配色が
   描画されず、凡例チップと実際のノード色が一致しないバグがあった。inline style 代入
@@ -52,8 +52,8 @@ spec の検証方法 1〜4 を本タスクで再実行した（すべてこの�
    を確認（OK）
 2. `head -5 skills/structure-visualize/SKILL.md`: frontmatter（`name: structure-visualize` +
    `description`）を確認（OK）
-3. + 4. レイアウトハーネス（セッションの一時領域の `test-layout.mjs` + フィクスチャ 4 種）を
-   `skills/structure-visualize/assets/diagram-template.html` に対して実行:
+3. レイアウトハーネス（セッションの一時領域の `test-layout.mjs` + フィクスチャ 4 種。spec 検証方法の
+   3〜4 に対応）を `skills/structure-visualize/assets/diagram-template.html` に対して実行:
    `infra-areas.json` / `er-flow.json` / `component-areas.json` / `plain-flow.json` の 4 件すべて
    `PASS`（ノード非重複・エリア枠内包含・エリア枠非重複・flow モード時は枠なし、の不変条件）
 - 行数: `skills/structure-visualize/SKILL.md` 93 行（500 行制限内）、
