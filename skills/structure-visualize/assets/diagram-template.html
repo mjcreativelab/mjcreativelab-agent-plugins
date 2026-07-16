@@ -378,6 +378,7 @@ function drawEdge(edge, pts) {
     var ly = (pa.y + pb.y) / 2 - 5;
     /* 直線経路（グループ間エッジ）の中点はグループを跨いだ先の無関係なノードに
        重なることがあるため、衝突時は当該ノードの上下に逃がす */
+    /* ラベル退避は single-pass（同一カラムの縦間隔 V_GAP=26 > 最大退避 12px が前提。定数変更時は要再検証）。drawEdge は finalPos 充填後に呼ぶ */
     Object.keys(finalPos).forEach(function (id) {
       if (id === edge.from || id === edge.to) return;
       var b = finalPos[id];
