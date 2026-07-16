@@ -58,6 +58,8 @@ spec の検証方法 1〜4 を本タスクで再実行した（すべてこの�
    `PASS`（ノード非重複・エリア枠内包含・エリア枠非重複・flow モード時は枠なし、の不変条件）
 - 行数: `skills/structure-visualize/SKILL.md` 93 行（500 行制限内）、
   `skills/structure-visualize/assets/diagram-template.html` 711 行（別ファイルのため制限対象外）
+- `node --check`: テンプレート内の埋め込み `<script>` を現在のコミット内容から抽出し直して構文チェックし、
+  OK を確認（620 行）
 - 実ブラウザ確認（Task 3 で実施済み）: ヘッドレス Chrome スクリーンショット（1600×1000）で 4 サンプル
   （infra-areas / er-flow / component-areas / plain-flow）を目視確認し、エリア枠・凡例・カテゴリ配色・
   エリア外ノードの中立色・flow モードのフォールバック表示が意図どおりであることを確認した
