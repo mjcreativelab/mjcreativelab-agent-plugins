@@ -374,9 +374,19 @@ function drawEdge(edge, pts) {
     var mi = (pts.length - 1) / 2;
     var pa = pts[Math.floor(mi)];
     var pb = pts[Math.ceil(mi)];
+    var lx = (pa.x + pb.x) / 2;
+    var ly = (pa.y + pb.y) / 2 - 5;
+    /* 直線経路（グループ間エッジ）の中点はグループを跨いだ先の無関係なノードに
+       重なることがあるため、衝突時は当該ノードの上下に逃がす */
+    Object.keys(finalPos).forEach(function (id) {
+      if (id === edge.from || id === edge.to) return;
+      var b = finalPos[id];
+      if (lx < b.x || lx > b.x + b.w || ly < b.y - 10 || ly > b.y + b.h + 4) return;
+      ly = ly < b.y + b.h / 2 ? b.y - 6 : b.y + b.h + 12;
+    });
     var lbl = document.createElementNS(SVG_NS, "text");
-    lbl.setAttribute("x", (pa.x + pb.x) / 2);
-    lbl.setAttribute("y", (pa.y + pb.y) / 2 - 5);
+    lbl.setAttribute("x", lx);
+    lbl.setAttribute("y", ly);
     lbl.setAttribute("class", "edge-label");
     lbl.textContent = edge.label;
     viewport.appendChild(lbl);
