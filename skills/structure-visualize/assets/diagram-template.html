@@ -398,7 +398,7 @@ function drawNode(n, p) {
   rect.setAttribute("width", p.w);
   rect.setAttribute("height", p.h);
   rect.setAttribute("rx", 10);
-  rect.setAttribute("fill", c.tint);
+  rect.style.fill = c.tint;
   rect.setAttribute("stroke", c.stroke);
   g.appendChild(rect);
 
@@ -414,7 +414,7 @@ function drawNode(n, p) {
   var label = document.createElementNS(SVG_NS, "text");
   label.setAttribute("x", 12);
   label.setAttribute("y", 38);
-  label.setAttribute("fill", c.text);
+  label.style.fill = c.text;
   label.textContent = truncateLabel(n.label, 24);
   g.appendChild(label);
 
