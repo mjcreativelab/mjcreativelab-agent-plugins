@@ -14,6 +14,7 @@ structure-visualize の手順 3（構造化）・手順 4（HTML 生成）から
 テンプレートはダークテーマ・カテゴリ配色・エリア枠・レイアウトエンジンを内蔵している。**生成側は nodes / edges / groups を渡すだけでよく、座標・色の計算は不要**。
 
 - **エスケープ**: JSON 文字列中に `</script>` 相当の並びを出現させない（`</` は `<\/` にエスケープする）
+- タイトル（`__TITLE__` 置換文字列）にも `</` を含めない（`<title>` タグ内に展開されるため）
 - 存在しないノード ID を参照するエッジ・自己参照エッジは描画されない（テンプレート側で除外）。循環依存はあってもよい（グループ内・グループ間とも自動処理される）
 
 ## GRAPH JSON スキーマ
@@ -32,6 +33,10 @@ structure-visualize の手順 3（構造化）・手順 4（HTML 生成）から
       "id": "n1", "label": "payment-api", "type": "ECS Service", "group": "app",
       "members": [ { "name": "cpu", "type": "512" } ],
       "detail": { "source": "terraform/ecs.tf", "description": "決済 API 本体" }
+    },
+    {
+      "id": "n2", "label": "payments-db", "type": "RDS",
+      "detail": { "source": "terraform/rds.tf", "description": "決済 DB" }
     }
   ],
   "edges": [ { "from": "n1", "to": "n2", "label": "SQL" } ]
@@ -73,7 +78,7 @@ structure-visualize の手順 3（構造化）・手順 4（HTML 生成）から
 ### ER 図
 
 - `type` = `table`、`members` = カラム（`name` = カラム名、`type` = `uuid PK` / `varchar(255)` / `uuid FK` のように型 + 制約）
-- `edges` = FK 参照（子 → 親の向き）。label にカルディナリティ（`n..1` 等)
+- `edges` = FK 参照（子 → 親の向き）。label にカルディナリティ（`n..1` 等）
 - スキーマ・ドメインで色分けしたい場合のみ `groups` を付け、`layout: "flow"` を明示する
 
 ### コンポーネント / クラス設計
