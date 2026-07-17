@@ -30,7 +30,9 @@
 | 決定 / 結論 / 採用案 / 方針 / Decision | `## Decision（決定）` |
 | 代替案 / 却下案 / 比較検討 / Considered Options | `## Alternatives（検討した代替案）` |
 | 影響 / 結果 / トレードオフ / Pros-Cons / Consequences | `## Consequences（結果と影響）` |
+| 検討の経緯 / 決定の経緯 / 議論 / 議事メモ / Discussion / Deliberation | `## Deliberation（決定に至る経緯）` |
 
+- 「経緯」単体の節は内容で判定する（課題がどう生じたかの説明 → Context / 誰がいつどう議論して決めたかの記録 → Deliberation）
 - adr 以外のタイプも同様に、意味の対応で references/doc-types.md の見出しセットへマッピングする
 - 1 つの既存節に複数の標準見出しへまたがる内容が含まれる場合、段落単位で分割してよい（文の分割・書き換えはしない）
 - 章の順序は標準見出しセットの定義順に並べ替える

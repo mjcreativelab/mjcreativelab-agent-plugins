@@ -5,6 +5,8 @@ description: >
   「YAML frontmatter（メタデータ）+ 固定見出し（章構成）+ 自然言語の散文（本文）」のハイブリッド構造で
   新規作成・整形する。メタデータだけを機械可読にして横断検索・フィルタに使い、
   決定理由・トレードオフの散文は JSON 等の構造化言語へ潰さない。
+  ADR では決定に至る経緯（いつ・誰と誰が・どのようなやり取りを経たか）も記録する
+  （やり取りが Slack / Gmail / Confluence にある場合は MCP コネクタ経由で本文を取得できる）。
   設計内容そのものの考案は software-architect が担当（本スキルは文書のフォーマットと整理を担う）。
   「ADR を書いて」「この決定を ADR に記録して」「ドキュメントを整形してメタデータを付けて」
   「仕様書を構造化して」「/tech-doc-structuring」で起動する。
@@ -51,11 +53,14 @@ ADR をはじめとする技術ドキュメントを、次の 3 原則に基づ�
 
 ### 2A. 新規作成モード
 
-1. **内容の収集**: 会話・引数の説明・参照された Issue / diff から「決定（または文書の主題）・背景・検討した代替案・影響」を洗い出す。不足があれば AskUserQuestion で確認する。確認手段がない環境では、不明項目を `TODO: 未確定` として本文に明記した上で生成する（事実を創作して埋めない）
+1. **内容の収集**: 会話・引数の説明・参照された Issue / diff から「決定（または文書の主題）・背景・検討した代替案・影響」を洗い出す（ADR ではさらに決定に至る経緯 — いつ・誰と誰が・どのようなやり取りを経たか — を含める）。不足があれば AskUserQuestion で確認する。確認手段がない環境では、不明項目を `TODO: 未確定` として本文に明記した上で生成する（事実を創作して埋めない）
+   - 経緯のやり取りが Slack / Gmail / Confluence 上にある場合（URL や言及があるとき）は、MCP コネクタ経由で本文を取得して要約する: [references/deliberation-sources.md](references/deliberation-sources.md)。コネクタが無い環境では素材の貼り付けを依頼する
 2. **配置先の決定**（ADR の場合）: `docs/adr/`・`docs/adrs/`・`docs/decisions/`・`adr/` の順で既存ディレクトリを Glob で探す。見つかった場所の既存規約（ファイル名形式・見出し言語）が本スキルの標準と異なる場合は既存規約を優先する。どれも無ければ `docs/adr/` の新設を AskUserQuestion で確認する
    - ADR 以外は既存の類似文書と同じディレクトリ（無ければ `docs/` 配下）に置き、生成前にパスを提示する
 3. **採番**（ADR の場合）: 既存ファイルの最大番号 + 1（`NNNN` 4 桁ゼロ埋め、ファイル名 `NNNN-<英語kebab-caseスラグ>.md`）。書き込み直前に再度 Glob で番号の重複がないことを確認する
 4. **生成**: テンプレート（ADR: [assets/adr-template.md](assets/adr-template.md) / その他: [assets/tech-doc-template.md](assets/tech-doc-template.md)）と文書タイプ別見出しセット（references/doc-types.md）に従って作成する
+   - ADR の `## Deliberation（決定に至る経緯）` は要点の時系列（`- YYYY-MM-DD 参加者: 要点と帰結`）に留め、やり取りの詳細ログを再録しない（ADR は横断検索・digest で高頻度に読まれるため、経緯の詳細で本体を肥大させない）
+   - 経緯が長大（目安: 15 行超）な場合や詳細な記録を求められた場合は、同ディレクトリの `NNNN-<スラグ>-deliberation.md` へ切り出す（frontmatter は「5 タイプに該当しない文書」扱いで `type` なし・status / date / tags / related のみ。時系列の骨格は箇条書き、争点と収束の因果は散文で書く）。ADR 側の節は 3 行以内の要約に留め、双方の `related` で相互リンクする
 5. **リンクの整合**（ADR の場合）: 旧 ADR を置き換える決定なら、新 ADR の `supersedes` に旧 ADR を記載し、旧 ADR 側も `status: superseded` と `superseded_by` を更新する（双方向を同時に維持する）
 
 ### 2B. 整形モード

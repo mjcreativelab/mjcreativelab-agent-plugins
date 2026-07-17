@@ -18,6 +18,12 @@ ADR（Architecture Decision Record）や設計書・仕様書・Runbook・ポス
 # 会話中の決定を ADR 化
 /tech-doc-structuring 会話で決めた DB 移行方針を ADR にして
 
+# 決定に至る経緯（いつ・誰と・どのようなやり取りか）も含めて ADR 化
+/tech-doc-structuring この議論を経緯込みで ADR にして
+
+# Slack スレッドのやり取りを経緯として取り込む（MCP コネクタ接続時。Gmail / Confluence も同様）
+/tech-doc-structuring この決定を ADR に。経緯はこのスレッド https://example.slack.com/archives/C0123/p456
+
 # 既存文書の整形（frontmatter 付与・見出し正規化。本文はロスレス）
 /tech-doc-structuring docs/adr/0003-cache-strategy.md
 
@@ -30,7 +36,7 @@ ADR（Architecture Decision Record）や設計書・仕様書・Runbook・ポス
 
 ## モード
 
-- **新規作成**: 会話・引数の説明から内容を集め、テンプレートに沿って生成する。ADR は既存ディレクトリ・採番規約を自動検出し、supersede 関係を双方向に維持する
+- **新規作成**: 会話・引数の説明から内容を集め、テンプレートに沿って生成する。ADR は既存ディレクトリ・採番規約を自動検出し、supersede 関係を双方向に維持する。決定に至る経緯（いつ・誰と誰が・どのようなやり取りか）は `Deliberation` 節に時系列で記録し、長大な場合は別文書 `NNNN-<スラグ>-deliberation.md` へ切り出して `related` で相互リンクする（ADR 本体を高頻度読み込みに耐える分量に保つ）
 - **整形**: 既存文書をロスレスで正規化する。本文中のメタデータ（Status 行・日付行など）を frontmatter へ移動し、見出しを標準セットへマッピングする。本文の散文は変更しない
 
 ## 対応文書タイプ
@@ -40,4 +46,5 @@ ADR（Architecture Decision Record）や設計書・仕様書・Runbook・ポス
 ## 前提条件
 
 - 特になし（git リポジトリであることも不要。整形時の日付補完に git 履歴があると精度が上がる程度）
+- 経緯素材の自動取得（Slack / Gmail / Confluence）を使う場合のみ、対応する MCP コネクタ（claude.ai コネクタ等）の接続が必要。未接続環境や Claude Code 以外のエージェントでは素材の貼り付けで代替する（機能自体は完結する）
 - 設計内容そのものの考案・レビューは対象外（`/software-architect`・`/code-reviewer` を使う）
