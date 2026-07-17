@@ -122,11 +122,14 @@ internal/                        # 内部 skill（npx 標準探索ルート外�
   global-config-pull/            # ~/.claude/ → dotfiles/claude/ へ取り込む
   global-config-push/            # dotfiles/claude/ → ~/.claude/ へ反映する
 dotfiles/                        # ホストマシンのグローバル設定（個人管理用・配布対象外）
-  claude/
+  claude/                        # ~/.claude/ のミラー（同期対象・除外の正式リストは internal/global-config-pull/SKILL.md）
     CLAUDE.md                    # グローバル Claude Code 指示ファイル
     settings.json                # グローバル設定（hooks・permissions・statusLine・plugins 等）
     statusline-command.sh        # ステータスライン表示スクリプト
     rules/                       # CLAUDE.md から条件読み込みされる外部参照ルール（ふるまい・開発判断ガイドライン）
+    hooks/                       # settings.json の hooks から呼ばれるスクリプト（PreCompact 状態保存・Stop 検証チェック）
+    agents/                      # カスタムエージェント定義（コンテキスト隔離監査用の code-reviewer / security-auditor）
+    .mcp.json                    # グローバル MCP サーバー定義（秘密情報は置かない）
 docs/                            # 設計・移行ドキュメント（migration-npx-skills.md、empirical-tuning/、implementation-notes/〔実装ノートのアーカイブ〕等）
 ```
 
