@@ -111,6 +111,10 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 - React・Next.js・FastAPI・Tailwind など既知のライブラリでも参照する（学習データが古い可能性があるため）
 - リファクタリング・ビジネスロジック・一般的なプログラミング概念には使わない
 
+## claude.ai コネクタ
+- Slack / Gmail / Google Drive / Google Calendar / Atlassian（Confluence・Jira）等は claude.ai コネクタで連携済み（ツールは ToolSearch でロード。例: `mcp__claude_ai_Slack__slack_read_thread`）。その時点の接続状態は ToolSearch で確認する
+- コネクタ連携直後はツール未出現のことがある（サーバー接続は非同期）。ToolSearch 0 件でも「未連携」と断定せず、少し待って再検索するか、セッション途中・次セッション以降での出現を考慮する
+
 ## DESIGN.md（デザインシステム仕様）
 - UI / フロントエンド作業では、プロジェクトルートの `DESIGN.md` を確認すること
 - 存在する場合は YAML フロントマター（`colors` / `typography` / `spacing` / `components` トークン）と Markdown prose（設計の意図・Do/Don't）の両方に従う

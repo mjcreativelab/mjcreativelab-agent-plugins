@@ -18,6 +18,8 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 - **main への直接コミットは禁止** — 必ず feature branch を作成し、PR 経由でマージする
 - **すべての変更は PR を作成する** — レビューなしで main に直接 push しない
 - Commit messages: 日本語 OK、conventional commits を推奨
+- コミット・push の直前に `git branch --show-current` で想定ブランチにいるか確認する（並行セッションや手動操作でチェックアウトが切り替わっていることがある）
+- 並行セッションの未コミット変更が作業ツリーに残っていることがある。コミットは対象ファイルの明示パス指定で行う（`git add -A` / `git add .` を使わない）
 
 **特例**: `/smart-pr` や `/smart-commit` に `main にコミット` という引数が渡された場合は、main に直接コミット・push してよい。
 
@@ -56,6 +58,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 
 - ファイルパスにユーザー名を含めない。ホームディレクトリは `/Users/<name>/` ではなく `~/` で表記する（SKILL.md・コメント・ドキュメント・コミットメッセージ・PR 本文のいずれも同様）
 - 実装ノートは `docs/implementation-notes/YYYY-MM-DD-<タスクスラグ>.md` に作成し、変更と同じ PR でコミットする。ルート直下に `implementation-notes.md` を残さない（誤コミット防止のため .gitignore で除外済み）
+- 設計スペックは `docs/specs/YYYY-MM-DD-<タスクスラグ>-design.md` にコミットする。`docs/superpowers/`（brainstorming / writing-plans の作業成果物置き場）は gitignore 対象のため恒久ドキュメントを置かない
 
 ## よく使うコマンド
 
@@ -76,12 +79,21 @@ bash -n skills/<skill-name>/assets/<name>.sh
 # SKILL.md frontmatter 確認
 head -5 skills/<skill-name>/SKILL.md
 
+# ブラウザ操作 MCP が無い環境での HTML 見た目検証（スクリーンショット → PNG を Read で目視確認）
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1600,1000 --screenshot=<out.png> "file://<対象.html>"
+
 # リリース（repo-level v<X.Y.Z> タグの発行 + GitHub Release）
 /auto-release
 
 # git pull が "unable to update local ref" で失敗した場合の復旧（マージ直後に発生することがある）
 # 注意: reset --hard は未コミット変更を破棄する。実行前に git status --short で clean を確認すること
 git update-ref refs/remotes/origin/main <merge-sha> && git reset --hard <merge-sha>
+
+# 誤ったブランチに積んでしまった直近コミットの移し替え（未 push 前提・WIP は保持される。reset --hard は使わない）
+git branch <new-branch> <commit-sha> && git reset --keep HEAD~1
+
+# 作業ツリーに global-config-pull 由来などの無関係な未コミット変更が残っている状態で pull・ブランチ作成する場合
+# git stash -u で退避 → pull --ff-only → checkout -b <branch> → stash pop → 自分のタスクのファイルだけ git add（-A にしない）
 
 # Workflow 雛形（references/agent-orchestration.md の js ブロック）の構文チェック
 # 正規表現・グロブ文字を含むため zsh 直打ちせず bash スクリプトファイル（または bash /dev/stdin）経由で実行する
@@ -111,7 +123,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   branch-visualize/              # ブランチ差分の構成図可視化（Mermaid / D2 / HTML 自動選定）
   structure-visualize/           # 指定内容（インフラ構成 / ER / コンポーネント等）の構造を HTML 構成図で可視化
-  tech-doc-structuring/          # ADR・技術文書の生成・整形（frontmatter + 固定見出し + 散文のハイブリッド構造）
+  tech-doc-structuring/          # ADR・技術文書の生成・整形（frontmatter + 固定見出し + 散文のハイブリッド構造。ADR は決定経緯 Deliberation の記録・外部ソース取得に対応）
   # 事業企画
   business-ideation/             # ビジネス・サービス案の発散→深掘り→評価（汎用・notes 正本方式）
   # デザイン
@@ -254,13 +266,16 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 - `-p` 等のオプション引数を持つスキルには「引数の解析」セクションを設ける（smart-commit の形式を参照）。同一グループ内で引数パースの書き方を統一すること
 - スキル改修時は frontmatter を確認する: 副作用のあるスキルに `disable-model-invocation: true` があるか、`allowed-tools` が設定されているか、`description` に類似スキルとの差別化文言があるか
 - **diagram-template.html の系譜**: branch-visualize と structure-visualize の `assets/diagram-template.html` は同系譜の fork（配色・グルーピングの意味論は意図的に異なるため逐語同期はしない）。レイアウトエンジン（レイヤリング・交差削減・ポート分散・ズーム/パン）の不具合を片方で修正したら、もう片方にも該当するか確認する
+- **structure-visualize テンプレートの検証**: `window.__SV_DEBUG__`（mode / nodes / boxes / size / edges）が恒久の検証ハンドル。改修時は使い捨てハーネス（DOM スタブ + 不変条件検査。再作成手順は `docs/implementation-notes/` の issue-94 / issue-98 ノート参照）で検証し、`SV_EDGE_GATE=1` の厳格モードで「エッジのノード交差 0」を維持する。現在 917 行（800 行目安の超過は Issue #98 で許容済み）
 - **レビュープロンプトの二重化と同期（マスター）**: 敵対レビューの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）と標準レビュー観点の骨格は、スキル間ファイル参照不可・Skill 合成不可の制約から意図的に複数スキルへ二重化している。次のいずれかを変更したら対応箇所をすべて同期すること（可読性を観点に含めるか等、各スキルの identity として意図的に異なる部分は除く）:
   - `smart-issue-resolve/references/agent-orchestration.md` — 雛形 B（`sir-claude-review-set`）の reviewerPrompt / breakerPrompt / judgeBatchPrompt、雛形 C（`sir-codex-breaker`）の Breaker
   - `smart-issue-plan/references/agent-orchestration.md` — `sip-plan-review-set`（計画テキスト用に適応した変種）
   - `code-reviewer/references/agent-orchestration.md` — `--isolated` の単発隔離レビュー（`cr-isolated-review`）
   - `code-reviewer-adversarial/references/agent-orchestration.md` — `--claude-judge` の Breaker×Judge（`cra-claude-judge`）
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。
+- **tech-doc-structuring の Deliberation（決定経緯）の分散**: 節名 `## Deliberation（決定に至る経緯）`・時系列ダイジェスト形式（`- YYYY-MM-DD 参加者: 要点と帰結`）・切り出し先命名 `NNNN-<スラグ>-deliberation.md` は SKILL.md・assets/adr-template.md・references/doc-types.md・restructuring-rules.md・deliberation-sources.md・README.md に分散して記載されている。いずれかを変更したら全ファイルを同期すること
 - Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（`typeof args === 'string'`。プローブで実測）。全雛形（resolve 雛形 A〜E・`sip-plan-review-set`・`cr-isolated-review`・`cra-claude-judge`）は meta 直後に正規化シム `args = typeof args === 'string' ? JSON.parse(args) : (args || {})` を内蔵済みのため、起動時に手動でシムを挿入する必要はない（文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する）。「`args` は JSON 値として渡す（文字列化した JSON を渡さない）」契約は維持する
+- **Workflow スクリプトは `Date.now()` / `Math.random()` / 引数なし `new Date()` を呼ぶとエラーになる**（resume の再現性を壊すため）。ステップ進行を時刻付きでログする必要がある場合（IDE 拡張は `/workflows` の進捗表示が使えず `log()` が唯一の可視化手段）は、スクリプト側で時刻を生成せず、各 `agent()` に「`TZ=Asia/Tokyo date '+%H:%M'` を実行し `nowJst` として返す」よう指示し schema に持たせ、`agent()` 呼び出し直後に `log(`[${result.nowJst} JST] ...`)` する（resolve/plan/code-reviewer/code-reviewer-adversarial の全雛形に実装済み。新しい `agent()` 呼び出しを追加する際も同じ規約に従う。`parallel()` バッチは各結果の `nowJst` の最大値を完了時刻としてログする）
 
 ## 新規スキル追加手順
 
