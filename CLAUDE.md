@@ -18,6 +18,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 - **main への直接コミットは禁止** — 必ず feature branch を作成し、PR 経由でマージする
 - **すべての変更は PR を作成する** — レビューなしで main に直接 push しない
 - Commit messages: 日本語 OK、conventional commits を推奨
+- コミット・push の直前に `git branch --show-current` で想定ブランチにいるか確認する（並行セッションや手動操作でチェックアウトが切り替わっていることがある）
 
 **特例**: `/smart-pr` や `/smart-commit` に `main にコミット` という引数が渡された場合は、main に直接コミット・push してよい。
 
@@ -82,6 +83,9 @@ head -5 skills/<skill-name>/SKILL.md
 # git pull が "unable to update local ref" で失敗した場合の復旧（マージ直後に発生することがある）
 # 注意: reset --hard は未コミット変更を破棄する。実行前に git status --short で clean を確認すること
 git update-ref refs/remotes/origin/main <merge-sha> && git reset --hard <merge-sha>
+
+# 誤ったブランチに積んでしまった直近コミットの移し替え（未 push 前提・WIP は保持される。reset --hard は使わない）
+git branch <new-branch> <commit-sha> && git reset --keep HEAD~1
 
 # Workflow 雛形（references/agent-orchestration.md の js ブロック）の構文チェック
 # 正規表現・グロブ文字を含むため zsh 直打ちせず bash スクリプトファイル（または bash /dev/stdin）経由で実行する
