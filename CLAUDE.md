@@ -44,6 +44,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 ### PR / Issue 作成ルール
 
 - PR・Issue 作成時は作成者を自動アサインする（GitHub MCP の `get_me` または `gh api user` で取得した GitHub ユーザー名を使用）
+- GitHub MCP の `create_pull_request` は assignee 未対応のため、PR 作成後に `gh pr edit <番号> --add-assignee <ユーザー名>` で付与する
 - Issue 作成時は内容に適した既存ラベルを付与する
 - **Issue 作成は GitHub MCP ツール (`issue_write`) を使用する**（ラベル付与・アサインも同ツールで行う）
 - コミット・PR で closing keyword（`Closes`/`Fixes`/`Resolves` + `#NN`）を意図的に使うのは問題ない（対象 Issue を完全に解決する PR で、独立した行として明記する場合）。避けるべきは、Issue に言及する説明文（背景・関連 Issue の言及など）が偶然 closing keyword のパターンと一致し、意図せず auto-close されること — 地の文では「Issue #NN」のような中立表現を使い、close / fix / resolve 系の語を Issue 番号に直接続けない
@@ -60,6 +61,8 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 
 ```bash
 # 個人設定（gitignore 対象）: .claude/settings.local.json にパーミッション allowlist など個人環境の設定を記述
+
+# 注意: このホストの npx は mise 管理（素の PATH にない）。mise exec node -- npx skills ... で実行する
 
 # npx skills が検出する skill 一覧（配布の確認）
 npx skills add ./ --list
