@@ -275,7 +275,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。
 - **tech-doc-structuring の Deliberation（決定経緯）の分散**: 節名 `## Deliberation（決定に至る経緯）`・時系列ダイジェスト形式（`- YYYY-MM-DD 参加者: 要点と帰結`）・切り出し先命名 `NNNN-<スラグ>-deliberation.md` は SKILL.md・assets/adr-template.md・references/doc-types.md・restructuring-rules.md・deliberation-sources.md・README.md に分散して記載されている。いずれかを変更したら全ファイルを同期すること
 - Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（`typeof args === 'string'`。プローブで実測）。全雛形（resolve 雛形 A〜E・`sip-plan-review-set`・`cr-isolated-review`・`cra-claude-judge`）は meta 直後に正規化シム `args = typeof args === 'string' ? JSON.parse(args) : (args || {})` を内蔵済みのため、起動時に手動でシムを挿入する必要はない（文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する）。「`args` は JSON 値として渡す（文字列化した JSON を渡さない）」契約は維持する
-- **Workflow スクリプトは `Date.now()` / `Math.random()` / 引数なし `new Date()` を呼ぶとエラーになる**（resume の再現性を壊すため）。ステップ進行を時刻付きでログする必要がある場合（IDE 拡張は `/workflows` の進捗表示が使えず `log()` が唯一の可視化手段）は、スクリプト側で時刻を生成せず、各 `agent()` に「`TZ=Asia/Tokyo date '+%H:%M'` を実行し `nowJst` として返す」よう指示し schema に持たせ、`agent()` 呼び出し直後に `log(`[${result.nowJst} JST] ...`)` する（resolve/plan/code-reviewer/code-reviewer-adversarial の全雛形に実装済み。新しい `agent()` 呼び出しを追加する際も同じ規約に従う）
+- **Workflow スクリプトは `Date.now()` / `Math.random()` / 引数なし `new Date()` を呼ぶとエラーになる**（resume の再現性を壊すため）。ステップ進行を時刻付きでログする必要がある場合（IDE 拡張は `/workflows` の進捗表示が使えず `log()` が唯一の可視化手段）は、スクリプト側で時刻を生成せず、各 `agent()` に「`TZ=Asia/Tokyo date '+%H:%M'` を実行し `nowJst` として返す」よう指示し schema に持たせ、`agent()` 呼び出し直後に `log(`[${result.nowJst} JST] ...`)` する（resolve/plan/code-reviewer/code-reviewer-adversarial の全雛形に実装済み。新しい `agent()` 呼び出しを追加する際も同じ規約に従う。`parallel()` バッチは各結果の `nowJst` の最大値を完了時刻としてログする）
 
 ## 新規スキル追加手順
 
