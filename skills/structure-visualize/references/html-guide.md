@@ -55,7 +55,8 @@ structure-visualize の手順 3（構造化）・手順 4（HTML 生成）から
 | `nodes[].group` | - | 所属グループ ID。配色とエリア枠を駆動。無しは中立色・エリア外配置 |
 | `nodes[].members[]` | - | `{ name, type? }`。カラム・フィールド・属性の行。指定するとノードが可変高になる |
 | `nodes[].detail` | - | `{ source?, description? }`。出典（ファイルパスや「会話」）と概要。クリックパネルに表示 |
-| `edges[]` | - | `{ from, to, label? }`。from が to に依存する向き（レイアウトは from が左）。label は関係種別やカルディナリティ（`implements` / `1..n` 等） |
+| `edges[]` | - | `{ from, to, label?, cardinality? }`。from が to に依存する向き（レイアウトは from が左）。label は関係種別（`implements` / `uses` 等） |
+| `edges[].cardinality` | - | ER 図の多重度。`"<from>..<to>"` 形式で各端点 ∈ `1` / `n` / `0..1` / `0..n`（例: `"n..1"`）。両端に IE 記法（鳥の足）の端点シンボルを描画（`1`=縦棒 / `n`=鳥の足 / `0` 含みは丸付き）。矢じりの代わりに表示され、`label` と併用可。省略・不正値は従来の矢じり描画 |
 
 ## layout の選択基準
 
@@ -78,7 +79,8 @@ structure-visualize の手順 3（構造化）・手順 4（HTML 生成）から
 ### ER 図
 
 - `type` = `table`、`members` = カラム（`name` = カラム名、`type` = `uuid PK` / `varchar(255)` / `uuid FK` のように型 + 制約）
-- `edges` = FK 参照（子 → 親の向き）。label にカルディナリティ（`n..1` 等）
+- `edges` = FK 参照（子 → 親の向き）。多重度は `cardinality`（`"n..1"` 等・両端に鳥の足シンボル）で表し、`label` は関係名（任意）に使う
+- 端点シンボルは SVG の context paint（`context-stroke`）でエッジ色を継承するため、これに対応したブラウザ（Chrome/Edge・Safari・Firefox とも概ね 2024 年以降）で表示される。未対応の古いブラウザでは端点シンボルが描画されずエッジ線のみになる（矢じりと違い黙って消えるため注意）
 - スキーマ・ドメインで色分けしたい場合のみ `groups` を付け、`layout: "flow"` を明示する
 
 ### コンポーネント / クラス設計
