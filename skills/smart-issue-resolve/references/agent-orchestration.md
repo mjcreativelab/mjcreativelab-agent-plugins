@@ -8,6 +8,7 @@ smart-issue-resolve の実装・レビューを担う役割別エージェント
 - スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、各雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、各 `agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（共通フィールド。`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）。新しい `agent()` 呼び出しを追加する場合もこの規約に従う
 - ツール結果に返る `scriptPath` を控えておくと、同じ雛形の再起動（レビューセット続行など）は `{scriptPath, args}` で再送できる。中断・失敗からの再開は `resumeFromRunId` を使う
 
 ## 作業ディレクトリと context.md
@@ -74,9 +75,12 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const FINDINGS_SCHEMA = {
   type: 'object',
-  required: ['items'],
+  required: ['items', 'nowJst'],
   properties: {
     items: {
       type: 'array',
@@ -91,12 +95,13 @@ const FINDINGS_SCHEMA = {
         },
       },
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const FIX_SCHEMA = {
   type: 'object',
-  required: ['adopted', 'rejected', 'testsPassed'],
+  required: ['adopted', 'rejected', 'testsPassed', 'nowJst'],
   properties: {
     adopted: {
       type: 'array',
@@ -108,12 +113,13 @@ const FIX_SCHEMA = {
     },
     testsPassed: { type: 'boolean' },
     notes: { type: 'string' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const QA_SCHEMA = {
   type: 'object',
-  required: ['pass', 'executed', 'issues'],
+  required: ['pass', 'executed', 'issues', 'nowJst'],
   properties: {
     pass: { type: 'boolean' },
     executed: { type: 'string', description: '実行したテスト・lint コマンドと結果要約' },
@@ -121,16 +127,27 @@ const QA_SCHEMA = {
       type: 'array',
       items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const IMPL_SCHEMA = {
   type: 'object',
-  required: ['changedFiles', 'summary', 'testResults'],
+  required: ['changedFiles', 'summary', 'testResults', 'nowJst'],
   properties: {
     changedFiles: { type: 'array', items: { type: 'string' } },
     summary: { type: 'string' },
     testResults: { type: 'string' },
+    nowJst: NOW_JST_FIELD,
+  },
+}
+
+const DESIGN_SCHEMA = {
+  type: 'object',
+  required: ['summary', 'nowJst'],
+  properties: {
+    summary: { type: 'string', description: 'design.md の要点（10 行以内）' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -141,7 +158,7 @@ const qaPrompt = (extra) => `あなたは独立 QA エージェントである�
 4. Issue の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
 5. ファイル名に .breaker-probe. を含む使い捨てテストが変更セットに残っていれば issues として報告する
 制約: コード・ファイルを変更しない。コミット・push はしない。${extra}
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。executed に実行コマンドと結果要約、問題は issues に列挙する。`
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。executed に実行コマンドと結果要約、問題は issues に列挙する。${TIME_NOTE}`
 
 log('実装フェーズ開始: Issue #' + args.issueNumber)
 
@@ -152,9 +169,10 @@ if (args.needDesign) {
 2. 関連コードを調査し（エントリポイント・依存グラフ・既存パターン・境界条件）、要件を満たす設計方針を確定する
 3. ${args.workDir}/design.md に次を書く: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項
 制約: コードは変更しない。コミット・push はしない。判断できない仕様は独断で確定せず「未確定事項」に列挙する。
-最終出力: design.md の要点（10 行以内）。`,
-    { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max' })
+最終出力: summary に design.md の要点（10 行以内）。${TIME_NOTE}`,
+    { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max', schema: DESIGN_SCHEMA })
   if (design === null) return { status: 'agent-failed', at: 'design' }
+  log(`[${design.nowJst} JST] Design 完了`)
 }
 
 const impl = await agent(`あなたは GitHub Issue #${args.issueNumber} を実装する開発者である。
@@ -164,12 +182,14 @@ const impl = await agent(`あなたは GitHub Issue #${args.issueNumber} を実�
 4. Issue の要件・受け入れ基準・追加指示に沿って実装する。スコープは Issue 記載内容（と計画・設計の範囲）に限定する
 5. 同じスコープのテストを再実行し、既存テストの壊れがないこと・新規要件を満たすことを確認する
 6. ${notes} に次を書く: 変更ファイル / 要件対応（受け入れ基準ごと） / 自分で判断した事項 / テスト結果（ベースライン比較）
-制約: コミット・push はしない。Issue と無関係な変更を混ぜない。`,
+制約: コミット・push はしない。Issue と無関係な変更を混ぜない。${TIME_NOTE}`,
   { label: 'dev:implement', phase: 'Implement', model: 'opus', effort: 'max', schema: IMPL_SCHEMA })
 if (impl === null) return { status: 'agent-failed', at: 'implement' }
+log(`[${impl.nowJst} JST] Implement 完了`)
 
 let qa = await agent(qaPrompt(''), { label: 'qa:verify', phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
 if (qa === null) return { status: 'agent-failed', at: 'qa' }
+log(`[${qa.nowJst} JST] QA 完了（pass=${qa.pass}）`)
 
 let qaFixRounds = 0
 while (!qa.pass && qaFixRounds < 2) {
@@ -180,11 +200,13 @@ ${JSON.stringify(qa.issues, null, 2)}
 2. 指摘を検証して修正する（QA の誤検出と判断した場合は理由を rejected に記録する）
 3. 関連スコープのテストを再実行する
 4. ${notes} を更新する
-制約: コミット・push はしない。`,
+制約: コミット・push はしない。${TIME_NOTE}`,
     { label: 'dev:qa-fix-' + qaFixRounds, phase: 'QA', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) return { status: 'agent-failed', at: 'qa-fix' }
+  log(`[${fix.nowJst} JST] QA修正${qaFixRounds}回目 完了（採用${fix.adopted.length}件）`)
   qa = await agent(qaPrompt('前回 QA の指摘への対応後の再検証である。'), { label: 'qa:re-verify-' + qaFixRounds, phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
   if (qa === null) return { status: 'agent-failed', at: 'qa' }
+  log(`[${qa.nowJst} JST] QA再検証${qaFixRounds}回目 完了（pass=${qa.pass}）`)
 }
 if (!qa.pass) return { status: 'qa-failed', impl, qa }
 
@@ -195,9 +217,10 @@ const arch = await agent(`あなたは設計役である。実装完了後の変
    - 設計整合: 設計方針・実装計画・既存アーキテクチャ（レイヤー責務・依存方向）からの逸脱
    - 保守性: 過度な結合・テスト容易性の低下・変更波及の広さ・不要な抽象化
    - 可用性・運用: タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・可観測性（ログ・メトリクス）の欠落・デプロイ / ロールバックの脆さ
-制約: コードは変更しない。コミット・push はしない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。`,
+制約: コードは変更しない。コミット・push はしない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。${TIME_NOTE}`,
   { label: 'architect:review', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })
 if (arch === null) return { status: 'agent-failed', at: 'arch-review' }
+log(`[${arch.nowJst} JST] ArchReview 完了（指摘${arch.items.length}件）`)
 
 let archFix = null
 if (arch.items.length > 0) {
@@ -208,12 +231,14 @@ ${JSON.stringify(arch.items, null, 2)}
    - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する）
 2. 採用指摘を修正し、関連スコープのテストを再実行する
 3. ${notes} を更新する
-制約: コミット・push はしない。`,
+制約: コミット・push はしない。${TIME_NOTE}`,
     { label: 'dev:arch-fix', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (archFix === null) return { status: 'agent-failed', at: 'arch-fix' }
+  log(`[${archFix.nowJst} JST] ArchFix 完了（採用${archFix.adopted.length}件）`)
   if (archFix.adopted.length > 0) {
     qa = await agent(qaPrompt('設計整合レビュー反映後の再検証である。'), { label: 'qa:post-arch', phase: 'ArchReview', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
     if (qa === null) return { status: 'agent-failed', at: 'qa' }
+    log(`[${qa.nowJst} JST] QA(post-arch) 完了（pass=${qa.pass}）`)
     if (!qa.pass) return { status: 'qa-failed', impl, qa, archFix }
   }
 }
@@ -249,9 +274,12 @@ const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
 const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const FINDINGS_SCHEMA = {
   type: 'object',
-  required: ['items'],
+  required: ['items', 'nowJst'],
   properties: {
     items: {
       type: 'array',
@@ -272,12 +300,13 @@ const FINDINGS_SCHEMA = {
       items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
       description: '採用対象外（監査性のため件数とタイトルのみ残す）',
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const FIX_SCHEMA = {
   type: 'object',
-  required: ['adopted', 'rejected', 'testsPassed'],
+  required: ['adopted', 'rejected', 'testsPassed', 'nowJst'],
   properties: {
     adopted: {
       type: 'array',
@@ -289,12 +318,13 @@ const FIX_SCHEMA = {
     },
     testsPassed: { type: 'boolean' },
     notes: { type: 'string' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const QA_SCHEMA = {
   type: 'object',
-  required: ['pass', 'executed', 'issues'],
+  required: ['pass', 'executed', 'issues', 'nowJst'],
   properties: {
     pass: { type: 'boolean' },
     executed: { type: 'string' },
@@ -302,12 +332,13 @@ const QA_SCHEMA = {
       type: 'array',
       items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const BREAK_SCHEMA = {
   type: 'object',
-  required: ['counterexamples'],
+  required: ['counterexamples', 'nowJst'],
   properties: {
     counterexamples: {
       type: 'array',
@@ -322,6 +353,16 @@ const BREAK_SCHEMA = {
         },
       },
     },
+    nowJst: NOW_JST_FIELD,
+  },
+}
+
+const AUDIT_SCHEMA = {
+  type: 'object',
+  required: ['summary', 'nowJst'],
+  properties: {
+    summary: { type: 'string', description: '攻撃シナリオの要点（15 行以内）' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -349,7 +390,8 @@ ${prior()}
 - 可読性・命名・スタイルは対象外（修正価値のある欠陥のみ）
 - 各指摘に根拠（ファイルパス・行番号など一次情報）と重大度を付ける
 - コード・ファイルを変更しない（レビューのみ）。コミットしない
-- 指摘が無ければ items を空配列にする`
+- 指摘が無ければ items を空配列にする
+${TIME_NOTE}`
 
 const breakerPrompt = (round, auditNote) => `あなたは Breaker である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
 ## 入力
@@ -371,7 +413,7 @@ ${prior()}${auditNote}
 ## 出力
 - ${args.workDir}/breaker-round-${round}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く
 - 構造化出力の counterexamples に同じ内容を返す
-制約: 反例テスト以外のコード変更をしない。コミットしない。`
+制約: 反例テスト以外のコード変更をしない。コミットしない。${TIME_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これはラウンド ${round} の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
@@ -396,7 +438,8 @@ ${prior()}
 - 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
 - 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
 - コード・ファイルを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す`
+- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
+${TIME_NOTE}`
 
 const fixPrompt = (round, items) => `あなたは GitHub Issue #${args.issueNumber} を実装した開発者（レビュイー）である。ラウンド ${round} のレビュー指摘を判定・反映する:
 ${JSON.stringify(items, null, 2)}
@@ -407,7 +450,7 @@ ${JSON.stringify(items, null, 2)}
 3. 採用指摘を修正し、関連スコープのテストを再実行する（壊れたまま終えない）
 4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換（リネーム・配置換え）し、それ以外は削除する
 5. ${notes} を更新する
-制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。`
+制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`
 
 const qaPrompt = () => `あなたは独立 QA エージェントである。レビューループ収束後・コミット前の最終検証を行う。
 1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
@@ -416,7 +459,7 @@ const qaPrompt = () => `あなたは独立 QA エージェントである。レ�
 4. Issue の受け入れ基準を 1 件ずつ検証する
 5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
 制約: コード・ファイルを変更しない。コミットしない。
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。`
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。${TIME_NOTE}`
 
 let auditNote = ''
 let auditFailed = false
@@ -427,10 +470,11 @@ if (args.securityAudit) {
 3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
 4. ${args.workDir}/security-audit.md に書く
 自動発動の理由: ${args.securityReason}
-制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
-    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: summary に攻撃シナリオの要点（15 行以内）。${TIME_NOTE}`,
+    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max', schema: AUDIT_SCHEMA })
   if (audit) {
-    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
+    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit.summary}\n詳細: ${args.workDir}/security-audit.md\n`
+    log(`[${audit.nowJst} JST] セキュリティ監査 完了`)
   } else {
     auditFailed = true
   }
@@ -443,11 +487,12 @@ const specQuestions = []
 
 for (let i = 0; i < 3; i++) {
   const round = args.startRound + i
-  log(`レビューラウンド ${round}（${args.mode}）`)
+  log(`レビューラウンド ${round}（${args.mode}）開始`)
   let findings = null
   if (args.mode === 'adversarial') {
     const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
     if (breaker === null) { status = 'agent-failed'; break }
+    log(`[${breaker.nowJst} JST] breaker r${round} 完了（反例${breaker.counterexamples.length}件）`)
     const scen = breaker.counterexamples || []
     const BATCH = 4
     const batches = []
@@ -458,9 +503,12 @@ for (let i = 0; i < 3; i++) {
     const ok = batchResults.filter(Boolean)
     if (batches.length > 0 && ok.length === 0) { status = 'agent-failed'; break }
     if (ok.length < batches.length) { judgeDegraded = true; log(`judge r${round}: ${batches.length - ok.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定の反例あり）`) }
+    const judgeTimes = ok.map((r) => r.nowJst).filter(Boolean).sort()
+    if (judgeTimes.length) log(`[${judgeTimes[judgeTimes.length - 1]} JST] judge r${round} 完了（${ok.length}/${batches.length} バッチ）`)
     findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
     findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+    if (findings) log(`[${findings.nowJst} JST] reviewer r${round} 完了（指摘${findings.items.length}件）`)
   }
   if (findings === null) { status = 'agent-failed'; break }
   if (findings.items.length === 0) {
@@ -477,6 +525,7 @@ for (let i = 0; i < 3; i++) {
   }
   const fix = await agent(fixPrompt(round, trueDefects), { label: `dev:fix-r${round}`, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) { status = 'agent-failed'; break }
+  log(`[${fix.nowJst} JST] dev fix r${round} 完了（採用${fix.adopted.length}件）`)
   records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length })
   if (!fix.testsPassed) { status = 'tests-failing'; break }
   if (fix.adopted.length === 0) { converged = true; break }
@@ -489,7 +538,7 @@ if (converged) {
       { label: 'dev:probe-cleanup', phase: 'FinalQA', model: 'sonnet', effort: 'low' })
   }
   finalQa = await agent(qaPrompt(), { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
-  if (finalQa === null) status = 'agent-failed'
+  if (finalQa === null) { status = 'agent-failed' } else { log(`[${finalQa.nowJst} JST] FinalQA 完了（pass=${finalQa.pass}）`) }
 }
 
 return { converged, status, records, finalQa, specQuestions, auditFailed, judgeDegraded }
@@ -531,9 +580,12 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const ctx = args.workDir + '/context.md'
 const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const BREAK_SCHEMA = {
   type: 'object',
-  required: ['counterexamples'],
+  required: ['counterexamples', 'nowJst'],
   properties: {
     counterexamples: {
       type: 'array',
@@ -548,6 +600,16 @@ const BREAK_SCHEMA = {
         },
       },
     },
+    nowJst: NOW_JST_FIELD,
+  },
+}
+
+const AUDIT_SCHEMA = {
+  type: 'object',
+  required: ['summary', 'nowJst'],
+  properties: {
+    summary: { type: 'string', description: '攻撃シナリオの要点（15 行以内）' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -560,10 +622,11 @@ if (args.securityAudit) {
 3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
 4. ${args.workDir}/security-audit.md に書く
 自動発動の理由: ${args.securityReason}
-制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
-    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
+制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: summary に攻撃シナリオの要点（15 行以内）。${TIME_NOTE}`,
+    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max', schema: AUDIT_SCHEMA })
   if (audit) {
-    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
+    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit.summary}\n詳細: ${args.workDir}/security-audit.md\n`
+    log(`[${audit.nowJst} JST] セキュリティ監査 完了`)
   } else {
     auditFailed = true
   }
@@ -589,9 +652,10 @@ ${args.priorSummary ? `\n## 前ラウンドまでの経緯\n${args.priorSummary}
 ## 出力
 - ${args.workDir}/breaker-round-${args.round}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く
 - 構造化出力の counterexamples に同じ内容を返す
-制約: 反例テスト以外のコード変更をしない。コミットしない。`,
+制約: 反例テスト以外のコード変更をしない。コミットしない。${TIME_NOTE}`,
   { label: 'breaker:r' + args.round, phase: 'Break', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed' }
+log(`[${breaker.nowJst} JST] breaker r${args.round} 完了（反例${breaker.counterexamples.length}件）`)
 
 return { status: 'ok', counterexamples: breaker.counterexamples, breakerFile: args.workDir + '/breaker-round-' + args.round + '.md', auditFailed }
 ```
@@ -617,9 +681,12 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const FIX_SCHEMA = {
   type: 'object',
-  required: ['adopted', 'rejected', 'testsPassed'],
+  required: ['adopted', 'rejected', 'testsPassed', 'nowJst'],
   properties: {
     adopted: {
       type: 'array',
@@ -631,6 +698,7 @@ const FIX_SCHEMA = {
     },
     testsPassed: { type: 'boolean' },
     notes: { type: 'string' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -642,9 +710,10 @@ const fix = await agent(`あなたは GitHub Issue #${args.issueNumber} を実�
 3. 採用指摘を修正し、context.md のテスト方針に従って関連スコープのテストを再実行する（壊れたまま終えない）
 4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換し、それ以外は削除する
 5. ${notes} を更新する
-制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。`,
+制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`,
   { label: 'dev:fix-r' + args.round, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
 if (fix === null) return { status: 'agent-failed' }
+log(`[${fix.nowJst} JST] dev fix r${args.round} 完了（採用${fix.adopted.length}件）`)
 
 return { status: 'ok', fix }
 ```
@@ -667,9 +736,12 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const ctx = args.workDir + '/context.md'
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const QA_SCHEMA = {
   type: 'object',
-  required: ['pass', 'executed', 'issues'],
+  required: ['pass', 'executed', 'issues', 'nowJst'],
   properties: {
     pass: { type: 'boolean' },
     executed: { type: 'string' },
@@ -677,6 +749,7 @@ const QA_SCHEMA = {
       type: 'array',
       items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -687,9 +760,10 @@ const qa = await agent(`あなたは独立 QA エージェントである。レ�
 4. Issue #${args.issueNumber} の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
 5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
 制約: コード・ファイルを変更しない。コミット・push はしない。
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。`,
+判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。${TIME_NOTE}`,
   { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
 if (qa === null) return { status: 'agent-failed' }
+log(`[${qa.nowJst} JST] FinalQA 完了（pass=${qa.pass}）`)
 
 return { status: 'ok', qa }
 ```

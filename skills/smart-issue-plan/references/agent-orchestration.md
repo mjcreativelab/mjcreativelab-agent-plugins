@@ -10,6 +10,7 @@ smart-issue-plan の **claude 系計画レビューループ**を担う役割別
 - スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、各 `agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（共通フィールド。`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）。新しい `agent()` 呼び出しを追加する場合もこの規約に従う
 - ツール結果に返る `scriptPath` を控えておくと、同じ雛形の再起動（レビューセット続行など）は `{scriptPath, args}` で再送できる。中断・失敗からの再開は `resumeFromRunId` を使う
 
 ## 作業ディレクトリと引き継ぎファイル
@@ -69,9 +70,12 @@ const ctx = args.workDir + '/context.md'
 const plan = args.workDir + '/plan.md'
 const target = `レビュー対象は実装計画 ${plan} の本文である。計画が言及するファイル・関数・設定はリポジトリの実コードと照合し、「依拠した前提」の正否も検証する。`
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const FINDINGS_SCHEMA = {
   type: 'object',
-  required: ['items'],
+  required: ['items', 'nowJst'],
   properties: {
     items: {
       type: 'array',
@@ -92,12 +96,13 @@ const FINDINGS_SCHEMA = {
       items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
       description: '採用対象外（監査性のため件数とタイトルのみ残す）',
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const FIX_SCHEMA = {
   type: 'object',
-  required: ['adopted', 'rejected'],
+  required: ['adopted', 'rejected', 'nowJst'],
   properties: {
     adopted: {
       type: 'array',
@@ -108,12 +113,13 @@ const FIX_SCHEMA = {
       items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
     },
     notes: { type: 'string' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const BREAK_SCHEMA = {
   type: 'object',
-  required: ['scenarios'],
+  required: ['scenarios', 'nowJst'],
   properties: {
     scenarios: {
       type: 'array',
@@ -128,6 +134,16 @@ const BREAK_SCHEMA = {
         },
       },
     },
+    nowJst: NOW_JST_FIELD,
+  },
+}
+
+const AUDIT_SCHEMA = {
+  type: 'object',
+  required: ['summary', 'nowJst'],
+  properties: {
+    summary: { type: 'string', description: '攻撃シナリオの要点（15 行以内）' },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -155,7 +171,8 @@ ${prior()}
 - 指摘は計画の欠陥に限定する（文体・体裁・好みは対象外）
 - 各指摘に根拠（ファイルパス・行番号など一次情報、または計画の該当箇所）と重大度を付ける
 - 計画・コードを変更しない（レビューのみ）。コミットしない
-- 指摘が無ければ items を空配列にする`
+- 指摘が無ければ items を空配列にする
+${TIME_NOTE}`
 
 const breakerPrompt = (round, auditNote) => `あなたは Breaker である。GitHub Issue #${args.issueNumber} の実装計画を「読む」のではなく「壊す」。設計が耐えるべき具体的な攻撃シナリオ・脅威・欠落コントロールを列挙する。計画の作成には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系（happy path）しか想定していない手順は実在の弱点として扱い、「後で対応する」前提や部分的な対処に信用を与えない。計画にはテスト対象のコードが無いため、反例テストは書かない（攻撃シナリオで指摘する）。
 ## 入力
@@ -173,7 +190,7 @@ ${prior()}${auditNote}
 ## 出力
 - ${args.workDir}/breaker-round-${round}.md に攻撃シナリオのリスト（シナリオ・対処できていない計画の手順 / 前提・根拠）を書く
 - 構造化出力の scenarios に同じ内容を返す。各シナリオに unaddressed（計画のどの手順・前提が対処できていないか）を必ず付す
-制約: 計画・コードを変更しない。コミットしない。`
+制約: 計画・コードを変更しない。コミットしない。${TIME_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した設計への攻撃シナリオを、リポジトリの実コードと計画本文に照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは計画作成にも攻撃シナリオ生成にも関与していない。これはラウンド ${round} の攻撃シナリオをバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
@@ -198,7 +215,8 @@ ${prior()}
 - 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 実装時に何が起きるか (2) なぜ計画のその手順・前提が脆弱か (3) 想定される影響 (4) 計画をどう直せばリスクが下がるか。答えられない懸念は低優先度またはノイズに分類する
 - 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
 - 計画・コードを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す`
+- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
+${TIME_NOTE}`
 
 const editPrompt = (round, items) => `あなたは GitHub Issue #${args.issueNumber} の実装計画を作成した担当者（レビュイー）である。ラウンド ${round} のレビュー指摘を判定し、計画 ${plan} に反映する:
 ${JSON.stringify(items, null, 2)}
@@ -208,7 +226,7 @@ ${JSON.stringify(items, null, 2)}
    - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する。Judge が「真の欠陥」と裁定した指摘でも、対応が過剰になるなら不採用にしてよい）
 3. 採用指摘を ${plan} に反映する（計画本文を編集する。実装コードは変更しない）
 4. 反映後も計画の構成（[assets/plan-template.md](../assets/plan-template.md) 準拠）を保つ
-制約: 実装コードは変更しない。コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。`
+制約: 実装コードは変更しない。コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`
 
 let auditNote = ''
 let auditFailed = false
@@ -219,10 +237,11 @@ if (args.securityAudit) {
 3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この計画が対処すべき脅威と検証すべき攻撃シナリオを列挙する
 4. ${args.workDir}/security-audit.md に書く
 自動発動の理由: ${args.securityReason}
-制約: リポジトリのコード・計画を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: 攻撃シナリオの要点（15 行以内）。`,
-    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max' })
+制約: リポジトリのコード・計画を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: summary に攻撃シナリオの要点（15 行以内）。${TIME_NOTE}`,
+    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max', schema: AUDIT_SCHEMA })
   if (audit) {
-    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit}\n詳細: ${args.workDir}/security-audit.md\n`
+    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit.summary}\n詳細: ${args.workDir}/security-audit.md\n`
+    log(`[${audit.nowJst} JST] セキュリティ監査 完了`)
   } else {
     auditFailed = true
   }
@@ -235,11 +254,12 @@ const specQuestions = []
 
 for (let i = 0; i < 3; i++) {
   const round = args.startRound + i
-  log(`計画レビューラウンド ${round}（${args.mode}）`)
+  log(`計画レビューラウンド ${round}（${args.mode}）開始`)
   let findings = null
   if (args.mode === 'adversarial') {
     const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
     if (breaker === null) { status = 'agent-failed'; break }
+    log(`[${breaker.nowJst} JST] breaker r${round} 完了（シナリオ${breaker.scenarios.length}件）`)
     const scen = breaker.scenarios || []
     const BATCH = 4
     const batches = []
@@ -250,9 +270,12 @@ for (let i = 0; i < 3; i++) {
     const ok = batchResults.filter(Boolean)
     if (batches.length > 0 && ok.length === 0) { status = 'agent-failed'; break }
     if (ok.length < batches.length) { judgeDegraded = true; log(`judge r${round}: ${batches.length - ok.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定のシナリオあり）`) }
+    const judgeTimes = ok.map((r) => r.nowJst).filter(Boolean).sort()
+    if (judgeTimes.length) log(`[${judgeTimes[judgeTimes.length - 1]} JST] judge r${round} 完了（${ok.length}/${batches.length} バッチ）`)
     findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
     findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+    if (findings) log(`[${findings.nowJst} JST] reviewer r${round} 完了（指摘${findings.items.length}件）`)
   }
   if (findings === null) { status = 'agent-failed'; break }
   if (findings.items.length === 0) {
@@ -269,6 +292,7 @@ for (let i = 0; i < 3; i++) {
   }
   const fix = await agent(editPrompt(round, trueDefects), { label: `plan-editor:r${round}`, phase: 'Edit', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) { status = 'agent-failed'; break }
+  log(`[${fix.nowJst} JST] plan-editor r${round} 完了（採用${fix.adopted.length}件）`)
   records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length })
   if (fix.adopted.length === 0) { converged = true; break }
 }

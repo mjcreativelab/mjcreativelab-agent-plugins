@@ -7,6 +7,7 @@ code-reviewer の `--isolated` モードで起動する、コンテキスト隔�
 - スクリプトはこの雛形を**そのまま** `script`（または本ファイルから抽出した `scriptPath`）に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）
 - レビュー結果の出力（チャット表示）と PR 投稿ゲートはオーケストレーター（メインセッション）が担う。エージェントはレビュー結果（5 区分 markdown）を返すだけで、投稿・コミットはしない
 
 ## 雛形: 単発隔離レビュー（cr-isolated-review）
@@ -24,7 +25,19 @@ export const meta = {
 // args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
 args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
-const review = await agent(`あなたは実装コードのレビュワーである。会話・実装の文脈を持たない独立の立場から、仕様整合・設計適合・可読性を担保するレビューを行う。
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
+const REVIEW_SCHEMA = {
+  type: 'object',
+  required: ['review', 'nowJst'],
+  properties: {
+    review: { type: 'string', description: '5 区分markdown（該当すれば Codex クロスチェック推奨節を含む）' },
+    nowJst: NOW_JST_FIELD,
+  },
+}
+
+const result = await agent(`あなたは実装コードのレビュワーである。会話・実装の文脈を持たない独立の立場から、仕様整合・設計適合・可読性を担保するレビューを行う。
 ## レビュー対象
 - 対象: ${args.target}
 - diff の取得: ${args.diffBase}
@@ -51,10 +64,12 @@ ${args.focus ? `- 重点観点: ${args.focus}\n` : ''}## 観点（6 観点で確
 認証・認可 / 決済・課金 / データスキーマ / 外部 API・依存契約のいずれかに該当する変更が含まれる場合は、5 区分の直後に「### Codex クロスチェック推奨」節（理由: 該当カテゴリ）を追加する。
 ## 制約
 - コード・ファイルを変更しない（レビューのみ）。コミット・push はしない。PR への投稿もしない（呼び出し元が行う）
-最終出力: 上記 5 区分（該当すれば Codex クロスチェック推奨節を含む）の markdown をそのまま返す。`,
-  { label: 'reviewer:isolated', phase: 'Review', model: 'sonnet', effort: 'max' })
+最終出力: review に上記 5 区分（該当すれば Codex クロスチェック推奨節を含む）の markdown をそのまま入れる。${TIME_NOTE}`,
+  { label: 'reviewer:isolated', phase: 'Review', model: 'sonnet', effort: 'max', schema: REVIEW_SCHEMA })
+if (result === null) return { review: null }
+log(`[${result.nowJst} JST] レビュー完了`)
 
-return { review }
+return { review: result.review }
 ```
 
 返却の `review`（5 区分 markdown）をオーケストレーターがチャットに表示し、書き出しモードが有効なら SKILL.md「PR 書き出しモード」のテンプレートに埋めて確認ゲート経由で投稿する。`agent()` が `null` を返した（ユーザーのスキップ / 終端エラー）場合は、1 回だけ `resumeFromRunId` で再開を試み、それでも失敗ならメインセッションでの通常レビュー（SKILL.md 手順 4）に degrade する。

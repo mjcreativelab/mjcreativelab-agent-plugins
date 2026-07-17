@@ -9,6 +9,7 @@ code-reviewer-adversarial の `--claude-judge` モード（および Codex 不�
 - スクリプトはこの雛形を**そのまま** `script`（または本ファイルから抽出した `scriptPath`）に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）
 - Phase 3（最終出力）・Phase 4（PR 投稿ゲート）はオーケストレーター（メインセッション）が担う。エージェントは裁定結果を返すだけで、投稿・コミットはしない
 - **単発**（ループ・収束判定・上限チェックは持たない）
 
@@ -30,6 +31,9 @@ export const meta = {
 // args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
 args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
+const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
+const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+
 const target = `レビュー対象: ${args.target}。diff の取得: ${args.diffBase}（これに従って変更ファイル・行・hunk を自分で特定する。PR 対象なら GitHub MCP で diff を取得。大きい場合は diff テキストと変更ファイルリストのみ保持する）。`
 const testNote = args.testCmd
   ? `反例テストは ${args.testCmd} で実行して検証する。`
@@ -37,7 +41,7 @@ const testNote = args.testCmd
 
 const BREAK_SCHEMA = {
   type: 'object',
-  required: ['counterexamples'],
+  required: ['counterexamples', 'nowJst'],
   properties: {
     counterexamples: {
       type: 'array',
@@ -52,12 +56,13 @@ const BREAK_SCHEMA = {
         },
       },
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
 const FINDINGS_SCHEMA = {
   type: 'object',
-  required: ['items'],
+  required: ['items', 'nowJst'],
   properties: {
     items: {
       type: 'array',
@@ -79,6 +84,7 @@ const FINDINGS_SCHEMA = {
       items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
       description: '採用対象外（監査性のため件数とタイトルのみ残す）',
     },
+    nowJst: NOW_JST_FIELD,
   },
 }
 
@@ -101,9 +107,10 @@ ${args.focus ? `\n## 重点観点（優先的に攻撃する）\n${args.focus}\n
 - 反例テスト以外のコード変更をしない。コミット・push はしない
 - 「良いコード」「可読性」系は出さない（このスキルの対象外）
 - 反証不能な指摘は verified: UNVERIFIED とし、Judge がノイズとして切る前提で確信度を低く扱う
-最終出力: counterexamples に反例リスト（重複統合・カテゴリ分類はしない。それは Judge の役割）。`,
+最終出力: counterexamples に反例リスト（重複統合・カテゴリ分類はしない。それは Judge の役割）。${TIME_NOTE}`,
   { label: 'breaker', phase: 'Break', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed', at: 'breaker' }
+log(`[${breaker.nowJst} JST] breaker 完了（反例${breaker.counterexamples.length}件）`)
 
 const findings = await agent(`あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。
 ## 入力
@@ -122,9 +129,11 @@ ${JSON.stringify(breaker.counterexamples, null, 2)}
 - 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
 - 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
 - コード・ファイルを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定し、真の欠陥には fix を付ける）、低優先度・ノイズは dismissed に件数とタイトルだけ残す`,
+- items には「真の欠陥」「仕様未定」のみを入れ（category を設定し、真の欠陥には fix を付ける）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
+${TIME_NOTE}`,
   { label: 'judge', phase: 'Judge', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
 if (findings === null) return { status: 'agent-failed', at: 'judge' }
+log(`[${findings.nowJst} JST] judge 完了（真の欠陥/仕様未定 ${findings.items.length}件）`)
 
 return { status: 'ok', items: findings.items, dismissed: findings.dismissed || [], counterexamples: breaker.counterexamples }
 ```
