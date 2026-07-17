@@ -111,7 +111,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   branch-visualize/              # ブランチ差分の構成図可視化（Mermaid / D2 / HTML 自動選定）
   structure-visualize/           # 指定内容（インフラ構成 / ER / コンポーネント等）の構造を HTML 構成図で可視化
-  tech-doc-structuring/          # ADR・技術文書の生成・整形（frontmatter + 固定見出し + 散文のハイブリッド構造）
+  tech-doc-structuring/          # ADR・技術文書の生成・整形（frontmatter + 固定見出し + 散文のハイブリッド構造。ADR は決定経緯 Deliberation の記録・外部ソース取得に対応）
   # 事業企画
   business-ideation/             # ビジネス・サービス案の発散→深掘り→評価（汎用・notes 正本方式）
   # デザイン
@@ -260,6 +260,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
   - `code-reviewer/references/agent-orchestration.md` — `--isolated` の単発隔離レビュー（`cr-isolated-review`）
   - `code-reviewer-adversarial/references/agent-orchestration.md` — `--claude-judge` の Breaker×Judge（`cra-claude-judge`）
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。
+- **tech-doc-structuring の Deliberation（決定経緯）の分散**: 節名 `## Deliberation（決定に至る経緯）`・時系列ダイジェスト形式（`- YYYY-MM-DD 参加者: 要点と帰結`）・切り出し先命名 `NNNN-<スラグ>-deliberation.md` は SKILL.md・assets/adr-template.md・references/doc-types.md・restructuring-rules.md・deliberation-sources.md・README.md に分散して記載されている。いずれかを変更したら全ファイルを同期すること
 - Workflow ツールで雛形を起動・検証する際、`args` が JSON 文字列で届く環境がある（`typeof args === 'string'`。プローブで実測）。全雛形（resolve 雛形 A〜E・`sip-plan-review-set`・`cr-isolated-review`・`cra-claude-judge`）は meta 直後に正規化シム `args = typeof args === 'string' ? JSON.parse(args) : (args || {})` を内蔵済みのため、起動時に手動でシムを挿入する必要はない（文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する）。「`args` は JSON 値として渡す（文字列化した JSON を渡さない）」契約は維持する
 
 ## 新規スキル追加手順
