@@ -359,6 +359,161 @@ function pathThrough(pts) {
   return d;
 }
 
+/* ---------- エッジ経路の障害物回避（drawEdge 前処理） ----------
+   layoutGraph（branch-visualize と共有のレイヤリングエンジン）は非改変。全エッジの最終点列に対し、
+   端点以外のノード矩形を障害物として「水平レーン迂回」を挿入する後処理を drawEdge 冒頭で 1 回通す。
+   flow / グループ内 / グループ間の全経路が drawEdge を通るため、単一呼び出し点で全経路をカバーする */
+
+/* 線分 (x1,y1)-(x2,y2) が矩形 r（各辺を pad 内側へ収縮）と正の長さで交差するか（Liang-Barsky）。
+   端点接触・かすめは非交差。検証ハーネスの交差判定と同一（pad=1 でゲートと一致） */
+function segHitsRect(x1, y1, x2, y2, r, pad) {
+  var minX = r.x + pad, maxX = r.x + r.w - pad, minY = r.y + pad, maxY = r.y + r.h - pad;
+  if (maxX <= minX || maxY <= minY) return false;
+  var dx = x2 - x1, dy = y2 - y1, t0 = 0, t1 = 1;
+  function clip(p, q) {
+    if (p === 0) return q >= 0;
+    var t = q / p;
+    if (p < 0) { if (t > t1) return false; if (t > t0) t0 = t; }
+    else { if (t < t0) return false; if (t < t1) t1 = t; }
+    return true;
+  }
+  if (clip(-dx, x1 - minX) && clip(dx, maxX - x1) && clip(-dy, y1 - minY) && clip(dy, maxY - y1))
+    return t0 < t1 - 1e-9;
+  return false;
+}
+
+/* pts 内で最初に障害物と交差する線分の index と、その線分が叩く障害物群（無ければ null） */
+function firstHitSeg(pts, obs, pad) {
+  for (var i = 0; i + 1 < pts.length; i++) {
+    var hit = [];
+    for (var k = 0; k < obs.length; k++)
+      if (segHitsRect(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, obs[k], pad)) hit.push(obs[k]);
+    if (hit.length) return { i: i, hit: hit };
+  }
+  return null;
+}
+
+/* pts 全線分 × 全障害物の交差数 */
+function crossCount(pts, obs, pad) {
+  var c = 0;
+  for (var i = 0; i + 1 < pts.length; i++)
+    for (var k = 0; k < obs.length; k++)
+      if (segHitsRect(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, obs[k], pad)) c++;
+  return c;
+}
+
+/* 矩形群を包含する bbox */
+function boundsOf(rs) {
+  var L = Infinity, T = Infinity, R = -Infinity, B = -Infinity;
+  rs.forEach(function (r) {
+    if (r.x < L) L = r.x;
+    if (r.y < T) T = r.y;
+    if (r.x + r.w > R) R = r.x + r.w;
+    if (r.y + r.h > B) B = r.y + r.h;
+  });
+  return { x: L, y: T, w: R - L, h: B - T };
+}
+
+/* 迂回レーンの y。U の side（+1=下端側 / -1=上端側）へ、迂回 x 区間 [xa,xb] で最も近い他障害物端との
+   垂直チャネル中央に置く（密フレームで隣ノードへ食い込まないため固定マージンでなく中央取り）。
+   x 区間に他障害物が無ければ既定ギャップ。ブロッカー端からは最低 3px 離す */
+function laneOf(U, obs, xa, xb, side) {
+  var GAP = 12;
+  var edge = side > 0 ? U.y + U.h : U.y;
+  var bound = side > 0 ? Infinity : -Infinity;
+  for (var k = 0; k < obs.length; k++) {
+    var o = obs[k];
+    if (o.x + o.w <= xa || o.x >= xb) continue;
+    if (side > 0) { if (o.y >= edge && o.y < bound) bound = o.y; }
+    else { var ob = o.y + o.h; if (ob <= edge && ob > bound) bound = ob; }
+  }
+  var y = isFinite(bound) ? (edge + bound) / 2 : edge + side * GAP;
+  var floor = edge + side * 3;
+  return side > 0 ? Math.max(y, floor) : Math.min(y, floor);
+}
+
+/* lo..hi の内部頂点を、U を side 側へ回る水平レーン（y=ly）に置換した点列を返す。
+   アンカーがレーン x 区間の内側にある場合は縦入りの 1 頂点に畳む */
+function laneDetour(pts, lo, hi, U, ly, eps) {
+  var a = pts[lo].x, b = pts[hi].x, xL = U.x - eps, xR = U.x + U.w + eps;
+  var p0 = { x: a <= xL ? xL : a >= xR ? xR : a, y: ly };
+  var p1 = { x: b >= xR ? xR : b <= xL ? xL : b, y: ly };
+  var mid = p0.x === p1.x ? [p0] : [p0, p1];
+  return pts.slice(0, lo + 1).concat(mid, pts.slice(hi));
+}
+
+/* 端点に接する迂回（lo が始点 0 / hi が終点に達したとき）で終端スタブが 8px 未満へ縮む候補を弾く。
+   cardinality マーカーは orient="auto-start-reverse" で終端接線に追従するため、極端に短い終端では
+   配向が不安定化する（設計 §1-6 の端点保護）。ポート近傍にレーン頂点を寄せない */
+function stubTooShort(cand, guardLo, guardHi) {
+  function segLen(a, b) { return Math.hypot(b.x - a.x, b.y - a.y); }
+  if (guardLo && cand.length >= 2 && segLen(cand[0], cand[1]) < 8) return true;
+  if (guardHi && cand.length >= 2 && segLen(cand[cand.length - 2], cand[cand.length - 1]) < 8) return true;
+  return false;
+}
+
+/* 障害物回避の後処理本体。最初に交差する線分のブロッカー union を上下いずれか clear なレーンで迂回し、
+   交差が消えるか改善が止まるまで反復（上限あり）。反復ごとに交差数を厳密に減らすので必ず停止する。
+   pad はゲート（=1）と一致させ見逃しを防ぐ。レーン候補はノード間チャネル中央に加え、通過フレーム枠
+   （どちらの端点にも属さない枠）の外側も列挙し、ノード交差 0 →通過枠交差最小→偏差最小の順で選ぶ
+   （通過枠に横レーンを敷くと枠交差が増えるため、枠内ブロッカーは枠の外へ抜くレーンを優先する） */
+function routeAroundObstacles(pts, obs, frames) {
+  if (obs.length < 1 || pts.length < 2) return pts;
+  var PAD = 1, EPS = 8, MAX = 8;
+  for (var iter = 0; iter < MAX; iter++) {
+    var fh = firstHitSeg(pts, obs, PAD);
+    if (!fh) break;
+    var U = boundsOf(fh.hit);
+    var lo = fh.i, hi = fh.i + 1;
+    while (lo > 0 && pts[lo].x > U.x && pts[lo].x < U.x + U.w) lo--;
+    while (hi < pts.length - 1 && pts[hi].x > U.x && pts[hi].x < U.x + U.w) hi++;
+    var xa = Math.min(pts[lo].x, pts[hi].x), xb = Math.max(pts[lo].x, pts[hi].x);
+    var midY = (pts[lo].y + pts[hi].y) / 2;
+    var before = crossCount(pts, obs, PAD);
+    var best = null, bestScore = Infinity;
+    [1, -1].forEach(function (side) {
+      var lanes = [laneOf(U, obs, xa, xb, side)];
+      frames.forEach(function (f) {
+        if (f.x + f.w > xa && f.x < xb) lanes.push(side > 0 ? f.y + f.h + 6 : f.y - 6);
+      });
+      lanes.forEach(function (ly) {
+        if (side > 0 ? ly <= U.y + U.h : ly >= U.y) return;
+        var cand = laneDetour(pts, lo, hi, U, ly, EPS);
+        if (stubTooShort(cand, lo === 0, hi === pts.length - 1)) return;
+        /* 偏差は px で上限がないため [0,1) へ正規化し、通過枠交差 1 件(重み 100)を偏差が飛び越えて
+           辞書式順序（ノード交差→通過枠交差→偏差）を崩すのを防ぐ */
+        var dev = Math.abs(ly - midY);
+        var score = crossCount(cand, obs, PAD) * 10000 + crossCount(cand, frames, PAD) * 100 + dev / (dev + 1);
+        if (score < bestScore) { bestScore = score; best = cand; }
+      });
+    });
+    if (!best || crossCount(best, obs, PAD) >= before) break;
+    pts = best;
+  }
+  return pts;
+}
+
+/* 当該エッジの端点 2 ノードを除く全ノード矩形（障害物集合） */
+function obstaclesFor(fromId, toId) {
+  var arr = [];
+  Object.keys(finalPos).forEach(function (id) {
+    if (id !== fromId && id !== toId) arr.push(finalPos[id]);
+  });
+  return arr;
+}
+
+/* 通過フレーム枠（どちらの端点のグループにも属さない枠）の矩形。flow モードは枠なしで空。
+   端点自身の枠は含めない（エッジは自枠から出入りするため枠外扱いにする必要がない） */
+function framesFor(fromId, toId) {
+  var gf = nodeById[fromId] ? nodeById[fromId].group : null;
+  var gt = nodeById[toId] ? nodeById[toId].group : null;
+  var arr = [];
+  Object.keys(boxRects).forEach(function (g) {
+    if (g !== String(gf) && g !== String(gt)) arr.push(boxRects[g]);
+  });
+  return arr;
+}
+
 function displayWidth(str) {
   var u = 0;
   for (var i = 0; i < str.length; i++) u += str.charCodeAt(i) > 255 ? 2 : 1;
@@ -392,6 +547,7 @@ var edgePaths = [];
 nodes.forEach(function (n) { edgeEls[n.id] = []; nbrIds[n.id] = []; });
 
 function drawEdge(edge, pts) {
+  pts = routeAroundObstacles(pts, obstaclesFor(edge.from, edge.to), framesFor(edge.from, edge.to));
   edgePaths.push({ from: edge.from, to: edge.to, pts: pts.map(function (p) { return { x: p.x, y: p.y }; }) });
   var path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", pathThrough(pts));
