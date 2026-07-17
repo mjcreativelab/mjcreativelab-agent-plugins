@@ -18,6 +18,9 @@ ADR（Architecture Decision Record）や設計書・仕様書・Runbook・ポス
 # 会話中の決定を ADR 化
 /tech-doc-structuring 会話で決めた DB 移行方針を ADR にして
 
+# 決定に至る経緯（いつ・誰と・どのようなやり取りか）も含めて ADR 化
+/tech-doc-structuring この議論を経緯込みで ADR にして
+
 # 既存文書の整形（frontmatter 付与・見出し正規化。本文はロスレス）
 /tech-doc-structuring docs/adr/0003-cache-strategy.md
 
@@ -30,7 +33,7 @@ ADR（Architecture Decision Record）や設計書・仕様書・Runbook・ポス
 
 ## モード
 
-- **新規作成**: 会話・引数の説明から内容を集め、テンプレートに沿って生成する。ADR は既存ディレクトリ・採番規約を自動検出し、supersede 関係を双方向に維持する
+- **新規作成**: 会話・引数の説明から内容を集め、テンプレートに沿って生成する。ADR は既存ディレクトリ・採番規約を自動検出し、supersede 関係を双方向に維持する。決定に至る経緯（いつ・誰と誰が・どのようなやり取りか）は `Deliberation` 節に時系列で記録し、長大な場合は別文書 `NNNN-<スラグ>-deliberation.md` へ切り出して `related` で相互リンクする（ADR 本体を高頻度読み込みに耐える分量に保つ）
 - **整形**: 既存文書をロスレスで正規化する。本文中のメタデータ（Status 行・日付行など）を frontmatter へ移動し、見出しを標準セットへマッピングする。本文の散文は変更しない
 
 ## 対応文書タイプ
