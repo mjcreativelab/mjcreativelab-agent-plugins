@@ -46,3 +46,16 @@ ADR 本文に `## Deliberation（決定に至る経緯）` 節を常設し、要
 
 - `wc -l skills/tech-doc-structuring/SKILL.md` → 113 行（500 行制限内）
 - `mise exec node -- npx skills add ./ --list` → tech-doc-structuring を検出、更新後 description が反映されていることを確認
+
+## 追記（2026-07-17）: 経緯素材の外部取得（Slack / Gmail / Confluence）
+
+やり取りの想定情報源が Slack / Gmail / Confluence であるとユーザーから指定された（claude.ai コネクタで MCP 連携済み）。取得手順を `references/deliberation-sources.md` として追加し、SKILL.md 手順 2A-1 から参照させた。
+
+判断事項:
+
+- **取得は加速手段、貼り付けが標準経路**: 本スキルは npx skills でクロスツール配布されるため、MCP コネクタを前提にできない。未接続環境・他エージェントでも機能が完結する設計を維持（コネクタは差し込み式の高速化）
+- **ツール名をハードコードしない**: コネクタのツール名は環境依存のため、ToolSearch でロードする手順として記述（`mcp__claude_ai_Slack__*` 等は例示のみ）
+- **ユーザーが指した対象のみ取得**: 経緯探しの横断検索・探索的検索を禁止（無関係な私的情報の混入防止・トークン効率）
+- **Gmail の出典は「件名 + 日付」**: メールの URL は他者と共有できないため、リンクではなく特定可能な記述で残す
+- **メール・DM 由来は記載可否を確認**: 私的なやり取りを git 履歴に永続するリポジトリ文書へ書く前に、実名・引用の粒度をユーザーに確認する規律を明記
+- **検証の限界**: 実装セッションではコネクタ連携直後のためツールが未出現（ToolSearch で Slack / Gmail / Atlassian とも 0 件）。実フェッチの動作確認は次セッション以降で行う（未検証）
