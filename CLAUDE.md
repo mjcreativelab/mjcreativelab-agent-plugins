@@ -108,6 +108,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   security-auditor/              # STRIDE・認可・データフロー等の設計セキュリティ監査
   branch-visualize/              # ブランチ差分の構成図可視化（Mermaid / D2 / HTML 自動選定）
   structure-visualize/           # 指定内容（インフラ構成 / ER / コンポーネント等）の構造を HTML 構成図で可視化
+  tech-doc-structuring/          # ADR・技術文書の生成・整形（frontmatter + 固定見出し + 散文のハイブリッド構造）
   # 事業企画
   business-ideation/             # ビジネス・サービス案の発散→深掘り→評価（汎用・notes 正本方式）
   # デザイン
