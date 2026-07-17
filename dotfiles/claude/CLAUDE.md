@@ -12,8 +12,13 @@
 - 環境コンテキストの「You are powered by the model named ...」で自分のモデルを判定し、**Opus または Sonnet 系のときに限り**、セッション開始時に `~/.claude/rules/fable-engineering-judgment.md` を読み込み、プログラム開発における思考・判断・検証・報告の規律（デバッグの認識論 / 検証してから主張する / テストの完全性 / 不確実性の申告 等）として遵守すること
 - **Opus / Sonnet 以外のモデル（Haiku / Fable 等）はこのファイルを読み込まない**（Fable は標準挙動と同内容のため冗長、Haiku はトークン節約のため参照不要）。上記ファイルへ自発的にアクセスしないこと
 
+## 検証強制 Hook / 思考深度
+- Stop hook `~/.claude/hooks/verify-before-claim.sh`（settings.json の hooks.Stop に登録済み）が「コード編集後、検証コマンドの実行記録なしに完了・修正済みを主張して終了する」ターンを差し戻す。差し戻されたら検証を実行するか「未検証」と明記して報告し直すこと（強制は 1 stop につき 1 回のみ。モデル問わず有効）
+- 思考深度は settings.json の `effortLevel`（現在 "max"）で制御する。現行モデル（Fable 5 / Sonnet 5 / Opus 4.7 以降）は adaptive reasoning のため `MAX_THINKING_TOKENS` は効かない（旧世代モデルの固定 thinking budget 専用。CLI v2.1.111 以降で確認済み）
+
 ## Time Display
 - 日時は基本すべて JST（UTC+9）で表示すること。ソース（GitHub API / GCP ログ等）が UTC を返す場合は JST に変換し、曖昧になりうる場面では「(JST)」を併記する。ログのフィルタ条件など API に渡す値はソースのタイムゾーンのままでよい
+- Workflow など、バックグラウンドで処理を開始するときのメッセージには、そのときの日時（`YYYY-MM-DD hh:mm` 形式・JST）を記載すること
 
 ## Clarification
 - 不明点がある場合は AskUserQuestion ツールを使って確認すること
