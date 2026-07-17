@@ -19,6 +19,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 - **すべての変更は PR を作成する** — レビューなしで main に直接 push しない
 - Commit messages: 日本語 OK、conventional commits を推奨
 - コミット・push の直前に `git branch --show-current` で想定ブランチにいるか確認する（並行セッションや手動操作でチェックアウトが切り替わっていることがある）
+- 並行セッションの未コミット変更が作業ツリーに残っていることがある。コミットは対象ファイルの明示パス指定で行う（`git add -A` / `git add .` を使わない）
 
 **特例**: `/smart-pr` や `/smart-commit` に `main にコミット` という引数が渡された場合は、main に直接コミット・push してよい。
 
@@ -57,6 +58,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 
 - ファイルパスにユーザー名を含めない。ホームディレクトリは `/Users/<name>/` ではなく `~/` で表記する（SKILL.md・コメント・ドキュメント・コミットメッセージ・PR 本文のいずれも同様）
 - 実装ノートは `docs/implementation-notes/YYYY-MM-DD-<タスクスラグ>.md` に作成し、変更と同じ PR でコミットする。ルート直下に `implementation-notes.md` を残さない（誤コミット防止のため .gitignore で除外済み）
+- 設計スペックは `docs/specs/YYYY-MM-DD-<タスクスラグ>-design.md` にコミットする。`docs/superpowers/`（brainstorming / writing-plans の作業成果物置き場）は gitignore 対象のため恒久ドキュメントを置かない
 
 ## よく使うコマンド
 
@@ -76,6 +78,9 @@ bash -n skills/<skill-name>/assets/<name>.sh
 
 # SKILL.md frontmatter 確認
 head -5 skills/<skill-name>/SKILL.md
+
+# ブラウザ操作 MCP が無い環境での HTML 見た目検証（スクリーンショット → PNG を Read で目視確認）
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --hide-scrollbars --window-size=1600,1000 --screenshot=<out.png> "file://<対象.html>"
 
 # リリース（repo-level v<X.Y.Z> タグの発行 + GitHub Release）
 /auto-release
@@ -261,6 +266,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 - `-p` 等のオプション引数を持つスキルには「引数の解析」セクションを設ける（smart-commit の形式を参照）。同一グループ内で引数パースの書き方を統一すること
 - スキル改修時は frontmatter を確認する: 副作用のあるスキルに `disable-model-invocation: true` があるか、`allowed-tools` が設定されているか、`description` に類似スキルとの差別化文言があるか
 - **diagram-template.html の系譜**: branch-visualize と structure-visualize の `assets/diagram-template.html` は同系譜の fork（配色・グルーピングの意味論は意図的に異なるため逐語同期はしない）。レイアウトエンジン（レイヤリング・交差削減・ポート分散・ズーム/パン）の不具合を片方で修正したら、もう片方にも該当するか確認する
+- **structure-visualize テンプレートの検証**: `window.__SV_DEBUG__`（mode / nodes / boxes / size / edges）が恒久の検証ハンドル。改修時は使い捨てハーネス（DOM スタブ + 不変条件検査。再作成手順は `docs/implementation-notes/` の issue-94 / issue-98 ノート参照）で検証し、`SV_EDGE_GATE=1` の厳格モードで「エッジのノード交差 0」を維持する。現在 917 行（800 行目安の超過は Issue #98 で許容済み）
 - **レビュープロンプトの二重化と同期（マスター）**: 敵対レビューの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）と標準レビュー観点の骨格は、スキル間ファイル参照不可・Skill 合成不可の制約から意図的に複数スキルへ二重化している。次のいずれかを変更したら対応箇所をすべて同期すること（可読性を観点に含めるか等、各スキルの identity として意図的に異なる部分は除く）:
   - `smart-issue-resolve/references/agent-orchestration.md` — 雛形 B（`sir-claude-review-set`）の reviewerPrompt / breakerPrompt / judgeBatchPrompt、雛形 C（`sir-codex-breaker`）の Breaker
   - `smart-issue-plan/references/agent-orchestration.md` — `sip-plan-review-set`（計画テキスト用に適応した変種）
