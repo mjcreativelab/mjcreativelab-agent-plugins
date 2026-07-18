@@ -42,8 +42,8 @@ smart-issue-plan の **claude 系計画レビューループ**を担う役割別
 |---|---|---|
 | `context.md` | オーケストレーター | 全エージェント |
 | `plan.md` | オーケストレーター（初期）・plan-editor（修正） | 全エージェント・オーケストレーター（収束後の投稿） |
-| `security-audit.md` | セキュリティ監査役 | Breaker |
-| `breaker-round-<N>.md` | Breaker | Judge |
+| `security-audit.md` | Breaker レンズ S（監査ラウンド） | Breaker |
+| `breaker-round-<N>-<lens>.md` | Breaker（レンズ S/C/O ごとに別ファイル） | Judge |
 
 ## 雛形: 計画レビューセット（sip-plan-review-set）
 
@@ -57,8 +57,7 @@ export const meta = {
   name: 'sip-plan-review-set',
   description: 'smart-issue-plan claude 系計画レビューループ 1 セット（最大 3 ラウンド）',
   phases: [
-    { title: 'Audit', detail: 'セキュリティ監査観点の注入（自動発動時・初回セットのみ）' },
-    { title: 'Review', detail: 'Sonnet レビュワー（標準）/ Breaker×Judge（敵対）' },
+    { title: 'Review', detail: 'Breaker レンズ S/C/O 並列（敵対）→ Judge バッチ並列裁定 / Sonnet レビュワー（標準）。レンズ S は初回セット round 1 でセキュリティ監査を内蔵' },
     { title: 'Edit', detail: 'plan-editor による採用判定・計画修正' },
   ],
 }
@@ -138,11 +137,13 @@ const BREAK_SCHEMA = {
   },
 }
 
-const AUDIT_SCHEMA = {
+// レンズ S（セキュリティ）専用スキーマ。監査ラウンドでは security-audit.md を書き出したか（auditWritten）も返す
+const BREAK_S_SCHEMA = {
   type: 'object',
-  required: ['summary', 'nowJst'],
+  required: ['scenarios', 'nowJst'],
   properties: {
-    summary: { type: 'string', description: '攻撃シナリオの要点（15 行以内）' },
+    scenarios: BREAK_SCHEMA.properties.scenarios,
+    auditWritten: { type: 'boolean', description: 'セキュリティ監査ラウンドで security-audit.md を書き出せたか（監査ラウンドのレンズ S のみ設定）' },
     nowJst: NOW_JST_FIELD,
   },
 }
@@ -152,11 +153,37 @@ const priorSummary = args.priorSummary || ''
 const history = () => records.map((r) => `ラウンド${r.round}: 指摘 ${r.findings} 件 / 採用 ${r.adopted} 件`).join('\n')
 const prior = () => (priorSummary || history()) ? `\n## 前ラウンドまでの経緯\n${priorSummary}${priorSummary && history() ? '\n' : ''}${history()}\n` : ''
 
-const reviewerPrompt = (round) => `あなたは GitHub Issue #${args.issueNumber} の実装計画のレビュワーである。計画の作成には関与していない独立の立場から、リポジトリの実コードと照合し、計画の欠陥のみを指摘する。
+// 攻撃観点のレンズ分割（S/C/O）。union = 現行 Breaker の全観点（内容の追加・削除・改変なし）。レンズ S は監査役を統合
+const LENSES = [
+  { id: 'S', token: 'sec', label: 'Security',
+    aspects: `- セキュリティ: STRIDE（なりすまし・改ざん・否認・情報漏洩・DoS・権限昇格）・信頼境界・認可漏れ・PII / 秘密情報の露出・注入面（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
+- プロジェクト固有基準のうちセキュリティに関わるもの（context.md に提示がある場合、その違反も攻撃シナリオに含める）` },
+  { id: 'C', token: 'corr', label: 'Correctness/Data',
+    aspects: `- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
+- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
+- アーキテクチャ: レイヤー責務の逸脱・境界侵犯` },
+  { id: 'O', token: 'ops', label: 'Ops/Maintainability',
+    aspects: `- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
+- 品質ゲートの抜け・テストカバレッジ計画の不足
+- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）` },
+]
+
+// 差分スコープ化: ラウンド 1（初回セット）は計画全体の包括レビュー、以降は直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域を重点対象にする（重点付けであり抑制ではない。レビュー対象は計画全体を維持）
+const fixDelta = (i) => {
+  if (args.startRound === 1 && i === 0) return ''
+  const last = records[records.length - 1]
+  const adoptedItems = (last && last.adoptedItems) || []
+  const deltaList = adoptedItems.length
+    ? adoptedItems.map((a) => `- ${a.title}: ${a.action}`).join('\n')
+    : '（前セットまでの採用修正。上記「前ラウンドまでの経緯」を参照）'
+  return `\n## 差分スコープ（このラウンドの重点）\n直前ラウンドで plan-editor が以下の計画修正を採用・反映した。これらが触れた計画節・前提とその影響領域（依存する後続手順・関連する計画節）を重点対象とし、修正が新たに導入した不整合・手順の破れを最優先で探す:\n${deltaList}\n重点付けであって抑制ではない: スコープ外でも明白な重大欠陥に気づけば報告してよい。ただし網羅的な計画全体の再走査はこの重点領域に絞り、無駄な広域探索をしない。\n`
+}
+
+const reviewerPrompt = (round, delta) => `あなたは GitHub Issue #${args.issueNumber} の実装計画のレビュワーである。計画の作成には関与していない独立の立場から、リポジトリの実コードと照合し、計画の欠陥のみを指摘する。
 ## 入力
 1. ${ctx} を読む（Issue 要件・追加指示・プロジェクト固有基準）
 2. ${target}（ラウンド ${round}）
-${prior()}
+${prior()}${delta}
 ## レビュー観点
 - 実現可能性: 計画の手順は現在のコードベースで実際に成立するか。計画が言及するファイル・関数・設定の実在と「依拠した前提」の正否をコードと照合して検証する
 - 影響範囲の抜け: 変更が波及するのに計画の影響範囲に含まれていないファイル・モジュールはないか
@@ -174,23 +201,18 @@ ${prior()}
 - 指摘が無ければ items を空配列にする
 ${TIME_NOTE}`
 
-const breakerPrompt = (round, auditNote) => `あなたは Breaker である。GitHub Issue #${args.issueNumber} の実装計画を「読む」のではなく「壊す」。設計が耐えるべき具体的な攻撃シナリオ・脅威・欠落コントロールを列挙する。計画の作成には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系（happy path）しか想定していない手順は実在の弱点として扱い、「後で対応する」前提や部分的な対処に信用を与えない。計画にはテスト対象のコードが無いため、反例テストは書かない（攻撃シナリオで指摘する）。
+// レンズ別 Breaker プロンプト。プロンプト本体は共通で、攻撃観点だけレンズ定義（lens.aspects）に差し替える。
+// レンズ S かつ isAuditRound（securityAudit 初回セット round 1）のときは、監査役を統合して STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施する（独立の前段監査スロットを消す）
+const breakerLensPrompt = (round, lens, delta, isAuditRound) => `あなたは Breaker（レンズ ${lens.id}: ${lens.label}）である。GitHub Issue #${args.issueNumber} の実装計画を「読む」のではなく「壊す」。担当レンズの観点に絞って、設計が耐えるべき具体的な攻撃シナリオ・脅威・欠落コントロールを列挙する。計画の作成には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系（happy path）しか想定していない手順は実在の弱点として扱い、「後で対応する」前提や部分的な対処に信用を与えない。計画にはテスト対象のコードが無いため、反例テストは書かない（攻撃シナリオで指摘する）。
 ## 入力
 1. ${ctx} を読む（Issue 要件・追加指示・プロジェクト固有基準）
 2. ${target}（ラウンド ${round}）
-${prior()}${auditNote}
-## 攻撃観点（横断する）
-- セキュリティ: STRIDE（なりすまし・改ざん・否認・情報漏洩・DoS・権限昇格）・信頼境界・認可漏れ・PII / 秘密情報の露出・注入面（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
-- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
-- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
-- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
-- 品質ゲートの抜け・テストカバレッジ計画の不足
-- アーキテクチャ: レイヤー責務の逸脱・境界侵犯
-- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）
+${prior()}${delta}${isAuditRound ? `\n## セキュリティ監査（このラウンドで break の前に実施する）\nSTRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この計画が対処すべき脅威と検証すべき攻撃シナリオを列挙し、${args.workDir}/security-audit.md に書き出してから下記のセキュリティ観点で break する。自動発動の理由: ${args.securityReason}。監査を security-audit.md に書き出せたら auditWritten を true、書き出せなかった場合も auditWritten を false にして内蔵セキュリティ観点での break は必ず続行する。\n` : ''}## 攻撃観点（担当レンズ ${lens.id} に集中する。他レンズの観点は別 Breaker が担当するため深追いしない）
+${lens.aspects}
 ## 出力
-- ${args.workDir}/breaker-round-${round}.md に攻撃シナリオのリスト（シナリオ・対処できていない計画の手順 / 前提・根拠）を書く
-- 構造化出力の scenarios に同じ内容を返す。各シナリオに unaddressed（計画のどの手順・前提が対処できていないか）を必ず付す
-制約: 計画・コードを変更しない。コミットしない。${TIME_NOTE}`
+- ${args.workDir}/breaker-round-${round}-${lens.token}.md に攻撃シナリオのリスト（シナリオ・対処できていない計画の手順 / 前提・根拠）を書く（レンズごとに別ファイル。並列レンズ間の上書き競合を避ける）
+- 構造化出力の scenarios に同じ内容を返す。各シナリオに unaddressed（計画のどの手順・前提が対処できていないか）を必ず付す${isAuditRound ? '。security-audit.md を書き出せたかを auditWritten に返す' : ''}
+制約: 計画・コードを変更しない（security-audit.md への書き出しは可）。コミットしない。${TIME_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した設計への攻撃シナリオを、リポジトリの実コードと計画本文に照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは計画作成にも攻撃シナリオ生成にも関与していない。これはラウンド ${round} の攻撃シナリオをバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
@@ -206,7 +228,7 @@ ${prior()}
 - 低優先度: 妥当だが重大度が低く、計画に反映するコストに見合わない
 - ノイズ: 反証不能・誤解・的外れ、または計画が既に対処済み（除外）
 ## 照合の限定（着実に進める）
-- 裁定対象は上記インラインのバッチのシナリオのみ。他バッチのシナリオ・${args.workDir}/breaker-round-${round}.md の他項目は読まない・扱わない
+- 裁定対象は上記インラインのバッチのシナリオのみ。他バッチのシナリオ・${args.workDir}/breaker-round-${round}-*.md（レンズ別の Breaker 出力）の他項目は読まない・扱わない
 - 照合は各シナリオの evidence が指すファイル / 行・計画の該当箇所に限定する。evidence が無いシナリオは計画本文とシナリオ本文が名指しする箇所に照合を限定する。いずれの場合も無関係な広域 grep・全サービス横断の探索はしない
 - 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
 - Breaker が見落とした計画の欠陥の独立探索はこのバッチでは行わない（バッチ間の重複を避けるため）
@@ -228,39 +250,37 @@ ${JSON.stringify(items, null, 2)}
 4. 反映後も計画の構成（[assets/plan-template.md](../assets/plan-template.md) 準拠）を保つ
 制約: 実装コードは変更しない。コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`
 
-let auditNote = ''
+// セキュリティ監査はレンズ S の Breaker に統合済み（securityAudit 初回セット round 1 で STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施）。独立の前段監査スロットは持たない。auditFailed はレンズ S が監査を書き出せなかった場合に立てる
 let auditFailed = false
-if (args.securityAudit) {
-  const audit = await agent(`あなたはセキュリティ監査役である。実装計画の敵対的レビューに先立ち、攻撃シナリオの観点を提供する。
-1. ${ctx} を読む
-2. ${target}
-3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この計画が対処すべき脅威と検証すべき攻撃シナリオを列挙する
-4. ${args.workDir}/security-audit.md に書く
-自動発動の理由: ${args.securityReason}
-制約: リポジトリのコード・計画を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: summary に攻撃シナリオの要点（15 行以内）。${TIME_NOTE}`,
-    { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max', schema: AUDIT_SCHEMA })
-  if (audit) {
-    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit.summary}\n詳細: ${args.workDir}/security-audit.md\n`
-    log(`[${audit.nowJst} JST] セキュリティ監査 完了`)
-  } else {
-    auditFailed = true
-  }
-}
 
 let converged = false
 let status = 'ok'
 let judgeDegraded = false
+let breakerDegraded = false
 const specQuestions = []
 
 for (let i = 0; i < 3; i++) {
   const round = args.startRound + i
   log(`計画レビューラウンド ${round}（${args.mode}）開始`)
   let findings = null
+  const delta = fixDelta(i)
   if (args.mode === 'adversarial') {
-    const breaker = await agent(breakerPrompt(round, auditNote), { label: `breaker:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
-    if (breaker === null) { status = 'agent-failed'; break }
-    log(`[${breaker.nowJst} JST] breaker r${round} 完了（シナリオ${breaker.scenarios.length}件）`)
-    const scen = breaker.scenarios || []
+    // Breaker を観点別レンズ（S/C/O）に分割しフラット parallel で同時起動する。レンズ S は securityAudit 初回セット round 1 のとき監査を内蔵実施する（前段の独立監査スロットを消す）
+    const isAuditRound = !!args.securityAudit && i === 0
+    const lensResults = await parallel(LENSES.map((lens) => () =>
+      agent(breakerLensPrompt(round, lens, delta, isAuditRound && lens.id === 'S'),
+        { label: `breaker:r${round}-${lens.token}`, phase: 'Review', model: 'sonnet', effort: 'max',
+          schema: (isAuditRound && lens.id === 'S') ? BREAK_S_SCHEMA : BREAK_SCHEMA })))
+    const okLenses = lensResults.filter(Boolean)
+    if (okLenses.length === 0) { status = 'agent-failed'; break }
+    if (okLenses.length < LENSES.length) { breakerDegraded = true; log(`breaker r${round}: ${LENSES.length - okLenses.length}/${LENSES.length} レンズ失敗（部分シナリオで続行・未探索の観点あり）`) }
+    if (isAuditRound) {
+      const sResult = lensResults[LENSES.findIndex((l) => l.id === 'S')]
+      if (sResult === null || sResult.auditWritten === false) { auditFailed = true; log(`レンズ S の監査書き出しに失敗（内蔵セキュリティ観点のみで続行）`) }
+    }
+    const breakerTimes = okLenses.map((r) => r.nowJst).filter(Boolean).sort()
+    if (breakerTimes.length) log(`[${breakerTimes[breakerTimes.length - 1]} JST] breaker r${round} 完了（${okLenses.length}/${LENSES.length} レンズ・シナリオ${okLenses.reduce((n, r) => n + (r.scenarios || []).length, 0)}件）`)
+    const scen = okLenses.flatMap((r) => r.scenarios || [])
     const BATCH = 4
     const batches = []
     for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
@@ -274,7 +294,7 @@ for (let i = 0; i < 3; i++) {
     if (judgeTimes.length) log(`[${judgeTimes[judgeTimes.length - 1]} JST] judge r${round} 完了（${ok.length}/${batches.length} バッチ）`)
     findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
-    findings = await agent(reviewerPrompt(round), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
+    findings = await agent(reviewerPrompt(round, delta), { label: `reviewer:r${round}`, phase: 'Review', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA })
     if (findings) log(`[${findings.nowJst} JST] reviewer r${round} 完了（指摘${findings.items.length}件）`)
   }
   if (findings === null) { status = 'agent-failed'; break }
@@ -293,11 +313,11 @@ for (let i = 0; i < 3; i++) {
   const fix = await agent(editPrompt(round, trueDefects), { label: `plan-editor:r${round}`, phase: 'Edit', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) { status = 'agent-failed'; break }
   log(`[${fix.nowJst} JST] plan-editor r${round} 完了（採用${fix.adopted.length}件）`)
-  records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length })
+  records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length, adoptedItems: fix.adopted })
   if (fix.adopted.length === 0) { converged = true; break }
 }
 
-return { converged, status, records, specQuestions, auditFailed, judgeDegraded }
+return { converged, status, records, specQuestions, auditFailed, judgeDegraded, breakerDegraded }
 ```
 
 返却の扱い:
@@ -305,7 +325,8 @@ return { converged, status, records, specQuestions, auditFailed, judgeDegraded }
 - `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す）。空なら収束確定 → オーケストレーターが `{作業Dir}/plan.md` を読んで投稿する（計画レビューのため最終 QA は回さない）。`judgeDegraded: true` のときは未裁定のシナリオが残るため、投稿前にユーザーへ確認する（下記 `judgeDegraded`）
 - `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動する。打ち切りなら未収束のまま投稿（表記は「未収束で打ち切り」）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セットで plan-editor が `plan.md` へ反映する
-- `auditFailed: true` → セキュリティ監査役が失敗し、Breaker 内蔵のセキュリティ観点のみで実施された。完了報告に明記する
+- `auditFailed: true` → レンズ S の Breaker がセキュリティ監査（`security-audit.md` の書き出し）を完了できず、内蔵のセキュリティ観点のみで break された（監査の欠落）。完了報告に明記する
+- `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O のいずれか）が失敗し、その観点の攻撃シナリオが生成されないまま収束扱いになった。未探索の攻撃観点が残る。計画レビューは最終 QA を持たずバックストップできないため、完了報告に明記し `plan.md` 投稿前にユーザーへ確認する（`auditFailed` / `judgeDegraded` と同型の劣化伝播）
 - `judgeDegraded: true` → 一部の Judge バッチが失敗し、その攻撃シナリオ（最大 4 件/バッチ）が未裁定のまま収束扱いになった。計画レビューは最終 QA を持たず未裁定の欠陥をバックストップできないため、完了報告に明記し `plan.md` 投稿前にユーザーへ確認する（`auditFailed` と同型の劣化伝播）
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら SKILL.md の「フォールバック（claude 系）」へ
 
@@ -316,20 +337,26 @@ return { converged, status, records, specQuestions, auditFailed, judgeDegraded }
 - レビューループ: 各ラウンドのモード・指摘数・採用数・不採用理由（`records`）
 - `specQuestions` でユーザーに確認した仕様と、その反映
 - `auditFailed: true` の場合はその旨
+- `breakerDegraded: true` の場合は一部の攻撃レンズ（S/C/O）が未探索である旨（失敗レンズ数はログ参照）
 - `judgeDegraded: true` の場合は一部の攻撃シナリオが未裁定である旨（失敗バッチ数はログ参照）
 
 ## 同期ノート
 
 本ファイルの計画レビューセット雛形（`sip-plan-review-set`）は、`smart-issue-resolve/references/agent-orchestration.md` の**雛形 B（`sir-claude-review-set`）の計画レビュー用移植**である。次の**構造**を同期する（片方を変えたら両方更新すること）:
 
-- セット制御: `startRound` / `priorSummary` / `records` / `history()` / `prior()` の経緯引き継ぎ
+- セット制御: `startRound` / `priorSummary` / `records`（`adoptedItems` を含む）/ `history()` / `prior()` の経緯引き継ぎ
 - 収束判定: レビュー指摘 0 件 → 収束、`category: '仕様未定'` を除いた真の欠陥 0 件 → 収束、採用 0 件 → 収束（3 ラウンド 1 セット）
-- null ガード（各 `agent()` 返却の null 判定と `status: 'agent-failed'`）・`auditFailed` フラグ・`specQuestions` の返却経路・セキュリティ監査役の注入（`securityAudit` / `securityReason`）
+- null ガード（各 `agent()` 返却の null 判定と `status: 'agent-failed'`）・`auditFailed` / `breakerDegraded` フラグ・`specQuestions` の返却経路・セキュリティ自動発動の注入（`securityAudit` / `securityReason`）
 - 敵対モード Judge のバッチ並列化: Breaker 出力を ≤4 件/バッチに分割し `parallel` で並列裁定する（`judgeBatchPrompt` / `effort: 'high'` / evidence 限定照合。全バッチ失敗のみ `agent-failed`、一部失敗は部分裁定で続行し `judgeDegraded` フラグで伝播）。Breaker のフィールド名だけ意図的に異なる（resolve = `counterexamples`、plan = `scenarios`）
+- **Breaker のレンズ分割並列化**: 攻撃観点を S/C/O の 3 レンズに分割し `LENSES` 定義 + フラット `parallel` で同時起動する（union = 現行 Breaker の全観点で内容は不変。一部レンズ失敗は `breakerDegraded` で伝播。レンズごとに `breaker-round-<N>-<lens>.md` を書き並列上書き競合を避ける）
+- **セキュリティ監査役のレンズ S 統合**: `securityAudit` 初回セット round 1 でレンズ S が STRIDE 監査 → `security-audit.md` 書き出し → break を 1 エージェントで実施する（独立の前段監査スロットは削除。`auditWritten` フラグで「監査のみ失敗」を `auditFailed` として区別）
+- **差分スコープ化**: `records[].adoptedItems` に採用計画修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域に重点付けする `fixDelta()`。ラウンド 1 は計画全体の包括レビュー
 
 同期しないもの（**意図的に異なる**）:
 
 - **レビュー対象**: resolve = git diff（実装コード）、plan = 計画テキスト（`plan.md`）
 - **レビュイー**: resolve = 開発者（コード修正）、plan = plan-editor（`plan.md` 編集）
-- **レビュー観点の内容**: plan は計画用（実現可能性・影響範囲の抜け・手順の妥当性など）で、diff 用の観点とは文言が異なる
-- **コード専用機構は持ち込まない**: resolve 側にあるコード検証用の仕組み（反例テストのファイル・そのテスト実行・独立 QA / 最終 QA フェーズ・反例テストの後始末エージェント・FIX の「テスト通過」フラグ・BREAK の反例検証ステータス）は本ファイルには**一切含めない**。BREAK スキーマは反例検証ステータスの代わりに `unaddressed`（対処できていない計画の手順・前提）を持つ。収束後は最終 QA を回さず、オーケストレーターがそのまま計画を投稿する
+- **レビュー観点の内容**: plan は計画用（実現可能性・影響範囲の抜け・手順の妥当性など）で、diff 用の観点とは文言が異なる（レンズ分割後もレンズ S/C/O の各 `aspects` は plan 用文言のまま）
+- **差分スコープの読み替え**: resolve は「採用修正が触れたファイル・領域とその波及」、plan は「plan-editor の採用計画修正が触れた計画節＋影響領域」に読み替える
+- **コード専用機構は持ち込まない**: resolve 側にあるコード検証用の仕組み（反例テストのファイル・そのテスト実行・probe 命名の不変条件・独立 QA / 最終 QA フェーズ・反例テストの後始末エージェント・FIX の「テスト通過」フラグ・BREAK の反例検証ステータス）は本ファイルには**一切含めない**。BREAK スキーマは反例検証ステータスの代わりに `unaddressed`（対処できていない計画の手順・前提）を持つ。収束後は最終 QA を回さず、オーケストレーターがそのまま計画を投稿する
+- **claude / codex 系の非対称**: plan は claude 系のみ（codex 経路を持たない）。resolve 側の雛形 C（`sir-codex-breaker`）は Codex 利用制限中のためレンズ分割せず単発のまま残る。この非対称は resolve 側同期ノートで管理する
