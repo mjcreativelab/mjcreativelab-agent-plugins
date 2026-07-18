@@ -39,7 +39,7 @@ GitHub Issue の実装計画を作成・更新するスキル。
 **claude 系**（Codex 不要・Claude Code の Workflow ツールで起動する独立 Sonnet エージェント。コンテキスト隔離 + 役割分離で独立性を担保）:
 
 - **標準（`--claude-review-loop` / `-cldrl`）**: Sonnet（effort max）レビュワーエージェントが単独で計画をレビューする（観点は codex 標準と同一）
-- **敵対的（`--claude-adv-review-loop` / `-cldarl`）**: Breaker（Sonnet / effort max）× Judge（別の Sonnet / effort high。攻撃シナリオを ≤4 件/バッチに分割し並列裁定）の二者構造。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
+- **敵対的（`--claude-adv-review-loop` / `-cldarl`）**: Breaker（Sonnet / effort max。攻撃観点を S/C/O の 3 レンズに分割し並列起動 — union は従来の単一 Breaker と同一）× Judge（別の Sonnet / effort high。全レンズの攻撃シナリオを ≤4 件/バッチに分割し並列裁定）の二者構造。ラウンド 2 以降は直前ラウンドの採用計画修正が触れた計画節＋影響領域に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
 - 別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する
 
 共通:

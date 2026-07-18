@@ -93,7 +93,7 @@
 
 ## claude-judge モード（--claude-judge / Codex 不在時の自動フォールバック）
 
-`--claude-judge` を付けると、Judge を Codex ではなく **独立 Sonnet エージェント**にする。Breaker も独立 Sonnet エージェントになり、Phase 1・2 を **Workflow で起動する 2 体のエージェント**が単発で担う（プロンプトは smart-issue-resolve の claude 系レビューから移植）。`codex:rescue` が使えない環境で Judge 利用不能になったときも、Workflow が使えれば自動でこのモードにフォールバックする。
+`--claude-judge` を付けると、Judge を Codex ではなく **独立 Sonnet エージェント**にする。Breaker も独立 Sonnet エージェントになり、Phase 1・2 を **Workflow で起動する独立エージェント群**が単発で担う（プロンプトは smart-issue-resolve の claude 系レビューから移植）。Judge は Breaker の反例を ≤4 件/バッチに分割した並列裁定（effort high）で、Breaker 見落としの独立探索は並列の miss-finder（effort max・diff スコープ）が担う（一部バッチ失敗は `judgeDegraded`、miss-finder 失敗は `missSearchFailed` として結果に明記）。`codex:rescue` が使えない環境で Judge 利用不能になったときも、Workflow が使えれば自動でこのモードにフォールバックする。
 
 - 独立性は **コンテキスト隔離 + 役割分離**で担保する（Breaker と Judge は互いに相手の思考を持たない fresh エージェント）。別系統モデル（Claude × Codex）の独立性はないため、**認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更ではデフォルトの codex-judge（実 Codex）を推奨**する
 - 単発（ループ・収束判定は持たない）。Phase 0・Phase 3・Phase 4 は codex-judge と共通で再利用する

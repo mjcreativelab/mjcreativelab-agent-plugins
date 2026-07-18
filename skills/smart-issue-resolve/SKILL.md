@@ -31,8 +31,8 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
 | 開発者 | Workflow エージェント | opus / max | 手順 6 の実装フロー。レビュー指摘の採用 / 不採用判定と修正（レビュイー） |
 | 独立 QA | Workflow エージェント | sonnet / high | 開発者の自己申告に依存しないテスト・lint の独立実行と受け入れ基準検証。自動コミット前の最終ゲート |
 | レビュワー（claude 標準） | Workflow エージェント | sonnet / max | diff レビュー（codex 標準と同一観点） |
-| Breaker / Judge（敵対） | Workflow エージェント | sonnet / max・high | 反例生成（Breaker・max）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立 |
-| セキュリティ監査役 | Workflow エージェント | sonnet / max | セキュリティ自動発動時に STRIDE・認可・データフローの観点を敵対的レビューへ注入 |
+| Breaker / Judge（敵対） | Workflow エージェント | sonnet / max・high | 反例生成（Breaker・max。claude 系は攻撃観点を S/C/O の 3 レンズに分割し並列起動）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立 |
+| セキュリティ監査役 | Workflow エージェント | sonnet / max | セキュリティ自動発動時に STRIDE・認可・データフローの観点を敵対的レビューへ注入（claude 系〔雛形 B〕はレンズ S の Breaker に統合され初回ラウンドで監査を内蔵実施・codex 系〔雛形 C〕は独立エージェント） |
 | レビュワー / Judge（codex 系） | codex:rescue | -（別系統モデル） | Codex によるレビュー・裁定（従来どおり） |
 
 - model はエイリアス指定（環境で利用可能な最新の同系統モデルに解決される）。effort を明示指定できるのは Workflow ツールの `agent()` のみのため、エージェント起動はすべて **Workflow ツール**で行う（本スキルの指示による呼び出しは Workflow の明示オプトインに該当する）
@@ -228,7 +228,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 > `{ループ明示}` = false（フラグ未指定でセキュリティ検出により発動）の場合、レビューは実施するが **収束後のコミット・PR 自動実行は行わない**（手順 7 の通常完了案内に切り替える）。外部への副作用（push・PR）を伴う自動化は明示オプトイン時のみ。
 
-セキュリティ自動発動時は、敵対的レビューの初回にセキュリティ監査役（雛形 B は `securityAudit: true`、codex 系は雛形 C のラウンド 1 で同フラグ）が STRIDE・認可・データフローの観点を Breaker に注入する。claude 系（雛形 B）・codex 系（雛形 C）いずれも、上で明示した発動理由（検出したシグナル）を `securityReason` として Workflow の `args` に渡す（監査役プロンプトに「自動発動の理由」として埋め込まれるため。渡し忘れると理由が `undefined` になる）。監査役エージェントが失敗した場合（返却の `auditFailed: true`）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
+セキュリティ自動発動時は、敵対的レビューの初回に STRIDE・認可・データフローの監査観点を Breaker に注入する。claude 系（雛形 B は `securityAudit: true`）では**レンズ S の Breaker が監査を内蔵実施**する（初回セット round 1 で STRIDE 監査 → `security-audit.md` 書き出し → セキュリティ break を 1 エージェントで実施。独立の前段監査スロットは持たない）。codex 系（雛形 C のラウンド 1 で同フラグ）は従来どおり独立のセキュリティ監査役エージェントが注入する。いずれも、上で明示した発動理由（検出したシグナル）を `securityReason` として Workflow の `args` に渡す（監査プロンプトに「自動発動の理由」として埋め込まれるため。渡し忘れると理由が `undefined` になる）。監査に失敗した場合（返却の `auditFailed: true`。claude 系はレンズ S が `security-audit.md` を書き出せなかった場合）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
 
 ### ループ手順（共通骨格）
 
@@ -251,7 +251,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 **実行形態**:
 
-- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。オーケストレーターは返却（`converged` / `records` / `specQuestions`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動する
+- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。オーケストレーターは返却（`converged` / `records` / `specQuestions`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れて同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープをセット跨ぎで連続させるため）
 - **codex 系** — オーケストレーターがラウンド単位で回す。レビュー・裁定は Skill ツールで `codex:rescue` を呼び（従来どおり）、敵対の Breaker は雛形 C、修正は雛形 D で行う。敵対の裁定に「仕様未定」が含まれる場合は、雛形 D に渡す前にオーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を context.md（追加指示）へ追記する。雛形 D の起動前に、レビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出す（標準: Codex の指摘全件、敵対: 裁定の真の欠陥 + 確定した仕様未定。要約・取捨選択をしない。物理ゲート: このファイルが無ければ起動しない）
 
 #### 標準モード（codex 系: --codex-review-loop）
@@ -270,7 +270,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 #### claude 系（--claude-review-loop / --claude-adv-review-loop）
 
-雛形 B（sir-claude-review-set）で実行する。標準モードは Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする（観点は codex 標準と同一）。敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Judge は Breaker の反例を ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし、単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。
+雛形 B（sir-claude-review-set）で実行する。標準モードは Sonnet（effort max）のレビュワーエージェントが単独で diff をレビューする（観点は codex 標準と同一）。敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Breaker は攻撃観点を **S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント**として起動する（観点の union は従来の単一 Breaker と同一で内容は不変。発見フェーズのウォールクロックを「全観点の合計」から「最も遅いレンズ」に縮める。一部レンズ失敗は `breakerDegraded` フラグで伝播）。Judge は全レンズの反例を集約し ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし、単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。ラウンド 2 以降の Breaker / レビュワーは直前ラウンドの採用修正差分とその波及範囲を重点対象にする（差分スコープ化。ラウンド 1 は全 diff の包括レビューで、重点付けであって抑制ではない）。
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
 

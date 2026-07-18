@@ -207,7 +207,7 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
 
 > `{ループ明示}` = false（フラグ未指定でセキュリティ検出により発動）の場合、レビューは実施するが **手順 6 / 8c の承認ゲートは維持する**（外部への投稿を伴う自動化は明示オプトイン時のみ）。
 
-セキュリティ自動発動時は、敵対的レビューの初回にセキュリティ監査役（claude 系は雛形 `sip-plan-review-set` の `securityAudit: true`、codex 系は敵対的モードの Breaker〔Claude〕がその観点を内蔵）が STRIDE・認可・データフローの観点を注入する。claude 系では、上で明示した発動理由（検出したシグナル）を `securityReason` として Workflow の `args` に渡す（監査役プロンプトに「自動発動の理由」として埋め込まれるため。渡し忘れると理由が `undefined` になる）。claude 系で監査役エージェントが失敗した場合（返却の `auditFailed: true`）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
+セキュリティ自動発動時は、敵対的レビューの初回に STRIDE・認可・データフローの監査観点を注入する。claude 系（雛形 `sip-plan-review-set` の `securityAudit: true`）では**レンズ S の Breaker が監査を内蔵実施**する（初回セット round 1 で STRIDE 監査 → `security-audit.md` 書き出し → セキュリティ break を 1 エージェントで実施。独立の前段監査スロットは持たない）。codex 系は敵対的モードの Breaker〔Claude〕がその観点を内蔵する。claude 系では、上で明示した発動理由（検出したシグナル）を `securityReason` として Workflow の `args` に渡す（レンズ S の監査プロンプトに「自動発動の理由」として埋め込まれるため。渡し忘れると理由が `undefined` になる）。監査に失敗した場合（返却の `auditFailed: true`。レンズ S が `security-audit.md` を書き出せなかった場合）は Breaker 内蔵のセキュリティ観点のみで続行し、その旨を完了報告に記す。
 
 ### レビュー基準の収集（プロジェクト固有ルール）
 
@@ -268,15 +268,16 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
 レビュー内容:
 
 - 標準モードは Sonnet（effort max）のレビュワーエージェントが単独で計画をレビューする（観点は codex 標準と同一: 実現可能性・影響範囲の抜け・手順の妥当性・リスクの見落とし・運用/保守/可用性・データ整合性/性能・テストカバレッジ・アーキテクチャ境界・プロジェクト固有基準との整合）
-- 敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を用い（反例テストは書かない）、Judge は Breaker の攻撃シナリオを ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし無進捗ウォッチドッグへのストールを防ぐ）。Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
+- 敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を **S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント**として起動する（観点の union は従来の単一 Breaker と同一で内容は不変。反例テストは書かない。一部レンズ失敗は `breakerDegraded` フラグで伝播）。Judge は全レンズの攻撃シナリオを集約し ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし無進捗ウォッチドッグへのストールを防ぐ）。Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。ラウンド 2 以降の Breaker / レビュワーは直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域を重点対象にする（差分スコープ化。ラウンド 1 は計画全体の包括レビューで、重点付けであって抑制ではない）
 - 採用判定・計画修正は plan-editor エージェントが `{作業Dir}/plan.md` を編集して行う。収束後はオーケストレーターが `plan.md` を読んで投稿する
 
 Workflow 返却の扱い（詳細は [references/agent-orchestration.md](references/agent-orchestration.md)）:
 
 - `converged: true` → まず `specQuestions` が空か確認する。空でなければ下記の `specQuestions` 処理を先に行う（最終ラウンドの全指摘が「仕様未定」でも `converged: true` で返るため）。空なら収束確定 → `plan.md` を投稿フェーズへ
-- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約を入れて同じ scriptPath で再起動
+- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れて同じ scriptPath で再起動（差分スコープをセット跨ぎで連続させる）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目をオーケストレーターが AskUserQuestion で確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になれば未収束として次セットへ回す（`converged: true` で返っていても投稿しない）
-- `auditFailed: true` → セキュリティ監査役の失敗を完了報告に明記する
+- `auditFailed: true` → レンズ S の Breaker がセキュリティ監査（`security-audit.md` の書き出し）を完了できなかった旨を完了報告に明記する
+- `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O）が失敗し、その観点の攻撃シナリオが未生成のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
 - `judgeDegraded: true` → 一部の Judge バッチが失敗し攻撃シナリオが未裁定のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗ならフォールバック（claude 系）へ
 
