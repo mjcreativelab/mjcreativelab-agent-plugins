@@ -1,8 +1,8 @@
 # エージェントオーケストレーション（claude-judge モード Workflow スクリプト雛形）
 
-code-reviewer-adversarial の `--claude-judge` モード（および Codex 不在時の自動フォールバック）で起動する、**独立 Sonnet Breaker × 独立 Sonnet Judge（バッチ並列 + 見落とし探索分離）の単発敵対レビュー**の Workflow スクリプト雛形。SKILL.md「claude-judge モード」から参照される。**Claude Code の Workflow ツール前提**（利用できない環境の degradation は SKILL.md「Judge 利用不能時のフォールバック」を参照）。
+code-reviewer-adversarial の `--claude-judge` モード（および Codex 不在時の自動フォールバック）で起動する、**独立 Opus Breaker × 独立 Opus Judge（バッチ並列 + 見落とし探索分離）の単発敵対レビュー**の Workflow スクリプト雛形。SKILL.md「claude-judge モード」から参照される。**Claude Code の Workflow ツール前提**（利用できない環境の degradation は SKILL.md「Judge 利用不能時のフォールバック」を参照）。
 
-> 本雛形の Breaker / Judge プロンプトは smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の `breakerPrompt` / `judgeBatchPrompt` からの移植である（単発用に、ループ制御〔ラウンド・経緯〕と context.md 依存を除き、レビュー対象を `args` の diff 基準に読み替えた）。Judge は ≤4 件/バッチのフラット `parallel` 裁定（`effort: 'high'`）と、Breaker 見落としの独立探索を担う miss-finder（`effort: 'max'`・diff スコープ）に分離している（Issue #107）。攻撃観点・4 分類裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象と揃える。
+> 本雛形の Breaker / Judge プロンプトは smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の `breakerPrompt` / `judgeBatchPrompt` からの移植である（単発用に、ループ制御〔ラウンド・経緯〕と context.md 依存を除き、レビュー対象を `args` の diff 基準に読み替えた）。Judge は ≤4 件/バッチのフラット `parallel` 裁定（`effort: 'max'`）と、Breaker 見落としの独立探索を担う miss-finder（`effort: 'max'`・diff スコープ）に分離している（バッチ分割・miss-finder 分離は Issue #107、Breaker/Judge の opus 化・Judge バッチの effort max 化は Issue #111）。攻撃観点・4 分類裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象と揃える。
 
 ## 前提とゲート
 
@@ -21,10 +21,10 @@ code-reviewer-adversarial の `--claude-judge` モード（および Codex 不�
 ```js
 export const meta = {
   name: 'cra-claude-judge',
-  description: 'code-reviewer-adversarial claude-judge モード（独立 Sonnet Breaker × 独立 Sonnet Judge・単発）',
+  description: 'code-reviewer-adversarial claude-judge モード（独立 Opus Breaker × 独立 Opus Judge・単発）',
   phases: [
-    { title: 'Break', detail: '独立 Sonnet Breaker による反例・攻撃シナリオ生成' },
-    { title: 'Judge', detail: 'Judge バッチ並列裁定（≤4 件/バッチ・high）∥ miss-finder（Breaker 見落としの独立探索・max）' },
+    { title: 'Break', detail: '独立 Opus Breaker による反例・攻撃シナリオ生成' },
+    { title: 'Judge', detail: 'Judge バッチ並列裁定（≤4 件/バッチ・max）∥ miss-finder（Breaker 見落としの独立探索・max）' },
   ],
 }
 
@@ -108,11 +108,11 @@ ${args.focus ? `\n## 重点観点（優先的に攻撃する）\n${args.focus}\n
 - 「良いコード」「可読性」系は出さない（このスキルの対象外）
 - 反証不能な指摘は verified: UNVERIFIED とし、Judge がノイズとして切る前提で確信度を低く扱う
 最終出力: counterexamples に反例リスト（重複統合・カテゴリ分類はしない。それは Judge の役割）。${TIME_NOTE}`,
-  { label: 'breaker', phase: 'Break', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
+  { label: 'breaker', phase: 'Break', model: 'opus', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed', at: 'breaker' }
 log(`[${breaker.nowJst} JST] breaker 完了（反例${breaker.counterexamples.length}件）`)
 
-// Judge をバッチ並列化（≤4 件/バッチ・effort high・evidence 限定照合・見落とし探索なし）し、Breaker 見落としの独立探索（miss-finder・effort max・diff スコープ・同じ 4 分類で自己分類）を並列の独立エージェントへ分離する。両者をフラット parallel の異種 thunk 群として同時起動する（#88 の no-throw parallel 契約に依存し try/catch で囲まない）
+// Judge をバッチ並列化（≤4 件/バッチ・effort max・evidence 限定照合・見落とし探索なし）し、Breaker 見落としの独立探索（miss-finder・effort max・diff スコープ・同じ 4 分類で自己分類）を並列の独立エージェントへ分離する。両者をフラット parallel の異種 thunk 群として同時起動する（#88 の no-throw parallel 契約に依存し try/catch で囲まない）
 const judgeBatchPrompt = (batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これは Breaker の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
 1. ${target}
@@ -164,8 +164,8 @@ const batches = []
 for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
 const thunks = [
   ...batches.map((batch, bi) => () =>
-    agent(judgeBatchPrompt(batch, bi + 1, batches.length), { label: `judge:b${bi + 1}`, phase: 'Judge', model: 'sonnet', effort: 'high', schema: FINDINGS_SCHEMA })),
-  () => agent(missFinderPrompt(), { label: 'miss-finder', phase: 'Judge', model: 'sonnet', effort: 'max', schema: FINDINGS_SCHEMA }),
+    agent(judgeBatchPrompt(batch, bi + 1, batches.length), { label: `judge:b${bi + 1}`, phase: 'Judge', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })),
+  () => agent(missFinderPrompt(), { label: 'miss-finder', phase: 'Judge', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA }),
 ]
 const results = await parallel(thunks)
 const judgeResults = results.slice(0, batches.length)
@@ -186,7 +186,7 @@ return { status: 'ok', items, dismissed, counterexamples: breaker.counterexample
 
 返却の扱い:
 
-- `status: 'ok'` → オーケストレーターが `items`（真の欠陥 / 仕様未定）と `dismissed`（低優先度 / ノイズの件数）を SKILL.md「Phase 3 — 最終出力」の構造に整形し、Phase 4（PR 投稿ゲート）を通常どおり実施する。Phase 3 サマリの「Judge:」欄は `独立 Sonnet エージェント（コンテキスト隔離・バッチ並列 + miss-finder）` と記す。出力・投稿の前に `.breaker-probe.` を含む反例テストが変更セットに残っていれば取り除く（単発レビューの使い捨て。回帰テスト化は呼び出し元の判断）
+- `status: 'ok'` → オーケストレーターが `items`（真の欠陥 / 仕様未定）と `dismissed`（低優先度 / ノイズの件数）を SKILL.md「Phase 3 — 最終出力」の構造に整形し、Phase 4（PR 投稿ゲート）を通常どおり実施する。Phase 3 サマリの「Judge:」欄は `独立 Opus エージェント（コンテキスト隔離・バッチ並列 + miss-finder）` と記す。出力・投稿の前に `.breaker-probe.` を含む反例テストが変更セットに残っていれば取り除く（単発レビューの使い捨て。回帰テスト化は呼び出し元の判断）
 - `judgeDegraded: true` → 一部の Judge バッチが失敗し、その反例（最大 4 件/バッチ）が未裁定のまま結果が返った。未裁定の反例が残る旨を Phase 3 出力に明記し、PR 投稿ゲート前にユーザーへ確認する（硬い recall 欠損）
 - `missSearchFailed: true` → miss-finder（Breaker 見落としの独立探索）が失敗した。全反例は裁定済みで独立探索ぶんのみ喪失する（`judgeDegraded` より軽い劣化）。Phase 3 出力に明記する
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開を試み、それでも失敗ならメインセッションでの代行はせず、SKILL.md「Judge 利用不能時のフォールバック」の停止ケースに従う（全 Judge バッチ失敗〔`ok.length === 0`〕のみ agent-failed。一部バッチ失敗・miss-finder 失敗は上記フラグで続行する）
@@ -195,4 +195,4 @@ return { status: 'ok', items, dismissed, counterexamples: breaker.counterexample
 
 Breaker / Judge プロンプトの攻撃観点・4 分類裁定基準は smart-issue-resolve 雛形 B（`sir-claude-review-set`）と共通である。変更時は CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。標準レビュー（可読性を含む観点）は本スキルの対象外で `/code-reviewer` に委ねる点は codex-judge モードと同じ。
 
-**Judge のバッチ並列化 + miss-finder 分離（cra 固有・Issue #107）**: 単発 Judge を「Judge バッチ（`breaker.counterexamples` を ≤4 件/バッチに分割・フラット `parallel`・`effort: 'high'`・evidence 限定照合・見落とし探索なし）∥ miss-finder（1 体・`effort: 'max'`・diff スコープ・同じ 4 分類で自己分類）」の異種 thunk 群に置換した。裁定基準の**内容**は 4 分類のまま不変なので resolve/plan への内容同期は不要（バッチ分割・miss-finder 分離は cra 側の構造変更）。劣化伝播は `judgeDegraded`（バッチ失敗で未裁定の反例が残る＝硬い recall 欠損）・`missSearchFailed`（見落とし探索のみ喪失＝より軽い劣化）で区別する。`breaker` はレンズ分割しない（resolve/plan とは非対称・Issue #107 の対象表で cra 行は Judge 側のみを指示）。`no-throw parallel` 契約（Issue #88）に依存し `await parallel(...)` を try/catch で囲まない。miss-finder の effort max 維持は旧単一 Judge の独立探索 effort の保存で、Phase 3（effort 変更）には踏み込まない。
+**Judge のバッチ並列化 + miss-finder 分離（cra 固有・Issue #107）**: 単発 Judge を「Judge バッチ（`breaker.counterexamples` を ≤4 件/バッチに分割・フラット `parallel`・`effort: 'max'`・evidence 限定照合・見落とし探索なし）∥ miss-finder（1 体・`effort: 'max'`・diff スコープ・同じ 4 分類で自己分類）」の異種 thunk 群に置換した。裁定基準の**内容**は 4 分類のまま不変なので resolve/plan への内容同期は不要（バッチ分割・miss-finder 分離は cra 側の構造変更）。劣化伝播は `judgeDegraded`（バッチ失敗で未裁定の反例が残る＝硬い recall 欠損）・`missSearchFailed`（見落とし探索のみ喪失＝より軽い劣化）で区別する。`breaker` はレンズ分割しない（resolve/plan とは非対称・Issue #107 の対象表で cra 行は Judge 側のみを指示）。`no-throw parallel` 契約（Issue #88）に依存し `await parallel(...)` を try/catch で囲まない。**Breaker・Judge バッチ・miss-finder の opus 化と Judge バッチの effort high→max 化は Issue #111**（精度優先。miss-finder の effort max は元のまま維持）。

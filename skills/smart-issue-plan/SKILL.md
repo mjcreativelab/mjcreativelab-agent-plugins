@@ -7,8 +7,8 @@ description: >
   smart-issue-resolve（実装着手）とは別物。計画だけ作りたいときに使う。
   --codex-review-loop（-cdxrl）を付けると投稿前に Codex 標準レビューループを実施する。
   --codex-advs-review-loop（-cdxarl）は Claude=Breaker × Codex=Judge の敵対的レビューループを回す。
-  --claude-review-loop（-cldrl）は Sonnet（effort max）レビュワーエージェントによる標準計画レビューループ、
-  --claude-adv-review-loop（-cldarl）は独立 Sonnet の Breaker × Judge による敵対的計画レビューループを回す（Codex 不要・Claude Code の Workflow ツール前提。利用できない環境はレビュー未実施で degrade）。
+  --claude-review-loop（-cldrl）は Opus レビュワーエージェント（観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準計画レビューループ、
+  --claude-adv-review-loop（-cldarl）は独立 Opus の Breaker × Judge による敵対的計画レビューループを回す（Codex 不要・Claude Code の Workflow ツール前提。利用できない環境はレビュー未実施で degrade）。
   認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（Codex 不在環境では claude 系で代替）。
 disable-model-invocation: true
 argument-hint: "#issue-number [-p 追加指示] [--codex-review-loop|-cdxrl] [--codex-advs-review-loop|-cdxarl] [--claude-review-loop|-cldrl] [--claude-adv-review-loop|-cldarl]"
@@ -189,7 +189,7 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
 
 ## レビューループ（codex 系 / claude 系）
 
-`{レビューモード}` が `off` 以外の場合に実施する。目的は**計画作成の文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Sonnet エージェント（effort max。敵対 Judge のみ Breaker の攻撃シナリオを ≤4 件/バッチに分割した並列裁定で effort high）がレビュー・裁定を担う。**Claude 自身（オーケストレーター）がレビュー・裁定を模擬・代行してはならない**。
+`{レビューモード}` が `off` 以外の場合に実施する。目的は**計画作成の文脈から独立したレビュー**。codex 系は別系統モデル（Codex）が、claude 系はコンテキスト隔離した Opus エージェント（effort max。標準レビュワーは観点を G1/G2/G3 の 3 グループに分割し並列起動、敵対 Judge は Breaker の攻撃シナリオを ≤4 件/バッチに分割し並列裁定）がレビュー・裁定を担う。**Claude 自身（オーケストレーター）がレビュー・裁定を模擬・代行してはならない**。
 
 いずれのモード・系統でも、返ってきた指摘に対する **採用 / 不採用（過剰対応かどうか）の判定は、レビュイーが行う**（codex 系はオーケストレーター、claude 系は plan-editor エージェント。この不変則はモード・系統によらず変わらない）。
 
@@ -226,13 +226,15 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
    - 採用: 計画の誤り・抜け・リスクを根拠付きで正しく突いている指摘
    - 不採用: 妥当性がない、オーバーエンジニアリングを招く、Issue のスコープ外 — 理由を 1 行で記録する（敵対的モードで Judge が「真の欠陥」と裁定した指摘でも、対応が過剰になるなら不採用にしてよい）
 3. **修正** — レビュイーが採用指摘を計画に反映する
-4. **収束判定** — 採用が 0 件ならループ終了（収束）。1 件以上なら手順 5（上限チェック）へ進む（**必ず上限チェックを経由する**。直接手順 1 へ戻らない）
+4. **収束判定** — 採用が 0 件ならループ終了（収束）。1 件以上なら手順 5（上限チェック）へ進む（**必ず上限チェックを経由する**。直接手順 1 へ戻らない）。なお claude 系は雛形 `sip-plan-review-set` 内部で **dry-twice 方式**（「指摘 0 / 採用 0」のクリーンなラウンドが**連続 2 回**で収束・1 回目クリーン後は差分スコープを解除したフルスコープの確認ラウンド）を採るため、本手順の「採用 0 件で即収束」は codex 系向けの記述である
 5. **上限チェック** — 現在のラウンド数（通算）を確認する:
    - **ラウンド数が 3 の倍数（3, 6, 9, …）に達していない** → ラウンドを +1 して手順 1 に戻る
    - **3 の倍数に達した** → 残りの指摘の要約を提示して AskUserQuestion で確認する:
      - **続行** → ラウンドを +1 して手順 1 に戻る（次の 3 の倍数ラウンドで再度この確認を行う）
      - **打ち切って投稿** → 未収束のまま投稿フェーズへ（`{ループ明示}` = false のときは手順 6〔新規投稿〕または 8c〔更新〕の承認ゲートを通す。表記は「未収束で打ち切り」）
      - **中止** → 投稿せず、計画の現状をチャットに提示して終了
+
+> claude 系（雛形 `sip-plan-review-set`）でセット末尾が `cleanStreak: 1`（クリーン 1 回のまま 3 ラウンド上限に到達）だった場合、残指摘が空でも未収束（連続クリーン確認待ち）として返る。続行時は返却の `cleanStreak` を次セットの `args` に必ず引き継ぎ、次セット round 1 を差分スコープ解除の確認ラウンドとして dry-twice をセット境界を跨いで成立させる。
 
 各ラウンドのモード・指摘数・採用数・不採用理由の要約を記録し、投稿後の完了報告に含める。計画レビューはコードの検証（テスト実行）を伴わないため、収束後は最終 QA を回さずそのまま投稿へ進む。
 
@@ -267,17 +269,18 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
 
 レビュー内容:
 
-- 標準モードは Sonnet（effort max）のレビュワーエージェントが単独で計画をレビューする（観点は codex 標準と同一: 実現可能性・影響範囲の抜け・手順の妥当性・リスクの見落とし・運用/保守/可用性・データ整合性/性能・テストカバレッジ・アーキテクチャ境界・プロジェクト固有基準との整合）
-- 敵対的モードは Breaker（Sonnet / effort max）× Judge（**別の** Sonnet / effort high）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を **S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント**として起動する（観点の union は従来の単一 Breaker と同一で内容は不変。反例テストは書かない。一部レンズ失敗は `breakerDegraded` フラグで伝播）。Judge は全レンズの攻撃シナリオを集約し ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし無進捗ウォッチドッグへのストールを防ぐ）。Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。ラウンド 2 以降の Breaker / レビュワーは直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域を重点対象にする（差分スコープ化。ラウンド 1 は計画全体の包括レビューで、重点付けであって抑制ではない）
+- 標準モードは Opus（effort max）のレビュワーエージェントが計画をレビューする（観点は codex 標準と同一・union 不変: 実現可能性・影響範囲の抜け・手順の妥当性・リスクの見落とし・運用/保守/可用性・データ整合性/性能・テストカバレッジ・アーキテクチャ境界・プロジェクト固有基準との整合）。単発 1 体で 9 観点を横断する代わりに、観点を **G1（実現可能性 / 手順の妥当性 / テストカバレッジ）/ G2（影響範囲の抜け / リスクの見落とし / データ整合性・性能）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワー**として起動する（敵対 Breaker のレンズ分割と同型。グループ間の重複指摘は plan-editor の採用判定で統合。一部グループ失敗は `reviewerDegraded` フラグで伝播）
+- 敵対的モードは Breaker（Opus / effort max）× Judge（**別の** Opus / effort max）の二者構造で、Breaker は上記「敵対的モード（codex 系）」と同じ攻撃観点を **S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント**として起動する（観点の union は従来の単一 Breaker と同一で内容は不変。反例テストは書かない。一部レンズ失敗は `breakerDegraded` フラグで伝播）。Judge は全レンズの攻撃シナリオを集約し ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし無進捗ウォッチドッグへのストールを防ぐ）。Judge の裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。収束は **dry-twice**（「指摘 0 / 採用 0」のクリーンなラウンドが連続 2 回で確定。1 回目クリーン後の確認ラウンドは差分スコープを解除したフルスコープ）。ラウンド 2 以降の Breaker / レビュワーは直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域を重点対象にする（差分スコープ化。ラウンド 1 と確認ラウンドは計画全体の包括レビューで、重点付けであって抑制ではない）
 - 採用判定・計画修正は plan-editor エージェントが `{作業Dir}/plan.md` を編集して行う。収束後はオーケストレーターが `plan.md` を読んで投稿する
 
 Workflow 返却の扱い（詳細は [references/agent-orchestration.md](references/agent-orchestration.md)）:
 
 - `converged: true` → まず `specQuestions` が空か確認する。空でなければ下記の `specQuestions` 処理を先に行う（最終ラウンドの全指摘が「仕様未定」でも `converged: true` で返るため）。空なら収束確定 → `plan.md` を投稿フェーズへ
-- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れて同じ scriptPath で再起動（差分スコープをセット跨ぎで連続させる）
+- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動（差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させる）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目をオーケストレーターが AskUserQuestion で確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になれば未収束として次セットへ回す（`converged: true` で返っていても投稿しない）
 - `auditFailed: true` → レンズ S の Breaker がセキュリティ監査（`security-audit.md` の書き出し）を完了できなかった旨を完了報告に明記する
 - `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O）が失敗し、その観点の攻撃シナリオが未生成のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
+- `reviewerDegraded: true` → 標準モードで一部のレビュワー観点グループ（G1/G2/G3）が失敗し、その観点の指摘が未生成のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
 - `judgeDegraded: true` → 一部の Judge バッチが失敗し攻撃シナリオが未裁定のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する
 - `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗ならフォールバック（claude 系）へ
 
@@ -289,8 +292,8 @@ Workflow 返却の扱い（詳細は [references/agent-orchestration.md](referen
 
 - codex 標準・収束時: `🤖 Codex レビュー済み（標準, N ラウンド, 最終ラウンド採用指摘 0 件）`
 - codex 敵対的・収束時: `🤖 Codex 敵対的レビュー済み（Breaker×Judge, N ラウンド, 最終ラウンド採用指摘 0 件）`
-- claude 標準・収束時: `🤖 Claude レビュー済み（標準, Sonnet/effort max, N ラウンド, 最終ラウンド採用指摘 0 件）`
-- claude 敵対的・収束時: `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Sonnet, N ラウンド, 最終ラウンド採用指摘 0 件）`
+- claude 標準・収束時: `🤖 Claude レビュー済み（標準, Opus/effort max, N ラウンド, 最終ラウンド採用指摘 0 件）`
+- claude 敵対的・収束時: `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus, N ラウンド, 最終ラウンド採用指摘 0 件）`
 - 打ち切り時: `🤖 <Codex|Claude> レビュー実施（<standard|adversarial>, N ラウンド, 未収束で打ち切り）`
 
 ### フォールバック

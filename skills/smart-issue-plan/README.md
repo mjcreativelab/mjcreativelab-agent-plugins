@@ -22,8 +22,8 @@ GitHub Issue の実装計画を作成・更新するスキル。
 | `-p <プロンプト>` | 計画の観点・制約に関する追加指示を渡す     |
 | `--codex-review-loop`（`-cdxrl`） | 投稿前に Codex 標準レビューループを実施し、収束後は承認ゲートなしで自動投稿する（Claude Code + Codex プラグイン環境前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | 投稿前に Claude=Breaker × Codex=Judge の敵対的レビューループを実施する。収束後の自動投稿は標準と同じ |
-| `--claude-review-loop`（`-cldrl`） | 投稿前に Sonnet（effort max）レビュワーエージェントによる標準計画レビューループを実施する（Codex 不要・Claude Code の Workflow ツール前提）。収束後の自動投稿は codex 系と同じ |
-| `--claude-adv-review-loop`（`-cldarl`） | 投稿前に独立 Sonnet の Breaker × Judge による敵対的計画レビューループを実施する（Codex 不要・Workflow ツール前提） |
+| `--claude-review-loop`（`-cldrl`） | 投稿前に Opus レビュワーエージェント（観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準計画レビューループを実施する（Codex 不要・Claude Code の Workflow ツール前提）。収束後の自動投稿は codex 系と同じ |
+| `--claude-adv-review-loop`（`-cldarl`） | 投稿前に独立 Opus の Breaker × Judge による敵対的計画レビューループを実施する（Codex 不要・Workflow ツール前提） |
 
 > 認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（このときレビューは実施するが、投稿前の承認ゲートは維持する。Codex 不在環境では claude 系で代替する）。旧 `-codex-loop` は `--codex-review-loop` にリネームされ、使用できなくなった。
 
@@ -36,17 +36,17 @@ GitHub Issue の実装計画を作成・更新するスキル。
 - **標準（`--codex-review-loop` / `-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で計画とコードを照合してレビューする
 - **敵対的（`--codex-advs-review-loop` / `-cdxarl`）**: Claude=Breaker（設計への攻撃シナリオ・脅威・欠落コントロールの列挙）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。計画にはテスト対象のコードがないため、反例テストの代わりに攻撃シナリオを用いる。`code-reviewer-adversarial` スキルは `disable-model-invocation` のため直接委譲できないので、その二者構造をループ内にインライン再現している
 
-**claude 系**（Codex 不要・Claude Code の Workflow ツールで起動する独立 Sonnet エージェント。コンテキスト隔離 + 役割分離で独立性を担保）:
+**claude 系**（Codex 不要・Claude Code の Workflow ツールで起動する独立 Opus エージェント。コンテキスト隔離 + 役割分離で独立性を担保）:
 
-- **標準（`--claude-review-loop` / `-cldrl`）**: Sonnet（effort max）レビュワーエージェントが単独で計画をレビューする（観点は codex 標準と同一）
-- **敵対的（`--claude-adv-review-loop` / `-cldarl`）**: Breaker（Sonnet / effort max。攻撃観点を S/C/O の 3 レンズに分割し並列起動 — union は従来の単一 Breaker と同一）× Judge（別の Sonnet / effort high。全レンズの攻撃シナリオを ≤4 件/バッチに分割し並列裁定）の二者構造。ラウンド 2 以降は直前ラウンドの採用計画修正が触れた計画節＋影響領域に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
+- **標準（`--claude-review-loop` / `-cldrl`）**: Opus（effort max）レビュワーエージェントが計画をレビューする（観点は codex 標準と同一・union 不変）。単発 1 体で 9 観点を横断する代わりに、観点を G1（実現可能性 / 手順の妥当性 / テストカバレッジ）/ G2（影響範囲の抜け / リスクの見落とし / データ整合性・性能）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワーとして起動する（一部グループ失敗は `reviewerDegraded` フラグで伝播）
+- **敵対的（`--claude-adv-review-loop` / `-cldarl`）**: Breaker（Opus / effort max。攻撃観点を S/C/O の 3 レンズに分割し並列起動 — union は従来の単一 Breaker と同一）× Judge（別の Opus / effort max。全レンズの攻撃シナリオを ≤4 件/バッチに分割し並列裁定）の二者構造。収束は dry-twice（連続 2 クリーンラウンド）。ラウンド 2 以降は直前ラウンドの採用計画修正が触れた計画節＋影響領域に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）
 - 別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する
 
 共通:
 
 - **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や計画から検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示）。系統はフラグ明示ならその系統、未指定なら `codex:rescue` 利用可能時は codex・不能時は claude にフォールバックする。ただしこの自動発動のみのケースでは**投稿前の承認ゲートを維持する**（外部投稿の自動化は明示オプトイン時のみ）
 - 収束後の自動投稿（フラグ明示時のみ）はプレビュー承認をスキップする
-- 投稿本文の末尾に `🤖 Codex レビュー済み（標準…）` / `🤖 Codex 敵対的レビュー済み（Breaker×Judge…）` / `🤖 Claude レビュー済み（標準…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Sonnet…）` を記載する
+- 投稿本文の末尾に `🤖 Codex レビュー済み（標準…）` / `🤖 Codex 敵対的レビュー済み（Breaker×Judge…）` / `🤖 Claude レビュー済み（標準…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus…）` を記載する
 - レビューが使えない環境（codex 系は `codex:rescue` 不能、claude 系は Workflow ツール不能）では Claude がレビュー・裁定を代行せず、通常フロー（承認ゲートあり）にフォールバックする（レビュー済み表記なし）
 
 ## 動作モード

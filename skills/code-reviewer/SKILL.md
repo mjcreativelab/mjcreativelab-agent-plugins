@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: 実装されたコードを仕様整合・設計適合・可読性の観点でレビューする。PR / 変更差分のレビュー、コミット前のセルフレビューに使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。重要変更は Codex クロスチェックを推奨する。--isolated でコンテキスト隔離した Sonnet（effort max）エージェントによる単発レビューも可能（Workflow 前提・不能時はメインセッションに degrade）。
+description: 実装されたコードを仕様整合・設計適合・可読性の観点でレビューする。PR / 変更差分のレビュー、コミット前のセルフレビューに使う。対象が PR なら確認ゲート経由で PR にレビューを投稿する。重要変更は Codex クロスチェックを推奨する。--isolated でコンテキスト隔離した Opus（effort max）エージェントによる単発レビューも可能（Workflow 前提・不能時はメインセッションに degrade）。
 argument-hint: "[<PR番号|branch|ref..ref|path>] [--isolated]"
 disable-model-invocation: true
 allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
@@ -53,7 +53,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 
 ## エージェント隔離モード（--isolated）
 
-`{隔離モード}` = true のとき、手順 4（観点別チェック）を**メインセッションではなく Workflow で起動する単発レビューエージェント**（sonnet / effort max・コンテキスト隔離）に委ねる。会話・実装の文脈によるバイアスを排除した独立レビューが欲しい場合に使う。
+`{隔離モード}` = true のとき、手順 4（観点別チェック）を**メインセッションではなく Workflow で起動する単発レビューエージェント**（opus / effort max・コンテキスト隔離）に委ねる。会話・実装の文脈によるバイアスを排除した独立レビューが欲しい場合に使う。
 
 - **Workflow 利用可** → [references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cr-isolated-review`）を起動する。手順 1 で確定した `{対象}` と diff の取り方を `args`（`{ target, diffBase, focus }`）で渡し、エージェントが自分で diff を取得して本スキルの 6 観点でレビューし、5 区分の markdown を返す。オーケストレーター（メインセッション）が返却を受け取り、手順 5（出力）・手順 6（PR 投稿ゲート）を通常どおり実施する（**投稿・コミットはオーケストレーターの責務**。エージェントにはさせない）
 - **Workflow 不能**（他エージェント・旧バージョン等）→ メインセッションでの通常レビュー（手順 4）に **degrade** し、その旨を 1 行明示する
