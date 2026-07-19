@@ -37,7 +37,7 @@
 /code-reviewer-adversarial main..HEAD                        # 現在ブランチの全コミット
 /code-reviewer-adversarial src/api/ -p N+1
 /code-reviewer-adversarial --test "pnpm test" feature/add-foo
-/code-reviewer-adversarial 42 --claude-judge                 # Judge も独立 Sonnet（Codex 不要）
+/code-reviewer-adversarial 42 --claude-judge                 # Judge も独立 Opus（Codex 不要）
 ```
 
 ## オプション
@@ -46,7 +46,7 @@
 | ----------------- | ---------------------------------------------------------- |
 | `--test <cmd>`    | 反例テスト実行に使うコマンド（自動検出より優先）           |
 | `-p <プロンプト>` | Breaker persona に追加注入する重点観点（例: `N+1`、`TOCTOU`）|
-| `--claude-judge`  | Judge を Codex ではなく独立 Sonnet エージェントにする claude-judge モード（Codex 不在時は自動フォールバック・Workflow 前提）|
+| `--claude-judge`  | Judge を Codex ではなく独立 Opus エージェントにする claude-judge モード（Codex 不在時は自動フォールバック・Workflow 前提）|
 
 ## フェーズ構成
 
@@ -77,7 +77,7 @@
 | 低優先度   | 妥当だが重大度が低く、修正コストに見合わない                  | サマリに件数のみ                   |
 | ノイズ     | 反証不能・誤解・的外れ                                         | 除外（件数のみ報告）               |
 
-**Judge 利用不能時**（`codex:rescue` 未設定、または silent death から復旧不能等）は、**Workflow が使えれば claude-judge モード（独立 Sonnet Breaker × Judge）に自動フォールバック**し、使えなければ Phase 2 で停止して Phase 3 を出力しない。いずれの場合も Claude（メインセッション）が Judge 裁定を模擬・代行してはならない（別系統モデルまたは隔離エージェントによる独立裁定が本スキルの核のため）。ハング時は即停止・フォールバックせず、まず judge-prompt.md の運用ノートに従って復旧（cancel → `--resume` 再投入）を試みる。
+**Judge 利用不能時**（`codex:rescue` 未設定、または silent death から復旧不能等）は、**Workflow が使えれば claude-judge モード（独立 Opus Breaker × Judge）に自動フォールバック**し、使えなければ Phase 2 で停止して Phase 3 を出力しない。いずれの場合も Claude（メインセッション）が Judge 裁定を模擬・代行してはならない（別系統モデルまたは隔離エージェントによる独立裁定が本スキルの核のため）。ハング時は即停止・フォールバックせず、まず judge-prompt.md の運用ノートに従って復旧（cancel → `--resume` 再投入）を試みる。
 
 ### Phase 3 — 最終出力
 
@@ -93,7 +93,7 @@
 
 ## claude-judge モード（--claude-judge / Codex 不在時の自動フォールバック）
 
-`--claude-judge` を付けると、Judge を Codex ではなく **独立 Sonnet エージェント**にする。Breaker も独立 Sonnet エージェントになり、Phase 1・2 を **Workflow で起動する独立エージェント群**が単発で担う（プロンプトは smart-issue-resolve の claude 系レビューから移植）。Judge は Breaker の反例を ≤4 件/バッチに分割した並列裁定（effort high）で、Breaker 見落としの独立探索は並列の miss-finder（effort max・diff スコープ）が担う（一部バッチ失敗は `judgeDegraded`、miss-finder 失敗は `missSearchFailed` として結果に明記）。`codex:rescue` が使えない環境で Judge 利用不能になったときも、Workflow が使えれば自動でこのモードにフォールバックする。
+`--claude-judge` を付けると、Judge を Codex ではなく **独立 Opus エージェント**にする。Breaker も独立 Opus エージェントになり、Phase 1・2 を **Workflow で起動する独立エージェント群**が単発で担う（プロンプトは smart-issue-resolve の claude 系レビューから移植）。Judge は Breaker の反例を ≤4 件/バッチに分割した並列裁定（effort max）で、Breaker 見落としの独立探索は並列の miss-finder（effort max・diff スコープ）が担う（一部バッチ失敗は `judgeDegraded`、miss-finder 失敗は `missSearchFailed` として結果に明記）。`codex:rescue` が使えない環境で Judge 利用不能になったときも、Workflow が使えれば自動でこのモードにフォールバックする。
 
 - 独立性は **コンテキスト隔離 + 役割分離**で担保する（Breaker と Judge は互いに相手の思考を持たない fresh エージェント）。別系統モデル（Claude × Codex）の独立性はないため、**認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更ではデフォルトの codex-judge（実 Codex）を推奨**する
 - 単発（ループ・収束判定は持たない）。Phase 0・Phase 3・Phase 4 は codex-judge と共通で再利用する

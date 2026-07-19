@@ -18,7 +18,7 @@ code-reviewer の `--isolated` モードで起動する、コンテキスト隔�
 ```js
 export const meta = {
   name: 'cr-isolated-review',
-  description: 'code-reviewer --isolated の単発隔離レビュー（Sonnet / effort max）',
+  description: 'code-reviewer --isolated の単発隔離レビュー（Opus / effort max）',
   phases: [{ title: 'Review', detail: 'コンテキスト隔離した単発レビュー' }],
 }
 
@@ -65,7 +65,7 @@ ${args.focus ? `- 重点観点: ${args.focus}\n` : ''}## 観点（6 観点で確
 ## 制約
 - コード・ファイルを変更しない（レビューのみ）。コミット・push はしない。PR への投稿もしない（呼び出し元が行う）
 最終出力: review に上記 5 区分（該当すれば Codex クロスチェック推奨節を含む）の markdown をそのまま入れる。${TIME_NOTE}`,
-  { label: 'reviewer:isolated', phase: 'Review', model: 'sonnet', effort: 'max', schema: REVIEW_SCHEMA })
+  { label: 'reviewer:isolated', phase: 'Review', model: 'opus', effort: 'max', schema: REVIEW_SCHEMA })
 if (result === null) return { review: null }
 log(`[${result.nowJst} JST] レビュー完了`)
 
