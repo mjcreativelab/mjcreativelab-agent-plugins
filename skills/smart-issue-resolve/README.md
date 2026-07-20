@@ -9,7 +9,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 /smart-issue-resolve #134 -p テストも書いて
 /smart-issue-resolve #134 --codex-review-loop     # または -cdxrl
 /smart-issue-resolve #134 --codex-advs-review-loop # または -cdxarl（敵対的レビュー・Judge=Codex）
-/smart-issue-resolve #134 --claude-review-loop     # または -cldrl（Opus レビュワー・観点3グループ並列）
+/smart-issue-resolve #134 --claude-review-loop     # または -cldrl（Opus レビュワー・包括ラウンドは観点3グループ並列）
 /smart-issue-resolve #134 --claude-adv-review-loop # または -cldarl（敵対的レビュー・独立 Opus×Opus）
 ```
 
@@ -22,7 +22,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
 | `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Codex プラグイン前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループ。収束後の自動コミット・PR は標準と同じ |
-| `--claude-review-loop`（`-cldrl`） | Opus レビュワーエージェント（観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
+| `--claude-review-loop`（`-cldrl`） | Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
 | `--claude-adv-review-loop`（`-cldarl`） | 独立 Opus の Breaker × Judge による敵対的レビューループ（Codex 不要）。収束後の自動コミット・PR は同上 |
 
 > 複数指定時は adversarial > standard。モード同格で codex 系と claude 系が競合した場合は codex を優先する（別系統モデルの独立性がより高い）。認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（Codex 不在環境では claude 系で代替。このときレビューは実施するが、コミット・PR の自動実行は行わない）。旧 `-codex-loop` は `--codex-review-loop` にリネームされ、使用できなくなった。
@@ -35,7 +35,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | 設計役 | opus / max | 計画が無い/粗い場合の設計方針確定 + 実装後の設計整合・保守性・可用性レビュー（兼任） |
 | 開発者 | opus / max | 実装（調査→ベースライン→実装→動作確認）とレビュー指摘の採用判定・修正（レビュイー） |
 | 独立 QA | sonnet / high | 自己申告に依存しないテスト・lint の独立実行、受け入れ基準検証、自動コミット前の最終ゲート |
-| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | opus / max（codex 敵対 Breaker〔雛形 C〕のみ sonnet / max） | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う。claude 標準レビュワーは観点を G1/G2/G3 の 3 グループに、claude 敵対 Breaker は攻撃観点を S/C/O の 3 レンズに分割して並列起動、Judge は反例を ≤4 件/バッチに分割し並列裁定） |
+| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | opus / max（Judge バッチのみ high。codex 敵対 Breaker〔雛形 C〕のみ sonnet / max） | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う。包括ラウンドのみ claude 標準レビュワーは観点を G1/G2/G3 の 3 グループに、claude 敵対 Breaker は攻撃観点を S/C/O の 3 レンズに分割して並列起動し以降は単発 1 体、Judge は反例を ≤4 件/バッチに分割し並列裁定） |
 | セキュリティ監査役 | opus / max（codex 系〔雛形 C〕のみ sonnet / max） | セキュリティ自動発動時に STRIDE・認可・データフロー観点を敵対的レビューへ注入（claude 系はレンズ S の Breaker に統合・codex 系は独立エージェント） |
 | レビュワー / Judge（codex 系） | Codex（別系統モデル） | `codex:rescue` 経由のレビュー・裁定（従来どおり） |
 
@@ -57,8 +57,8 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 
 - **codex 標準（`-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で diff をレビューする
 - **codex 敵対（`-cdxarl`）**: Breaker（独立 Sonnet エージェント。実装文脈から隔離）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。Workflow が使えない環境ではメインセッションが Breaker を代行する（従来動作）
-- **claude 標準（`-cldrl`）**: Opus（effort max）のレビュワーエージェントが diff をレビューする（観点は codex 標準と同一・union 不変）。単発 1 体で 9 観点を横断する代わりに、観点を G1（仕様充足 / バグ / テストカバレッジ）/ G2（回帰 / データ整合性・性能 / 実装レベルの危険箇所）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワーとして起動する（敵対 Breaker のレンズ分割と同型。一部グループ失敗は `reviewerDegraded` フラグで伝播）
-- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Opus エージェントが担う。Breaker は攻撃観点を S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント（各 effort max。観点の union は従来の単一 Breaker と同一）、Judge は全レンズの反例を ≤4 件/バッチに分割し並列裁定（effort max。単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。収束は dry-twice（連続 2 クリーンラウンド）。ラウンド 2 以降は直前ラウンドの採用修正差分に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
+- **claude 標準（`-cldrl`）**: Opus（effort max）のレビュワーエージェントが diff をレビューする（観点は codex 標準と同一・union 不変）。包括ラウンド（初回セット round 1）のみ、観点を G1（仕様充足 / バグ / テストカバレッジ）/ G2（回帰 / データ整合性・性能 / 実装レベルの危険箇所）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワーとして起動し、差分スコープのラウンド 2+ と確認ラウンドは単発 1 体（全 9 観点横断）で実施する（敵対 Breaker のレンズ分割と同型。一部グループ失敗は `reviewerDegraded` フラグで伝播）
+- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Opus エージェントが担う。Breaker は包括ラウンドのみ攻撃観点を S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント（各 effort max。観点の union は従来の単一 Breaker と同一）として起動し、以降のラウンドは単発 1 体（全攻撃観点横断）で実施する。Judge は全レンズの反例を ≤4 件/バッチに分割し並列裁定（effort high。単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。収束は dry-twice（連続 2 クリーンラウンド）。ラウンド 2 以降は直前ラウンドの採用修正差分に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
 - **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や変更ファイルから検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示。Codex 不在なら claude 系で代替）。ただしこの自動発動のみのケースでは**コミット・PR は自動実行せず**、従来の完了案内に切り替える（外部副作用の自動化は明示オプトイン時のみ）
 - claude 系は 1 セット（最大 3 ラウンド）を 1 つの Workflow で実行し、3 ラウンドごとの続行確認はセット間にオーケストレーターが行う（サブエージェントはユーザーに質問できないため）
 - 敵対モードの裁定「仕様未定」（仕様が曖昧で要確認の指摘）は、対話できないエージェントに握り潰させず、オーケストレーターが AskUserQuestion でユーザーに確認して確定内容を context.md に反映する
