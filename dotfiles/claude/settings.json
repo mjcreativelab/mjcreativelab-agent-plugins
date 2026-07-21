@@ -132,26 +132,7 @@
     "superpowers@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
-    "atlassian@zozo-claude-plugins": true,
-    "chrome-devtools@zozo-claude-plugins": true,
-    "context7@zozo-claude-plugins": true,
-    "datadog@zozo-claude-plugins": true,
-    "drawio@zozo-claude-plugins": true,
-    "figma@zozo-claude-plugins": true,
-    "github@zozo-claude-plugins": true,
-    "guideline-review@zozo-claude-plugins": true,
-    "sentry@zozo-claude-plugins": true,
-    "serena@zozo-claude-plugins": true,
-    "slack@zozo-claude-plugins": true,
-    "awslabs-aws-knowledge@zozo-claude-plugins": true,
-    "awslabs-aws-dataprocessing@zozo-claude-plugins": true,
-    "awslabs-aws-api@zozo-claude-plugins": true,
-    "awslabs-cloudwatch@zozo-claude-plugins": true,
-    "playwright@zozo-claude-plugins": true,
-    "near-fashion-business-ideation@new-product-marketplace": true,
-    "near-fashion-business-ops@new-product-marketplace": true,
-    "andrej-karpathy-skills@karpathy-skills": true,
-    "coding@new-product-marketplace": true
+    "andrej-karpathy-skills@karpathy-skills": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -181,18 +162,6 @@
       },
       "autoUpdate": true
     },
-    "zozo-claude-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "st-tech/zozo-claude-code-plugins"
-      }
-    },
-    "new-product-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "st-tech/new-product-claude-cookbook"
-      }
-    },
     "karpathy-skills": {
       "source": {
         "source": "github",
@@ -200,11 +169,10 @@
       }
     }
   },
-  "effortLevel": "max",
+  "effortLevel": "xhigh",
   "showThinkingSummaries": true,
   "skipWorkflowUsageWarning": true,
   "autoUpdates": false,
   "tui": "fullscreen",
-  "switchModelsOnFlag": true,
-  "model": "claude-fable-5[1m]"
+  "switchModelsOnFlag": true
 }
