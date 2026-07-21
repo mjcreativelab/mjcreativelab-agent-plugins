@@ -25,9 +25,11 @@ metadata:
 
 **除外（同期しない）:**
 
-- 秘密情報: `.credentials.json`・`remote-settings.json`（認証情報・リモート管理設定。リポジトリに置かない）
+- 秘密情報: `.credentials.json`・`remote-settings.json`（認証情報・リモート管理設定。リポジトリに置かない）・`.config-sync-exclude`（サニタイズ対象の marketplace 名を書くローカル限定ファイル。手順 3 参照）
 - 配布物: `skills/`（npx skills / plugin marketplace の install 先。手書き設定ではなく各配布元リポジトリが正本）
-- 状態・キャッシュ: `projects/`・`plugins/`・`backups/`・`cache/`・`debug/`・`downloads/`・`file-history/`・`ide/`・`paste-cache/`・`session-env/`・`sessions/`・`shell-snapshots/`・`tasks/`・`telemetry/`・`auto-resume/`・`security/`・`.cc-writes/`・`history.jsonl`・`stats-cache.json`・`security_warnings_state_*.json`・`mcp-needs-auth-cache.json`・`.last-*`・`*.bak.*`・`.DS_Store`
+- 状態・キャッシュ: `projects/`・`plugins/`・`backups/`・`cache/`・`chrome/`（Claude in Chrome の native host wrapper。CLI が自動生成しマシン固有の絶対パスとバージョンを埋め込む）・`debug/`・`downloads/`・`file-history/`・`ide/`・`paste-cache/`・`session-env/`・`sessions/`・`shell-snapshots/`・`tasks/`・`telemetry/`・`auto-resume/`・`security/`・`.cc-writes/`・`history.jsonl`・`stats-cache.json`・`security_warnings_state_*.json`・`mcp-needs-auth-cache.json`・`.last-*`・`*.bak.*`・`.DS_Store`
+
+**このリポジトリは public** のため、ミラーに社内・非公開の情報を出さない（手順 2 のパス正規化・手順 3 のサニタイズ・手順 4 の秘密情報チェックがその防波堤）。
 
 ## 手順
 
@@ -50,28 +52,42 @@ metadata:
    ```
    grep がヒットした場合は該当箇所を確認し、`~` 表記へ手動で直してから進める。
 
-3. **秘密情報チェック（Security ルール準拠）:** ミラーに実トークン・API キー等の値が混入していないか確認する:
+3. **サニタイズ（非公開 marketplace の除去）:** `settings.json` には社内・非公開の plugin marketplace 名やそのリポジトリパス（`extraKnownMarketplaces.<名前>.source.repo`）が入りうる。public リポジトリのミラーへ出さないため、除外対象を**ローカル限定ファイル** `~/.claude/.config-sync-exclude`（1 行 1 marketplace 名。`#` 始まりと空行は無視。marketplace 名自体を公開リポジトリに書かないためのローカル管理）に列挙し、ミラー側から取り除く。`jq` が必要:
+   ```bash
+   EXCLUDE=~/.claude/.config-sync-exclude
+   if [ -f "$EXCLUDE" ]; then
+     MPS=$(grep -vE '^[[:space:]]*(#|$)' "$EXCLUDE" | jq -R . | jq -s .)
+     jq --argjson mps "$MPS" '
+       (if has("enabledPlugins") then .enabledPlugins |= with_entries((.key | split("@") | last) as $m | select(($mps | index($m)) == null)) else . end)
+       | (if has("extraKnownMarketplaces") then .extraKnownMarketplaces |= with_entries(.key as $k | select(($mps | index($k)) == null)) else . end)
+     ' dotfiles/claude/settings.json > "${TMPDIR:-/tmp}/settings-sanitized.json" \
+       && mv "${TMPDIR:-/tmp}/settings-sanitized.json" dotfiles/claude/settings.json
+   fi
+   ```
+   除去されるのは `enabledPlugins` の `"<plugin>@<marketplace>"` エントリと `extraKnownMarketplaces` の同名キー。**live 側（`~/.claude/settings.json`）は変更しない**ため手元の動作に影響はなく、`global-config-push` は反映時に live の該当エントリを保持する（両スキルで対の実装。片方だけ変えない）。除外ファイルが無い環境ではサニタイズをスキップする（従来動作）。
+
+4. **秘密情報チェック（Security ルール準拠）:** ミラーに実トークン・API キー等の値が混入していないか確認する:
    ```bash
    grep -rniE '(api[_-]?key|token|secret|password|credential)' dotfiles/claude/ || echo "OK: 秘密情報らしき語なし"
    ```
    ヒット行は必ず目視で判断する（キー名の参照・許可ルール・ドキュメント記述は問題ない。実際の値が入っていたら該当ファイルをミラーから外し、除外リストへの追加を検討する）。
 
-4. **新しい同期候補の探索:** `~/.claude/` 直下に、同期対象にも既知の除外にも該当しない項目が増えていないか確認する（`sed` は `ls` が `-F` エイリアスの環境でも完全一致が効くよう末尾スラッシュを除去する）:
+5. **新しい同期候補の探索:** `~/.claude/` 直下に、同期対象にも既知の除外にも該当しない項目が増えていないか確認する（`sed` は `ls` が `-F` エイリアスの環境でも完全一致が効くよう末尾スラッシュを除去する）:
    ```bash
    ls -A ~/.claude | sed 's:/*$::' \
      | grep -vE '^(CLAUDE\.md|settings\.json|statusline-command\.sh|keybindings\.json|\.mcp\.json|rules|hooks|agents|commands)$' \
-     | grep -vE '^(skills|projects|plugins|backups|cache|debug|downloads|file-history|ide|paste-cache|session-env|sessions|shell-snapshots|tasks|telemetry|auto-resume|security|\.cc-writes|\.credentials\.json|remote-settings\.json|history\.jsonl|stats-cache\.json|mcp-needs-auth-cache\.json|\.DS_Store)$' \
+     | grep -vE '^(skills|projects|plugins|backups|cache|chrome|debug|downloads|file-history|ide|paste-cache|session-env|sessions|shell-snapshots|tasks|telemetry|auto-resume|security|\.cc-writes|\.credentials\.json|remote-settings\.json|\.config-sync-exclude|history\.jsonl|stats-cache\.json|mcp-needs-auth-cache\.json|\.DS_Store)$' \
      | grep -vE '^(security_warnings_state_.*|\.last-.*|.*\.bak\..*)$' \
      || echo "新しい同期候補なし"
    ```
    ヒットした項目は「手書きのグローバル設定か / 状態・キャッシュか」を判断し、設定なら本 SKILL.md と global-config-push の対象リストに追加してから再実行、状態・キャッシュなら両スキルの除外リストと本コマンドの除外パターンに追記する。
 
-5. **差分確認:**
+6. **差分確認:**
    ```bash
    git status --short dotfiles/claude/
    git diff dotfiles/claude/
    ```
 
-6. 差分サマリをユーザーに日本語で報告する（変更なし／変更ありの場合は変更ファイル名と概要を示す）。
+7. 差分サマリをユーザーに日本語で報告する（変更なし／変更ありの場合は変更ファイル名と概要を示す）。
 
-7. コミットはユーザーが明示的に依頼した場合のみ行う（`/smart-commit` を使う）。
+8. コミットはユーザーが明示的に依頼した場合のみ行う（`/smart-commit` を使う）。

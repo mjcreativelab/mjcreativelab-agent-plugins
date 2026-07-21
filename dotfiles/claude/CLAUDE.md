@@ -14,11 +14,16 @@
 
 ## 検証強制 Hook / 思考深度
 - Stop hook `~/.claude/hooks/verify-before-claim.sh`（settings.json の hooks.Stop に登録済み）が「コード編集後、検証コマンドの実行記録なしに完了・修正済みを主張して終了する」ターンを差し戻す。差し戻されたら検証を実行するか「未検証」と明記して報告し直すこと（強制は 1 stop につき 1 回のみ。モデル問わず有効）
-- 思考深度は settings.json の `effortLevel`（現在 "max"）で制御する。現行モデル（Fable 5 / Sonnet 5 / Opus 4.7 以降）は adaptive reasoning のため `MAX_THINKING_TOKENS` は効かない（旧世代モデルの固定 thinking budget 専用。CLI v2.1.111 以降で確認済み）
+- 思考深度は settings.json の `effortLevel` で制御する（現在値は `jq -r .effortLevel ~/.claude/settings.json` で確認する。ここに値を書くと設定変更で陳腐化するため書かない）。現行モデル（Fable 5 / Sonnet 5 / Opus 4.7 以降）は adaptive reasoning のため `MAX_THINKING_TOKENS` は効かない（旧世代モデルの固定 thinking budget 専用。CLI v2.1.111 以降で確認済み）
 
 ## Time Display
+- **現在時刻を出力する前に必ず `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M'` を実行し、その出力をそのまま使うこと**。記憶・推測・体感・直前のメッセージからの類推で時刻を書かない（値の創作にあたる）
+- 環境コンテキストの `Today's date` は**日付のみで時刻を含まない**。これを時刻の根拠にしない。会話が長引くと日付自体も古くなりうるため、日付境界が問題になる場面では `date` を実行し直す
+- 日本にサマータイムはなく JST は通年 UTC+9 固定。表示時刻がずれたときにタイムゾーン要因を疑う前に、**自分が `date` を実測したか**を確認すること
 - 日時は基本すべて JST（UTC+9）で表示すること。ソース（GitHub API / GCP ログ等）が UTC を返す場合は JST に変換し、曖昧になりうる場面では「(JST)」を併記する。ログのフィルタ条件など API に渡す値はソースのタイムゾーンのままでよい
-- Workflow など、バックグラウンドで処理を開始するときのメッセージには、そのときの日時（`YYYY-MM-DD hh:mm` 形式・JST）を記載すること
+- **UTC → JST の変換は暗算せずコマンドで行う**（macOS 実機確認済み）: `TZ=Asia/Tokyo date -j -f '%Y-%m-%dT%H:%M:%S %z' '<UTC 時刻> +0000' '+%Y-%m-%d %H:%M (JST)'`。日付をまたぐ変換（UTC 15:00 以降）を目視で処理しない
+- Workflow など、バックグラウンドで処理を開始するときのメッセージには、そのときの日時（`YYYY-MM-DD hh:mm` 形式・JST）を記載すること。**この 1 行のためだけでも `date` を実行する**。実行できない環境では時刻を書かず「(時刻未実測)」と明記する
+- サブエージェント・Workflow スクリプトは自前で時刻を取得できないことがある（Workflow スクリプトは `Date.now()` / `new Date()` が禁止）。その場合は各エージェントに `TZ=Asia/Tokyo date '+%H:%M'` を実行させ、返り値（`nowJst` 等）を使って表示する
 
 ## Clarification
 - 不明点がある場合は AskUserQuestion ツールを使って確認すること
@@ -135,6 +140,20 @@ LLM コーディングの典型的ミスを減らす行動原則。慎重さ優�
 
 ## Shell
 - この環境の `ls` は `-F` 相当のエイリアス（ディレクトリ名に末尾 `/` 付与）。`ls` 出力を完全一致でパース・フィルタする場合は `| sed 's:/*$::'` で正規化する
+
+## Claude Code CLI × 企業プロキシ (Netskope) の TLS/SSL エラー
+
+- **症状**: Claude Code CLI (native binary) v2.1.181 以降で `API Error: Unable to connect to API: SSL certificate verification failed. Check your proxy or corporate SSL certificates` が出て API に接続できない（v2.1.179 は正常）。背景は v2.1.181 の bundled Bun ランタイム更新で `NODE_OPTIONS=--use-system-ca` が無視されるようになった回帰（GitHub anthropics/claude-code #72066）。社内プロキシが全 HTTPS を組織固有の中間 CA（発行元ルートは `certadmin`）で MITM するため、システム CA を信頼できず TLS 検証が落ちる。実際の CA ホスト名は `security find-certificate -a -p /Library/Keychains/System.keychain | openssl x509 -noout -subject` 等で確認する（公開リポジトリへ同期される可能性があるため、このファイルに実ホスト名を書かない）
+- **効かない/不十分な対処**: `NODE_OPTIONS=--use-system-ca`（Bun バイナリが無視する）／ 中間 CA 証明書 1 枚だけを `NODE_EXTRA_CA_CERTS` に渡す（発行元ルート `certadmin` が欠けてチェーンが繋がらず失敗する）
+- **解決策（恒久・本セッションで v2.1.214 動作確認済み）**: キーチェーン全体＋macOS 標準ルートを 1 つの PEM に連結し `NODE_EXTRA_CA_CERTS` で渡す。`--use-system-ca` と違いチャット API 経路にもインストーラ経路にも効く:
+  ```bash
+  security find-certificate -a -p /Library/Keychains/System.keychain > ~/.local/share/certs/system-ca.pem
+  security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain >> ~/.local/share/certs/system-ca.pem
+  echo 'export NODE_EXTRA_CA_CERTS="$HOME/.local/share/certs/system-ca.pem"' >> ~/.zshrc && source ~/.zshrc
+  ```
+- **再発時（証明書ローテーション）**: Netskope の CA 更新でバンドルが陳腐化すると再び同じ SSL エラーになる。上の `security find-certificate` 2 本を再実行してバンドルを作り直せば復旧する
+- **切り分け（再発時の診断）**: 起動時に `warn: ignoring extra certs from <path>, load failed: ...`（または `No such file or directory`）が出るなら **PEM のパスが不在/誤り**。この警告が出ないのに API が SSL エラーなら **バンドルは読めているがルート（`certadmin`）が欠けチェーン不成立** → 完全バンドルを作り直す（単一証明書だけを渡した状態がこれ）
+- **補足**: Claude Code はネイティブインストーラ管理（`~/.local/bin/claude` → `~/.local/share/claude/versions/<ver>`、brew ではない）。特定版へ戻すなら `claude install <version>`（例: `claude install 2.1.179`）だが、完全バンドルで最新版が動くならダウングレード不要。mise/pnpm など通常の Node は `--use-system-ca`（`.mise.toml`）が今も有効で変更不要（回帰は Claude Code の Bun バイナリ固有）
 
 ## AI Agent Role Assignment
 
