@@ -400,4 +400,5 @@ return { converged, status, records, specQuestions: uniqueSpecQuestions, auditFa
 - **レビュー観点の内容**: plan は計画用（実現可能性・影響範囲の抜け・手順の妥当性など）で、diff 用の観点とは文言が異なる（分割後もレンズ S/C/O・標準レビュワーのグループ G1/G2/G3 の各 `aspects` は plan 用文言のまま。グループ分割の粒度〔3 観点/グループ〕は sir と構造同期）
 - **差分スコープの読み替え**: resolve は「採用修正が触れたファイル・領域とその波及」、plan は「plan-editor の採用計画修正が触れた計画節＋影響領域」に読み替える
 - **コード専用機構は持ち込まない**: resolve 側にあるコード検証用の仕組み（反例テストのファイル・そのテスト実行・probe 命名の不変条件・独立 QA / 最終 QA フェーズ・反例テストの後始末エージェント・FIX の「テスト通過」フラグ・BREAK の反例検証ステータス）は本ファイルには**一切含めない**。BREAK スキーマは反例検証ステータスの代わりに `unaddressed`（対処できていない計画の手順・前提）を持つ。収束後は最終 QA を回さず、オーケストレーターがそのまま計画を投稿する
+- **diff 正本ファイル化（`diff.md`）も持ち込まない**: resolve 雛形 B の「`{作業Dir}/diff.md`（`assets/gen-diff.sh` で生成）をレビュー役が Read する / 期待スタンプ（`diffRound`）による鮮度ガード / fix エージェントがラウンド境界で再生成する」機構はコード専用（Issue #115）。plan はレビュー対象が `plan.md` で既にファイル正本のため、レビュー役はそのまま `plan.md` を読む（重複する git 取得が存在しないので削減余地がない）
 - **claude / codex 系の非対称**: plan は claude 系のみ（codex 経路を持たない）。resolve 側の雛形 C（`sir-codex-breaker`）は Codex 利用制限中のためレンズ分割せず単発のまま残る。この非対称は resolve 側同期ノートで管理する
