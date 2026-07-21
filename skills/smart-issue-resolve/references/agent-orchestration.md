@@ -5,6 +5,7 @@ smart-issue-resolve の実装・レビューを担う役割別エージェント
 ## 前提とゲート
 
 - 起動前に `{作業Dir}/context.md` が存在すること（SKILL.md 手順 6 で作成）。存在しなければ Workflow を起動せず、context.md の作成に戻る
+- 雛形 B（claude 系レビューセット）は**新規セットの起動ごと**（初回セット・継続セットとも）、起動直前にオーケストレーターが `{作業Dir}/diff.md` を生成すること（下記「レビュー正本 diff.md」）。ただし `resumeFromRunId` による**同一セットの再開では生成しない**（再開後のスクリプトは中断時点の期待スタンプを保持しているため、`startRound` で作り直すとスタンプが巻き戻り、残りラウンドのレビュー役が不要にフォールバックする）。生成に失敗した場合も起動自体は可能だが、全レビュー役が自前の git 取得へフォールバックする（＝従来動作）ため、その旨を完了報告に明記する
 - スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、各雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
@@ -45,11 +46,30 @@ smart-issue-resolve の実装・レビューを担う役割別エージェント
 | ファイル | 書き手 | 読み手 |
 |---|---|---|
 | `context.md` | オーケストレーター | 全エージェント |
+| `gen-diff.sh` | オーケストレーター（本スキルの `assets/gen-diff.sh` をコピー） | 開発者（雛形 B の fix が再生成に実行する） |
+| `diff.md` | オーケストレーター（雛形 B の各セット起動前）/ 開発者（雛形 B のラウンド境界） | 雛形 B のレビュワー・Breaker・Judge（**独立 QA は読まない**） |
 | `design.md` | 設計役 | 開発者・設計役（事後レビュー） |
 | `impl-notes.md` | 開発者 | 開発者（修正時）・オーケストレーター |
 | `security-audit.md` | Breaker レンズ S（claude 系・監査ラウンド）/ セキュリティ監査役（codex 系） | Breaker |
 | `breaker-round-<N>[-<lens>].md` | Breaker（claude 系はレンズ別に `-<lens>` 付き〔包括ラウンド。単発ラウンドは `-all`〕・codex 系は単一） | Judge（codex 系では Codex） |
 | `findings-round-<N>.md` | オーケストレーター（標準: Codex の指摘全件 / 敵対: 裁定の真の欠陥 + ユーザー確認済みの仕様未定。要約・取捨選択をしない） | 開発者（雛形 D） |
+
+### レビュー正本 diff.md（雛形 B 専用）
+
+雛形 B のレビュー役（レビュワー・Breaker・Judge）は diff を自分で取得せず `{作業Dir}/diff.md` を Read する（各エージェントが `git diff` / `git status` を重複実行しないため）。生成は本スキルの `assets/gen-diff.sh` で行う。オーケストレーターは作業ディレクトリ作成時に `{作業Dir}/gen-diff.sh` へコピーしておく（fix エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない）:
+
+```bash
+bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <対象ラウンド>
+```
+
+出力先はスクリプト自身のディレクトリ（＝ `{作業Dir}/diff.md`）で固定。書式は `gen-diff.sh` が単一情報源で、ヘッダ（`対象ラウンド` / ブランチ / 差分基準 / HEAD SHA）+ 変更ファイル一覧（コミット済み `--stat` / 未コミット `--stat` / 未追跡ファイル名）+ `===== BEGIN/END COMMITTED DIFF =====` と `===== BEGIN/END UNCOMMITTED DIFF =====` の 2 ブロックからなる（diff 本文はコードフェンスで囲まない。diff 中の 3 連バッククォートで入れ子が破綻するため）。
+
+- **生成責務**: 新規セットの起動直前（初回・継続）はオーケストレーターが `<対象ラウンド>` = `startRound` で生成する。セット内のラウンド境界は `dev:fix-r<N>` エージェントが修正・テスト・反例テスト整理を終えた最終ステップとして `<対象ラウンド>` = `N + 1` で再生成する（プロンプトに内蔵）。**`resumeFromRunId` による同一セットの再開では生成しない**: 再開後のスクリプトは中断時点の `diffRound`（ラウンド進行に応じて前進済み）を保持しており、直前の `dev:fix` が再生成に成功していれば diff.md はすでにその値で一致している。ここで `startRound` で作り直すとスタンプだけが巻き戻り、再生成しなければ起きなかったフォールバックを残りラウンド全員に発生させる（再生成しない場合に diff.md が stale / 不在なら従来どおりスタンプ不一致でフォールバックするため、安全側は保たれる）
+- **鮮度ガード**: 雛形 B は `diffRound`（diff.md が持つはずのスタンプ）を追跡し、各レビュー役のプロンプトに期待値として埋め込む。`dev:fix-r<N>` を起動したら自己申告によらず無条件に `diffRound = N + 1` へ進めるため、再生成漏れは次ラウンドでスタンプ不一致となり、レビュー役が自前の git 取得へフォールバックする（安全側に倒れる）。クリーンラウンド（fix 非実行）ではスタンプを進めないため、確認ラウンドで誤検知しない。`FIX_SCHEMA` の `diffRegenerated` は観測用のログで、判定権はスタンプ側にある
+- **セット跨ぎ**: 継続セットでもオーケストレーターが必ず再生成する。前セット末尾がクリーンラウンドだと fix 由来のスタンプが新しい `startRound` に届かず、再生成しないと継続セット round 1 が必ずフォールバックになる
+- **QA は非依存**: 独立 QA（雛形 B の最終 QA・雛形 A の QA・雛形 E）は開発者の自己申告を信用しない役割のため、diff.md を使わず自分で git を実行する。雛形 A（実装フェーズ）・雛形 C / D も従来どおり diff.md を使わない
+- **実コード照合は不変**: diff.md は「どこを見るか」の入力にすぎない。レビュー役が該当ファイルを Read し周辺を grep して実コードと照合する義務は従来どおり（未追跡ファイルの内容と、生成後に作られた `.breaker-probe.` 反例テストはスナップショットに含まれないため、必ず直接読む）
+- スクリプトは読み取り専用の git のみを使い（インデックス・作業ツリーを変更しない ＝ レビュー対象を汚さない）、base ref を検証してから一時ファイル経由で `mv` する（途中失敗で「新しいスタンプ付きの不完全な diff.md」を残さない）。ref を解決できなければ非ゼロ終了し、既存の diff.md はそのまま残す
 
 ## 雛形 A: 実装フェーズ（sir-implement）
 
@@ -271,7 +291,18 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
-const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
+const diffPath = args.workDir + '/diff.md'
+
+// diff 正本の鮮度ガード用スタンプ期待値。オーケストレーターがセット起動前に startRound で生成し、dev:fix を起動するたびに +1 する
+// （エージェントの自己申告に依存しない fail-safe。再生成漏れは次ラウンドで不一致となり、各レビュー役が自前の git 取得へフォールバックする）
+let diffRound = args.startRound
+
+const diffNote = (expected, targeted) => `レビュー対象は現在ブランチ ${args.branch} の変更全体で、その diff は正本ファイル ${diffPath}（origin/${args.defaultBranch}...HEAD のコミット済み diff + 未コミット変更のスナップショット）に用意されている。Read で読み、自分で git を実行して取り直さない。
+- 鮮度の確認: ヘッダの「対象ラウンド」が ${expected} であること
+- フォールバック: ファイルが無い / 対象ラウンドが ${expected} と異なる / 前ラウンドの採用修正が反映されておらず明らかに不整合、のいずれかのときだけ、自分で git diff origin/${args.defaultBranch}...HEAD と git status / git diff HEAD を実行して取得する（ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。未コミット変更は staged 済みのものを落とさないよう引数なしの git diff ではなく git diff HEAD を使う ＝ 正本 diff.md と同じ範囲）
+- 読み方: ${targeted ? '先頭のヘッダと変更ファイル一覧（--stat）をまず読み、以降は担当バッチの反例 evidence が指すファイル / 行に対応する箇所だけを offset を指定して読む（全文は通読しない。裁定は evidence 限定照合で足りる）' : '長いファイルなので Read が truncate されたら offset を進めて全文を読む'}
+- スナップショットに含まれないもの: 未追跡ファイルの内容と、生成後に作られたファイル（Breaker の .breaker-probe. 反例テスト等）。これらはリポジトリから直接 Read する
+- diff.md は「どこを見るか」の入力にすぎない。判断根拠はリポジトリの実コードであり、該当ファイルの Read と周辺の grep による照合は従来どおり必須（diff の抜粋だけで判断しない）`
 
 const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
 const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
@@ -305,7 +336,7 @@ const FINDINGS_SCHEMA = {
 
 const FIX_SCHEMA = {
   type: 'object',
-  required: ['adopted', 'rejected', 'testsPassed', 'nowJst'],
+  required: ['adopted', 'rejected', 'testsPassed', 'diffRegenerated', 'nowJst'],
   properties: {
     adopted: {
       type: 'array',
@@ -316,6 +347,7 @@ const FIX_SCHEMA = {
       items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
     },
     testsPassed: { type: 'boolean' },
+    diffRegenerated: { type: 'boolean', description: 'レビュー正本 diff.md の再生成（gen-diff.sh）に成功したか。鮮度ガードの判定はスクリプト側のスタンプで行うため動作は変えないが、劣化の観測値として返却の diffDegraded へ伝播する（必須。判定に使わないからといって省略しない）' },
     notes: { type: 'string' },
     nowJst: NOW_JST_FIELD,
   },
@@ -423,7 +455,8 @@ const REVIEWER_ALL = { id: 'all', label: '全観点', solo: true, aspects: REVIE
 const reviewerGroupPrompt = (round, group, delta) => `あなたは GitHub Issue #${args.issueNumber} 対応の実装コードのレビュワー${group.solo ? '' : `（観点グループ ${group.id}: ${group.label}）`}である。実装には関与していない独立の立場から、${group.solo ? '全観点を横断して' : '担当グループの観点に絞って'}修正価値のある欠陥のみを指摘する。
 ## 入力
 1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. ${diffNote}（ラウンド ${round}）
+2. レビュー対象（ラウンド ${round}）
+${diffNote(diffRound)}
 ${prior()}${delta}
 ## レビュー観点${group.solo ? '（全 9 観点を横断する）' : `（担当グループ ${group.id} に集中する。他グループの観点は別レビュワーが担当するため深追いしない）`}
 ${group.aspects}
@@ -439,7 +472,8 @@ ${TIME_NOTE}`
 const breakerLensPrompt = (round, lens, delta, isAuditRound) => `あなたは Breaker${lens.solo ? '' : `（レンズ ${lens.id}: ${lens.label}）`}である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。${lens.solo ? '全攻撃観点を横断して' : '担当レンズの観点に絞って'}反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
 ## 入力
 1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. ${diffNote}（ラウンド ${round}）
+2. レビュー対象（ラウンド ${round}）
+${diffNote(diffRound)}
 ${prior()}${delta}${isAuditRound ? `\n## セキュリティ監査（このラウンドで break の前に実施する）\nSTRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙し、${args.workDir}/security-audit.md に書き出してから下記のセキュリティ観点で break する。自動発動の理由: ${args.securityReason}。監査を security-audit.md に書き出せたら auditWritten を true、書き出せなかった場合も auditWritten を false にして内蔵セキュリティ観点での break は必ず続行する。\n` : ''}## 攻撃観点${lens.solo ? '（全観点を横断する）' : `（担当レンズ ${lens.id} に集中する。他レンズの観点は別 Breaker が担当するため深追いしない）`}
 ${lens.aspects}
 ## 反例テスト
@@ -454,7 +488,8 @@ ${lens.solo ? '' : `- 全レンズが同一ワークツリーで同時にテス�
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これはラウンド ${round} の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
 ## 入力
 1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. ${diffNote}（ラウンド ${round}）
+2. レビュー対象（ラウンド ${round}）
+${diffNote(diffRound, true)}
 3. このバッチで裁定する反例（これ以外は扱わない）:
 ${JSON.stringify(batch, null, 2)}
 ${prior()}
@@ -486,11 +521,14 @@ ${JSON.stringify(items, null, 2)}
 3. 採用指摘を修正し、関連スコープのテストを再実行する（壊れたまま終えない）
 4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換（リネーム・配置換え）し、それ以外は削除する
 5. ${notes} を更新する
+6. 最終ステップ（修正・テスト・反例テストの整理がすべて終わった後に実行する）: 次ラウンドのレビュー正本 diff.md を再生成する
+   bash ${args.workDir}/gen-diff.sh origin/${args.defaultBranch} ${round + 1}
+   成功したら diffRegenerated を true、スクリプトが無い / 非ゼロ終了なら false にして返す（false のとき次ラウンドのレビュー役は自前の git 取得へフォールバックする）。diff.md を手で編集しない
 制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`
 
 const qaPrompt = () => `あなたは独立 QA エージェントである。レビューループ収束後・コミット前の最終検証を行う。
 1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
-2. ${diffNote}
+2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff HEAD で見える未コミット変更（staged 済みの変更を落とさないよう引数なしの git diff ではなく git diff HEAD を使う。開発者が生成した ${diffPath} は使わない。自己申告を信用しない独立検証のため、diff は自分で取得する）
 3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する
 4. Issue の受け入れ基準を 1 件ずつ検証する
 5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
@@ -505,6 +543,7 @@ let status = 'ok'
 let judgeDegraded = false
 let breakerDegraded = false
 let reviewerDegraded = false
+let diffDegraded = false
 let cleanStreak = args.cleanStreak || 0
 const specQuestions = []
 
@@ -571,8 +610,12 @@ for (let i = 0; i < 3; i++) {
     clean = true
   } else {
     const fix = await agent(fixPrompt(round, trueDefects), { label: `dev:fix-r${round}`, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
+    // fix を起動した時点で diff.md は次ラウンド用に再生成されているべき。成否・自己申告によらず期待スタンプを進める
+    // （再生成漏れは次ラウンドでスタンプ不一致となり、各レビュー役が自前の git 取得へフォールバックする ＝ 安全側）
+    diffRound = round + 1
     if (fix === null) { status = 'agent-failed'; break }
     log(`[${fix.nowJst} JST] dev fix r${round} 完了（採用${fix.adopted.length}件）`)
+    if (fix.diffRegenerated === false) { diffDegraded = true; log(`dev fix r${round}: diff.md の再生成に失敗（次ラウンドのレビュー役は自前の git 取得へフォールバックする）`) }
     records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length, adoptedItems: fix.adopted })
     if (!fix.testsPassed) { status = 'tests-failing'; break }
     if (fix.adopted.length === 0) clean = true
@@ -598,7 +641,7 @@ if (converged) {
 
 // 仕様未定は確認ラウンド（未変更コードの再レビュー）等で同一項目が再収集されうるため、返却前に title で重複排除する（確認ラウンドで新規に見つかった仕様確認は保持し、完全な重複のみ除く）
 const uniqueSpecQuestions = specQuestions.filter((q, i) => specQuestions.findIndex((o) => o.title === q.title) === i)
-return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions, auditFailed, judgeDegraded, breakerDegraded, reviewerDegraded, cleanStreak }
+return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions, auditFailed, judgeDegraded, breakerDegraded, reviewerDegraded, diffDegraded, cleanStreak }
 ```
 
 返却の扱い:
@@ -610,8 +653,9 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 - `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O のいずれか）が失敗し、その観点の反例が生成されないまま収束扱いになった。未探索の攻撃観点が残り、`finalQa`（テスト・受け入れ基準の検証）は当該クラスの欠陥をバックストップしない。完了報告に明記し、自動コミット前にユーザーへ確認する（`auditFailed` / `judgeDegraded` と同型の劣化伝播）
 - `reviewerDegraded: true` → 標準モードで一部のレビュワー観点グループ（G1/G2/G3 のいずれか）が失敗し、その観点の指摘が生成されないまま収束扱いになった。未探索のレビュー観点が残り、`finalQa`（テスト・受け入れ基準の検証）は当該クラスの欠陥をバックストップしない。完了報告に明記し、自動コミット前にユーザーへ確認する（`breakerDegraded` と同型の劣化伝播）
 - `judgeDegraded: true` → 一部の Judge バッチが失敗し、その反例（最大 4 件/バッチ）が未裁定のまま収束扱いになった。`finalQa` はテスト・受け入れ基準の検証で、敵対レビューが対象とする設計・保守・可用性クラスの未裁定欠陥はバックストップしない。完了報告に明記し、自動コミット前にユーザーへ確認する（`auditFailed` と同型の劣化伝播）
+- `diffDegraded: true` → 開発者エージェントがレビュー正本 `diff.md` の再生成に失敗し、以降のラウンドのレビュー役が自前の git 取得へフォールバックした。トークン最適化の劣化であり走査範囲・レビュー品質は従来動作に戻るだけなので、他の `*Degraded` と違って自動コミットは止めない。完了報告に明記する（`docs/empirical-tuning/review-loop-speedup.md` のフォールバック発生回数の採取源でもある）
 - `status: 'tests-failing'` → テストが壊れたままなので状況を提示して相談（そのまま次セットへ進まない）
-- `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
+- `status: 'agent-failed'` → 1 回だけ `resumeFromRunId` で再開（**再開前に diff.md を作り直さない** — 上記「レビュー正本 diff.md」の生成責務）、それでも失敗なら「フォールバック」（claude 系）へ。`converged: true` で `finalQa` が取得できなかった場合は、雛形 E を単発起動して最終 QA を補完する（QA 未実施のまま自動コミットしない）
 
 > **同期ノート**: 雛形 B（`sir-claude-review-set`）の構造は `smart-issue-plan/references/agent-orchestration.md` の計画レビューセット雛形（`sip-plan-review-set`）へ移植済み。次を**両者で同期する**（片方の構造を変えたら両方更新すること）:
 > - セット制御（`startRound` / `priorSummary` / `cleanStreak` / `records`）・収束判定・null ガード・`auditFailed` / `specQuestions` / `judgeDegraded` / `breakerDegraded` / `reviewerDegraded` の経路
@@ -627,7 +671,9 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 >
 > **probe 命名の不変条件（resolve のみ・硬い制約）**: レンズ Breaker は反例テストを同一ワークツリーに書くため、レンズ固有トークン（`sec-` / `corr-` / `ops-`、単発ラウンドは `all-`）を **`.breaker-probe.` の外側（前方セグメント）** に付け、`.breaker-probe.` を部分文字列として必ず保持する（例: `sec-foo.breaker-probe.test.ts`）。probe-cleanup・QA・fix は `.breaker-probe.` のサブストリング一致で検出するため、トークンを `.breaker-probe.` の**間へ挟む**（`.breaker-probe-sec.`）と検出漏れ→使い捨てテスト残留を招く。
 >
-> **claude / codex 系の非対称**: 雛形 C（`sir-codex-breaker`）の Breaker はレンズ分割せず単発のまま（Codex 利用制限中のため本 Issue では現状維持）。claude 系だけがレンズ分割・差分スコープ化される非対称を許容する。
+> **diff 正本ファイル化は雛形 B 専用（sip へ持ち込まない）**: `{作業Dir}/diff.md`（`assets/gen-diff.sh` で生成）・スタンプによる鮮度ガード（`diffRound`）・fix エージェントのラウンド境界での再生成は、レビュー対象が git diff であることに依存する**コード専用機構**である。plan 側はレビュー対象が `plan.md` で既にファイル正本のため移植しない（sip 側の同期ノート「同期しないもの」に記載済み）。単体スキル `code-reviewer` / `code-reviewer-adversarial` は `{作業Dir}` 機構を持たないため対象外（Issue #115）。
+>
+> **claude / codex 系の非対称**: 雛形 C（`sir-codex-breaker`）の Breaker はレンズ分割せず単発のまま（Codex 利用制限中のため本 Issue では現状維持）。claude 系だけがレンズ分割・差分スコープ化・diff 正本ファイル化される非対称を許容する。
 >
 > また、雛形 B の `reviewerGroupPrompt` / `breakerLensPrompt` / `judgeBatchPrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。攻撃観点（レンズの union で表現される内容）・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も同期する（レンズ分割・差分スコープ・バッチ並列化は resolve/plan 間の構造同期で、攻撃観点・裁定基準の内容を変えないため単体スキルへの内容同期は不要。cra の Judge バッチ並列化 + miss-finder 分離は cra 側で別途実装）。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
 

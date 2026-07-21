@@ -26,12 +26,12 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
 
 | 役割 | 実行主体 | model / effort | 責務 |
 |------|---------|----------------|------|
-| オーケストレーター | メインセッション | セッション設定 | 手順 1〜5 の対話、context.md の作成、Workflow 起動、ループ制御と 3 ラウンドごとの確認、コミット・PR |
+| オーケストレーター | メインセッション | セッション設定 | 手順 1〜5 の対話、context.md の作成、claude 系レビューセット起動前の diff.md 生成、Workflow 起動、ループ制御と 3 ラウンドごとの確認、コミット・PR |
 | 設計役 | Workflow エージェント | opus / max | 計画が無い・粗い場合の設計方針確定。実装後の設計整合・保守性・可用性レビューを兼任 |
-| 開発者 | Workflow エージェント | opus / max | 手順 6 の実装フロー。レビュー指摘の採用 / 不採用判定と修正（レビュイー） |
-| 独立 QA | Workflow エージェント | sonnet / high | 開発者の自己申告に依存しないテスト・lint の独立実行と受け入れ基準検証。自動コミット前の最終ゲート |
-| レビュワー（claude 標準） | Workflow エージェント | opus / max | diff レビュー（codex 標準と同一観点。包括ラウンド〔初回セット round 1〕のみ観点を G1/G2/G3 の 3 グループに分割し並列起動、以降のラウンドは単発 1 体〔全 9 観点横断〕） |
-| Breaker / Judge（敵対） | Workflow エージェント | opus / max（Judge バッチのみ high。codex 系 Breaker〔雛形 C〕のみ sonnet / max） | 反例生成（Breaker・max。claude 系は包括ラウンドのみ攻撃観点を S/C/O の 3 レンズに分割し並列起動、以降は単発 1 体）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立 |
+| 開発者 | Workflow エージェント | opus / max | 手順 6 の実装フロー。レビュー指摘の採用 / 不採用判定と修正（レビュイー）。claude 系ではラウンド境界で diff.md を再生成 |
+| 独立 QA | Workflow エージェント | sonnet / high | 開発者の自己申告に依存しないテスト・lint の独立実行と受け入れ基準検証。自動コミット前の最終ゲート（diff.md に依存せず自分で git を実行する） |
+| レビュワー（claude 標準） | Workflow エージェント | opus / max | diff レビュー（codex 標準と同一観点。包括ラウンド〔初回セット round 1〕のみ観点を G1/G2/G3 の 3 グループに分割し並列起動、以降のラウンドは単発 1 体〔全 9 観点横断〕。diff は正本ファイル `{作業Dir}/diff.md` を読む） |
+| Breaker / Judge（敵対） | Workflow エージェント | opus / max（Judge バッチのみ high。codex 系 Breaker〔雛形 C〕のみ sonnet / max） | 反例生成（Breaker・max。claude 系は包括ラウンドのみ攻撃観点を S/C/O の 3 レンズに分割し並列起動、以降は単発 1 体）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立（claude 系の diff は `{作業Dir}/diff.md` を読む） |
 | セキュリティ監査役 | Workflow エージェント | opus / max（codex 系〔雛形 C〕のみ sonnet / max） | セキュリティ自動発動時に STRIDE・認可・データフローの観点を敵対的レビューへ注入（claude 系〔雛形 B〕はレンズ S の Breaker に統合され初回ラウンドで監査を内蔵実施・codex 系〔雛形 C〕は独立エージェント） |
 | レビュワー / Judge（codex 系） | codex:rescue | -（別系統モデル） | Codex によるレビュー・裁定（従来どおり） |
 
@@ -159,7 +159,7 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
    - リポジトリ内のコーディングルール集を Glob で探索する（`**/rules/*.md`・`**/guidelines/*.md`・`docs/` 配下の規約など）。Issue・変更予定ファイルのドメインに関連するものだけを Read する（例: `ddd-*` / `*architecture*` / `db-*` / `api-*` / `performance*` / `test-coverage*` / `security*`）
    - 参照した実装計画（手順 2）の「依拠した前提」が指す基準
    - 見つからなければ「なし」として進める（degradation）
-2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない）
+2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない）。あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
 3. **context.md の書き出し** — 雛形の書式で `{作業Dir}/context.md` を書く（Issue 要件・実装計画要約・`-p` 指示・ブランチ / diff 基準・テスト方針・プロジェクト固有基準）。テスト方針には関連スコープの実行コマンドを具体化して書く。テストが特定できない / フレームワークが不明な場合は、手動確認方針（再現手順・確認すべき画面や API レスポンス等）をユーザーに提示・合意してから書く
 4. **ゲート** — `{作業Dir}/context.md` が存在しない場合は Workflow を起動しない（作成に戻る）
 5. **実装 Workflow の起動** — 雛形 A（sir-implement）を起動する。`needDesign` は「計画が無い、または計画の実装手順が具体ファイルに落ちていない」場合に true。内部フロー: 設計役（条件付き）→ 開発者 → 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 開発者の採用判定・反映 → QA 再確認
@@ -253,7 +253,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 **実行形態**:
 
-- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。オーケストレーターは返却（`converged` / `records` / `specQuestions` / `cleanStreak`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させるため）
+- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。**新規セットを起動する直前に必ず `bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <startRound>` を実行してレビュー正本 `{作業Dir}/diff.md` を生成する**（初回セット・継続セットのいずれも。生成しないとそのセットの round 1 でレビュー役が全員 git フォールバックに落ちる。ただし `resumeFromRunId` による同一セットの再開では生成しない — 再開後のスクリプトは進行済みの期待スタンプを保持しており、作り直すとスタンプが巻き戻って残りラウンドが不要にフォールバックする）。オーケストレーターは返却（`converged` / `records` / `specQuestions` / `cleanStreak`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させるため。再起動前の diff.md 再生成も忘れない）
 - **codex 系** — オーケストレーターがラウンド単位で回す。レビュー・裁定は Skill ツールで `codex:rescue` を呼び（従来どおり）、敵対の Breaker は雛形 C、修正は雛形 D で行う。敵対の裁定に「仕様未定」が含まれる場合は、雛形 D に渡す前にオーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を context.md（追加指示）へ追記する。雛形 D の起動前に、レビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出す（標準: Codex の指摘全件、敵対: 裁定の真の欠陥 + 確定した仕様未定。要約・取捨選択をしない。物理ゲート: このファイルが無ければ起動しない）
 
 #### 標準モード（codex 系: --codex-review-loop）
@@ -273,6 +273,8 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 #### claude 系（--claude-review-loop / --claude-adv-review-loop）
 
 雛形 B（sir-claude-review-set）で実行する。標準モードは Opus（effort max）のレビュワーエージェントが diff をレビューする（観点は codex 標準と同一・union は不変）。**包括ラウンド（初回セット round 1）のみ**、観点を **G1（仕様充足 / バグ / テストカバレッジ）/ G2（回帰 / データ整合性・性能 / 実装レベルの危険箇所）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワー**として起動し、差分スコープのラウンド 2+ と確認ラウンドは**単発 1 体（全 9 観点横断）**で実施する（敵対 Breaker のレンズ分割と同型。グループ間の重複指摘は開発者の採用判定で統合する。一部グループ失敗は `reviewerDegraded` フラグで伝播。Issue #113: トークン・ストール露出の抑制）。敵対的モードは Breaker（Opus / effort max）× Judge（**別の** Opus / effort high）の二者構造で、Breaker は**包括ラウンドのみ**攻撃観点を **S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント**として起動し、以降のラウンドは単発 1 体（全攻撃観点横断）で実施する（観点の union は従来の単一 Breaker と同一で内容は不変。一部レンズ失敗は `breakerDegraded` フラグで伝播）。Judge は全レンズの反例を集約し ≤4 件/バッチに分割して並列に裁定する（各 Judge の作業量を有界にし、単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。裁定基準は codex Judge と同等（4 分類・「4 点に答えられるものだけを真の欠陥とする」防御基準）。収束は **dry-twice**（「指摘 0 / 採用 0」のクリーンなラウンドが連続 2 回で確定。1 回目クリーン後の確認ラウンドは差分スコープを解除したフルスコープで揺らぎ由来の見逃しを拾う）。ラウンド 2 以降の Breaker / レビュワーは直前ラウンドの採用修正差分とその波及範囲を重点対象にする（差分スコープ化。ラウンド 1 と確認ラウンドは全 diff の包括レビューで、重点付けであって抑制ではない）。
+
+レビュー役（レビュワー / Breaker / Judge）は diff を自分で取得せず、レビュー正本 `{作業Dir}/diff.md` を Read する（各エージェントの `git diff` / `git status` 重複実行を排す。読む範囲はレビュワー / Breaker が全文、Judge は変更ファイル一覧 + 担当バッチの evidence が指す箇所のみ — Judge の有界作業量設計を崩さないため）。生成はオーケストレーター（**新規セットの起動前**・`<対象ラウンド>` = `startRound`。`resumeFromRunId` による同一セット再開時は生成しない）と開発者エージェント（ラウンド境界・`<対象ラウンド>` = 次ラウンド）が `gen-diff.sh` で行う。鮮度ガードとして各レビュープロンプトに期待スタンプ（`対象ラウンド`）を埋め込み、**不一致・ファイル不在・明らかな不整合のときだけ**自前の git 取得へフォールバックさせる（開発者の再生成漏れは安全側に倒れる。再生成失敗は返却の `diffDegraded` で伝播し、完了報告に明記する — 従来動作へ戻るだけなので自動コミットは止めない）。リポジトリ実コードとの照合（該当ファイルの Read・周辺 grep）は従来どおり必須で、diff の抜粋だけで判断させない。**独立 QA は diff.md を使わず自分で git を実行する**（レビュイーの生成物に最終ゲートを依存させない trust model の維持）。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の「レビュー正本 diff.md」。
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
 
