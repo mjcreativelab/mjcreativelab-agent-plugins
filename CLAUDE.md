@@ -112,6 +112,7 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   smart-git-sync/                # ブランチ同期・整理
   smart-issue-resolve/           # Issue からブランチ作成〜実装（役割別エージェントのオーケストレーション + レビューループ）
   smart-issue-plan/              # Issue の実装計画を作成・更新
+  smart-spec-to-pr/              # 要件明確化 → spec 承認 → Issue 起票 → 既存スキル連鎖 → PR 作成の薄い conductor（半自動ハンドオフ・デプロイはスコープ外）
   smart-review/                  # ローカル変更のセルフレビュー
   smart-review-apply/            # レビューフィードバックの適用
   # スキル品質改善・環境構成レビュー
@@ -275,6 +276,7 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
   - `code-reviewer/references/agent-orchestration.md` — `--isolated` の単発隔離レビュー（`cr-isolated-review`）
   - `code-reviewer-adversarial/references/agent-orchestration.md` — `--claude-judge` の Breaker×Judge（`cra-claude-judge`。Judge は ≤4 件/バッチ並列 + miss-finder〔見落とし探索〕分離。Breaker はレンズ分割しない）
   各 SKILL.md にも同期ノートを内蔵している（本項がマスター）。攻撃観点・レビュー観点の**内容**を変えるときは 4 スキルすべてを同期する。レンズ分割・差分スコープ化・Judge バッチ並列化・miss-finder 分離（Issue #107）、**標準レビュワーのグループ分割（`REVIEWER_GROUPS` の G1/G2/G3）・dry-twice 収束（連続 2 クリーンラウンド・`cleanStreak` 引き継ぎ）・レビュー役の opus 化（Issue #111）**、**分割並列の包括ラウンド限定化（初回セット round 1 のみ分割、以降は `REVIEWER_ALL` / `LENS_ALL`〔分割定義の aspects 結合で union 不変を構造的に保証〕の単発 1 体）・Judge バッチの effort high 戻し（Issue #113）**、**diff 正本ファイル化（レビュー役が `{作業Dir}/diff.md` を Read・生成は `assets/gen-diff.sh`・期待スタンプ `diffRound` の鮮度ガード・fix のラウンド境界再生成。Issue #115）**は**構造**の変更で、内容同期の対象ではない（構造の同期対象は resolve 雛形 B ↔ sip の 2 者。**ただし diff 正本ファイル化は構造同期の例外＝ resolve 雛形 B 限定のコード専用機構で、sip〔レビュー対象が `plan.md` で既にファイル正本〕・cr / cra〔`{作業Dir}` 機構を持たない〕へは持ち込まない**。cra/cr は単発でグループ分割・dry-twice を持たず opus 化と Judge バッチ effort high〔cra のみ〕を適用。probe 命名はレンズ固有トークン〔`sec-` / `corr-` / `ops-`・単発ラウンドは `all-`〕を `.breaker-probe.` の**前方外側**に付け、サブストリング `.breaker-probe.` を必ず保持する）。
+- **smart-spec-to-pr のレビューループフラグ転送語彙（結合のみ）**: `smart-spec-to-pr` は `smart-issue-resolve` のレビューループフラグ名（`--claude-review-loop` / `-cldrl`・`--claude-adv-review-loop` / `-cldarl`・`--codex-review-loop` / `-cdxrl`・`--codex-advs-review-loop` / `-cdxarl`）を**転送語彙**として参照している（SKILL.md「引数の解析」・references/pipeline.md「Phase 3b」・README.md「オプション」の 3 箇所）。`smart-issue-resolve` 側でフラグ名を変更したら `smart-spec-to-pr` の転送語彙も更新すること。ただし優先順位・セキュリティ自動昇格の解決ロジックは複製していない（レビュープロンプト二重化のようなフル同期対象ではなく、**フラグ名の結合のみ**）
 - **tech-doc-structuring の Deliberation（決定経緯）の分散**: 節名 `## Deliberation（決定に至る経緯）`・時系列ダイジェスト形式（`- YYYY-MM-DD 参加者: 要点と帰結`）・切り出し先命名 `NNNN-<スラグ>-deliberation.md` は SKILL.md・assets/adr-template.md・references/doc-types.md・restructuring-rules.md・deliberation-sources.md・README.md に分散して記載されている。いずれかを変更したら全ファイルを同期すること
 - **Workflow サブエージェントは互いにコンテキストを共有できない**: 共有素材（context・diff）はインライン埋め込みでもファイル読みでも「エージェント数 × 内容」のトークンを消費する（渡し方では減らない。削減の主レバーはエージェント数 — Issue #113 の包括ラウンド限定化）。共有素材の受け渡しは `{作業Dir}`（`mktemp -d` の OS 一時領域。実行単位の名前空間分離・リポジトリ作業ツリー外でレビュー対象 diff を汚さない・削除は OS 任せ）のファイル正本で行う（Issue #115 の diff.md 正本化はこの原則の適用）
 - レビュー雛形の速度・精度チューニングは `docs/empirical-tuning/review-loop-speedup.md` が実測台帳（#107 高速化 → #111 精度優先 → #113 再バランス → #115 diff 正本化の経緯・ストール実測・診断を記録）。雛形の性能特性を変える変更や dogfooding 実測はここへ追記する
