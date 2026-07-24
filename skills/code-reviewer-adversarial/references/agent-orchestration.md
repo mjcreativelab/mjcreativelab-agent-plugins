@@ -9,14 +9,15 @@ code-reviewer-adversarial の `--claude-judge` モード（および Codex 不�
 - スクリプトはこの雛形を**そのまま** `script`（または本ファイルから抽出した `scriptPath`）に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
-- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`log()` で開始日時・進捗・裁定結果を可視化する。開始日時はオーケストレーターが起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測して `args.startedAt` で渡し（省略可・ログ表示専用で `agent()` プロンプトへは埋め込まない — resume のキャッシュ一致を保つ）、各 `agent()` はプロンプト末尾の指示（`TAIL_NOTE`）で同フォーマットの時刻を実行して構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプトは完了ログに使うほか、直近値を `lastJst` に保持して Judge 起動などの開始ログに使う（`parallel()` バッチは各結果の `nowJst` の最大値を完了時刻とする）。裁定完了時には真の欠陥 / 仕様未定 / 除外の内訳と各指摘のタイトルを `log()` で出力する（件数上限つき）
+- **プロンプトは英語・出力は日本語**: `agent()` に渡すプロンプト本文・スキーマ `description` は英語で記述する（指示追従の精度向上）。ユーザーが読む内容 — 構造化出力の中身（反例・指摘のタイトル / detail 等）・`log()` 文字列・`meta`・カテゴリ enum 値（`真の欠陥` / `仕様未定` / `低優先度` / `ノイズ`）— は日本語のまま（`TAIL_NOTE` が日本語出力を指示する）
 - Phase 3（最終出力）・Phase 4（PR 投稿ゲート）はオーケストレーター（メインセッション）が担う。エージェントは裁定結果を返すだけで、投稿・コミットはしない
 - **単発**（ループ・収束判定・上限チェックは持たない）
 
 ## 雛形: claude-judge 単発敵対レビュー（cra-claude-judge）
 
-`args`: `{ target, diffBase, testCmd, focus }`
-（`target`: レビュー対象の識別子〔PR 番号 / ブランチ名 / `ref..ref` / パス / "未コミット変更"〕。`diffBase`: diff の取り方の説明。`testCmd`: 反例テスト実行コマンド。空文字なら「記述のみモード」〔反例テストは書くが実行しない〕。`focus`: 追加の重点観点〔Breaker に注入〕。無ければ空文字）
+`args`: `{ target, diffBase, testCmd, focus, startedAt }`
+（`target`: レビュー対象の識別子〔PR 番号 / ブランチ名 / `ref..ref` / パス / "未コミット変更"〕。`diffBase`: diff の取り方の説明。`testCmd`: 反例テスト実行コマンド。空文字なら「記述のみモード」〔反例テストは書くが実行しない〕。`focus`: 追加の重点観点〔Breaker に注入〕。無ければ空文字。`startedAt`: 起動直前に実測した開始日時〔開始ログ表示専用・省略可〕）
 
 ```js
 export const meta = {
@@ -31,13 +32,15 @@ export const meta = {
 // args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
 args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
+let lastJst = args.startedAt || ''
 
-const target = `レビュー対象: ${args.target}。diff の取得: ${args.diffBase}（これに従って変更ファイル・行・hunk を自分で特定する。PR 対象なら GitHub MCP で diff を取得。大きい場合は diff テキストと変更ファイルリストのみ保持する）。`
+const target = `Review target: ${args.target}. Diff acquisition: ${args.diffBase} (identify the changed files, lines, and hunks yourself accordingly; for a PR target, fetch the diff via GitHub MCP; if large, keep only the diff text and the changed-file list).`
 const testNote = args.testCmd
-  ? `反例テストは ${args.testCmd} で実行して検証する。`
-  : `テストランナー未確定のため「記述のみモード」: 反例テストは書くが実行はしない（未実行の仮説は verified: UNVERIFIED とする）。`
+  ? `Run probe tests with ${args.testCmd} to verify them.`
+  : `The test runner is undetermined, so this is describe-only mode: write probe tests but do not run them (mark unrun hypotheses verified: UNVERIFIED).`
 
 const BREAK_SCHEMA = {
   type: 'object',
@@ -50,9 +53,9 @@ const BREAK_SCHEMA = {
         required: ['title', 'scenario', 'verified'],
         properties: {
           title: { type: 'string' },
-          scenario: { type: 'string', description: '反例・攻撃シナリオ・不変条件違反の内容' },
-          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'], description: 'fail=反例テストで検証済み / UNVERIFIED=実行で確認できない仮説' },
-          evidence: { type: 'string', description: 'ファイルパス・行・テスト実行結果など' },
+          scenario: { type: 'string', description: 'The counterexample, attack scenario, or invariant violation' },
+          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'], description: 'fail = verified by a probe test / UNVERIFIED = hypothesis that could not be verified by execution' },
+          evidence: { type: 'string', description: 'File path, line, test execution results, etc.' },
         },
       },
     },
@@ -73,95 +76,101 @@ const FINDINGS_SCHEMA = {
           title: { type: 'string' },
           category: { type: 'string', enum: ['真の欠陥', '仕様未定'] },
           severity: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-          basis: { type: 'string', description: 'ファイルパス・行番号など一次情報' },
+          basis: { type: 'string', description: 'Primary evidence such as file path and line numbers' },
           detail: { type: 'string' },
-          fix: { type: 'string', description: 'リスクを下げる具体策（真の欠陥に付ける）' },
+          fix: { type: 'string', description: 'A concrete mitigation (attach to 真の欠陥 findings)' },
         },
       },
     },
     dismissed: {
       type: 'array',
       items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
-      description: '採用対象外（監査性のため件数とタイトルのみ残す）',
+      description: 'Not adopted (keep only count and title for auditability)',
     },
     nowJst: NOW_JST_FIELD,
   },
 }
 
-const breaker = await agent(`あなたは Breaker である。実装コードを「読む」のではなく「壊す」。反例・攻撃シナリオ・不変条件違反を列挙する。会話・実装の文脈を持たない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
-## 入力
+log(`${ts(lastJst)}claude-judge 敵対レビュー開始（対象: ${args.target}）`)
+
+const breaker = await agent(`You are a Breaker. Do not merely read the implemented code — break it. Enumerate counterexamples, attack scenarios, and invariant violations. Stay independent, without the conversational / implementation context, and default to skepticism: treat implementations that only hold on the happy path as real weaknesses, and grant no credit to good intentions, partial fixes, or promises of follow-up work.
+## Input
 1. ${target}
-2. 関連する要件・仕様・設計意図があれば Issue / ADR / ドキュメントで確認する
-${args.focus ? `\n## 重点観点（優先的に攻撃する）\n${args.focus}\n` : ''}## 攻撃観点（横断する）
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出・Confused Deputy
-- 仕様: 受け入れ基準未充足・契約違反（入出力・事前事後条件）・後方互換性破壊・version skew / スキーマドリフト
-- 回帰: 既存挙動・呼び出し元の破壊
-- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
-- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
-- アーキテクチャ: レイヤー責務の逸脱・境界侵犯・未検証の実行パス
-## 反例テスト
-- 可能な仮説は最小 failing テストとして書く。テストファイル名には必ず .breaker-probe. を含める（例: foo.breaker-probe.test.ts）。${testNote}
-- pass した仮説は破棄し、その反例テストは自分で削除して終える。fail した仮説は検証済み反例（verified: fail）として、テストをツリーに残したまま報告する
-- 実行で確認できない仮説は verified: UNVERIFIED とする
-## 制約
-- 反例テスト以外のコード変更をしない。コミット・push はしない
-- 「良いコード」「可読性」系は出さない（このスキルの対象外）
-- 反証不能な指摘は verified: UNVERIFIED とし、Judge がノイズとして切る前提で確信度を低く扱う
-最終出力: counterexamples に反例リスト（重複統合・カテゴリ分類はしない。それは Judge の役割）。${TIME_NOTE}`,
+2. If related requirements, specs, or design intent exist, check them via Issues / ADRs / documents.
+${args.focus ? `\n## Focus aspects (attack these with priority)\n${args.focus}\n` : ''}## Attack aspects (cover all)
+- Security: authorization bypass, injection, secret leakage, TOCTOU, PII exposure, confused deputy
+- Spec: unmet acceptance criteria, contract violations (inputs / outputs, pre / postconditions), backward-compatibility breakage, version skew / schema drift
+- Regression: breaking existing behavior or callers
+- Operations, maintainability, availability: missing observability, fragile deploy / rollback, excessive coupling, missing timeouts / retries, behavior on failure or dependency degradation, resource exhaustion, single points of failure
+- Data integrity & performance: transaction boundaries, atomicity, idempotency (double execution), broken concurrent updates, partial failure, reentrancy, irreversible state changes, N+1 or excessive I/O, computational complexity
+- Architecture: layer-responsibility violations, boundary intrusion, unverified execution paths
+## Probe tests
+- Where possible, write each hypothesis as a minimal failing test. The test filename must contain .breaker-probe. (e.g. foo.breaker-probe.test.ts). ${testNote}
+- Discard hypotheses whose test passes, and delete those probe tests yourself before finishing. Report hypotheses whose test fails as verified counterexamples (verified: fail) and leave the test in the tree.
+- Mark hypotheses that cannot be verified by execution as verified: UNVERIFIED.
+## Constraints
+- No code changes other than probe tests. Do not commit or push.
+- Do not report "good code" or readability findings (out of scope for this skill).
+- Mark unfalsifiable findings verified: UNVERIFIED and treat their confidence as low, expecting the Judge to cut them as noise.
+Final output: put the counterexample list into counterexamples (no dedup or categorization — that is the Judge's role). ${TAIL_NOTE}`,
   { label: 'breaker', phase: 'Break', model: 'opus', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed', at: 'breaker' }
+lastJst = breaker.nowJst || lastJst
 log(`[${breaker.nowJst} JST] breaker 完了（反例${breaker.counterexamples.length}件）`)
+for (const c of breaker.counterexamples.slice(0, 10)) log(`- [${c.verified}] ${c.title}`)
+if (breaker.counterexamples.length > 10) log(`- …他${breaker.counterexamples.length - 10}件`)
 
 // Judge をバッチ並列化（≤4 件/バッチ・effort high・evidence 限定照合・見落とし探索なし）し、Breaker 見落としの独立探索（miss-finder・effort max・diff スコープ・同じ 4 分類で自己分類）を並列の独立エージェントへ分離する。両者をフラット parallel の異種 thunk 群として同時起動する（#88 の no-throw parallel 契約に依存し try/catch で囲まない）
-const judgeBatchPrompt = (batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これは Breaker の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
-## 入力
+const judgeBatchPrompt = (batch, batchNum, batchTotal) => `You are the Judge (adjudicator). Another agent (the Breaker) generated counterexamples / attack scenarios; adjudicate them by checking them against the real code in the repository. Do not defer to the Breaker — judge independently. You were involved in neither the implementation nor the counterexample generation. This is batch ${batchNum}/${batchTotal} of the Breaker counterexamples.
+## Input
 1. ${target}
-2. このバッチで裁定する反例（これ以外は扱わない）:
+2. The counterexamples to adjudicate in this batch (handle no others):
 ${JSON.stringify(batch, null, 2)}
-## 裁定タスク
-各反例を実コードと照合し、次の 4 カテゴリに分類する:
-- 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱として妥当で、修正価値がある
-- 仕様未定: 仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
-- 低優先度: 妥当だが重大度が低く、修正コストに見合わない
-- ノイズ: 反証不能・誤解・的外れ（除外）
-## 照合の限定（着実に進める）
-- 裁定対象は上記インラインのバッチの反例のみ。他バッチの反例は読まない・扱わない
-- 照合は各反例の evidence が指すファイル / 行に限定する。evidence が無い反例は変更範囲とシナリオ本文が名指しする箇所に照合を限定する。いずれの場合も無関係な広域 grep・全サービス横断の探索はしない
-- 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
-- Breaker が見落とした欠陥の独立探索はこのバッチでは行わない（別エージェント〔miss-finder〕が担当するため重複を避ける）
-## 制約
-- 可読性・命名・スタイルは対象外
-- 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
-- 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
-- コード・ファイルを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定し、真の欠陥には fix を付ける）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
-${TIME_NOTE}`
+## Adjudication task
+Check each counterexample against the real code and classify it into exactly one of these 4 categories (use these exact Japanese values for category):
+- 真の欠陥 (true defect): valid as a spec violation, security issue, regression, operations / maintainability / availability problem, data-integrity / performance problem, missing test coverage, or architecture violation — worth fixing.
+- 仕様未定 (spec undecided): the spec is ambiguous and the Breaker made an arbitrary assumption (needs spec confirmation).
+- 低優先度 (low priority): valid but low severity; not worth the fix cost.
+- ノイズ (noise): unfalsifiable, a misunderstanding, or off the mark (excluded).
+## Scoped verification (keep moving steadily)
+- Adjudicate only the inline batch above. Do not read or handle other batches.
+- Limit verification to the files / lines pointed to by each counterexample's evidence. If a counterexample has no evidence, limit verification to the changed range and the places its scenario names. In either case, do not run unrelated wide-area greps or cross-service exploration.
+- Keep tool calls progressing steadily within ~3 minutes (do not stall on a single exploration).
+- Do not independently hunt for defects the Breaker missed in this batch (a separate agent, the miss-finder, does that — avoid duplication).
+## Constraints
+- Readability, naming, and style are out of scope.
+- Classify as 真の欠陥 only counterexamples that can answer all 4 of: (1) what happens, (2) why that code path is vulnerable, (3) the expected impact, (4) a concrete mitigation. Concerns that cannot answer them go to 低優先度 or ノイズ.
+- Prefer a few strong, defensible findings over many weak ones.
+- Do not modify code or files (adjudication only). Do not commit.
+- Put only 真の欠陥 and 仕様未定 into items (set category, and attach fix to 真の欠陥 findings); leave 低優先度 / ノイズ in dismissed with count and title only.
+${TAIL_NOTE}`
 
-const missFinderPrompt = () => `あなたは Judge（裁定者・見落とし探索担当）である。別のエージェント（Breaker）が反例を生成したが、あなたの役割は Breaker が見落とした欠陥を独立に探すことである。あなたは実装にも反例生成にも関与していない。
-## 入力
+const missFinderPrompt = () => `You are the Judge (adjudicator, miss-finding role). Another agent (the Breaker) generated counterexamples, but your role is to independently hunt for defects the Breaker missed. You were involved in neither the implementation nor the counterexample generation.
+## Input
 1. ${target}
-2. Breaker が既に挙げた反例（重複を避けるための参照。これらの再裁定はしない）:
+2. The counterexamples the Breaker already raised (reference for avoiding duplication; do not re-adjudicate them):
 ${JSON.stringify(breaker.counterexamples, null, 2)}
-## タスク
-- 変更セット（diff）にスコープして、Breaker が挙げていない欠陥を独立に探す。見つけた欠陥は Breaker の反例と同じ 4 カテゴリ基準で自己分類する:
-  - 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱として妥当で、修正価値がある
-  - 仕様未定: 仕様が曖昧で、勝手な前提が必要なもの（要仕様確認）
-  - 低優先度 / ノイズ: 上記に満たないもの
-## 探索の限定（ストール回避）
-- 探索は変更セット（diff）の範囲に限定する。無関係な広域 grep・全サービス横断の探索はしない
-- 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
-- 既に Breaker が挙げた反例は再掲しない（新規の見落としのみ）
-## 制約
-- 可読性・命名・スタイルは対象外
-- 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
-- コード・ファイルを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定し、真の欠陥には fix を付ける）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
-${TIME_NOTE}`
+## Task
+- Scoped to the change set (diff), independently hunt for defects the Breaker did not raise. Self-classify what you find using the same 4-category criteria as the Breaker counterexamples:
+  - 真の欠陥 (true defect): valid as a spec violation, security issue, regression, operations / maintainability / availability problem, data-integrity / performance problem, missing test coverage, or architecture violation — worth fixing.
+  - 仕様未定 (spec undecided): the spec is ambiguous and an arbitrary assumption would be required (needs spec confirmation).
+  - 低優先度 / ノイズ: anything that does not reach the bar above.
+## Scope limits (stall avoidance)
+- Limit the exploration to the change set (diff). Do not run unrelated wide-area greps or cross-service exploration.
+- Keep tool calls progressing steadily within ~3 minutes (do not stall on a single exploration).
+- Do not repeat counterexamples the Breaker already raised (new misses only).
+## Constraints
+- Readability, naming, and style are out of scope.
+- Classify as 真の欠陥 only findings that can answer all 4 of: (1) what happens, (2) why that code path is vulnerable, (3) the expected impact, (4) a concrete mitigation. Concerns that cannot answer them go to 低優先度 or ノイズ.
+- Do not modify code or files (adjudication only). Do not commit.
+- Put only 真の欠陥 and 仕様未定 into items (set category, and attach fix to 真の欠陥 findings); leave 低優先度 / ノイズ in dismissed with count and title only.
+${TAIL_NOTE}`
 
 const scen = breaker.counterexamples || []
 const BATCH = 4
 const batches = []
 for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
+log(`${ts(lastJst)}judge 起動（反例${scen.length}件・${batches.length}バッチ + miss-finder）`)
 const thunks = [
   ...batches.map((batch, bi) => () =>
     agent(judgeBatchPrompt(batch, bi + 1, batches.length), { label: `judge:b${bi + 1}`, phase: 'Judge', model: 'opus', effort: 'high', schema: FINDINGS_SCHEMA })),
@@ -177,9 +186,16 @@ const missSearchFailed = missResult === null
 if (judgeDegraded) log(`judge: ${batches.length - okJudge.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定の反例あり）`)
 if (missSearchFailed) log(`miss-finder 失敗（全反例は裁定済み・独立探索のみ喪失）`)
 const times = [...okJudge, missResult].filter(Boolean).map((r) => r.nowJst).filter(Boolean).sort()
-if (times.length) log(`[${times[times.length - 1]} JST] judge+miss 完了（judge ${okJudge.length}/${batches.length} バッチ・miss-finder ${missResult ? '完了' : '失敗'}）`)
+if (times.length) { lastJst = times[times.length - 1]; log(`[${lastJst} JST] judge+miss 完了（judge ${okJudge.length}/${batches.length} バッチ・miss-finder ${missResult ? '完了' : '失敗'}）`) }
 const items = [...okJudge.flatMap((r) => r.items || []), ...((missResult && missResult.items) || [])]
 const dismissed = [...okJudge.flatMap((r) => r.dismissed || []), ...((missResult && missResult.dismissed) || [])]
+
+// 裁定結果の可視化: 内訳と各指摘のタイトルを log で出す（件数上限つき）
+const trueDefects = items.filter((it) => it.category === '真の欠陥')
+const specItems = items.filter((it) => it.category === '仕様未定')
+log(`${ts(lastJst)}裁定結果: 真の欠陥${trueDefects.length}件・仕様未定${specItems.length}件・除外${dismissed.length}件`)
+for (const it of items.slice(0, 10)) log(`- [${it.severity || '-'}] ${it.title}${it.category === '仕様未定' ? '〔仕様未定〕' : ''}`)
+if (items.length > 10) log(`- …他${items.length - 10}件`)
 
 return { status: 'ok', items, dismissed, counterexamples: breaker.counterexamples, judgeDegraded, missSearchFailed }
 ```
@@ -193,6 +209,6 @@ return { status: 'ok', items, dismissed, counterexamples: breaker.counterexample
 
 ## 同期ノート
 
-Breaker / Judge プロンプトの攻撃観点・4 分類裁定基準は smart-issue-resolve 雛形 B（`sir-claude-review-set`）と共通である。変更時は CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。標準レビュー（可読性を含む観点）は本スキルの対象外で `/code-reviewer` に委ねる点は codex-judge モードと同じ。
+Breaker / Judge プロンプトの攻撃観点・4 分類裁定基準は smart-issue-resolve 雛形 B（`sir-claude-review-set`）と共通である。変更時は CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。プロンプトは英語・出力（構造化出力の中身・`log()`・カテゴリ enum 値）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。標準レビュー（可読性を含む観点）は本スキルの対象外で `/code-reviewer` に委ねる点は codex-judge モードと同じ。
 
 **Judge のバッチ並列化 + miss-finder 分離（cra 固有・Issue #107）**: 単発 Judge を「Judge バッチ（`breaker.counterexamples` を ≤4 件/バッチに分割・フラット `parallel`・`effort: 'high'`・evidence 限定照合・見落とし探索なし）∥ miss-finder（1 体・`effort: 'max'`・diff スコープ・同じ 4 分類で自己分類）」の異種 thunk 群に置換した。裁定基準の**内容**は 4 分類のまま不変なので resolve/plan への内容同期は不要（バッチ分割・miss-finder 分離は cra 側の構造変更）。劣化伝播は `judgeDegraded`（バッチ失敗で未裁定の反例が残る＝硬い recall 欠損）・`missSearchFailed`（見落とし探索のみ喪失＝より軽い劣化）で区別する。`breaker` はレンズ分割しない（resolve/plan とは非対称・Issue #107 の対象表で cra 行は Judge 側のみを指示）。`no-throw parallel` 契約（Issue #88）に依存し `await parallel(...)` を try/catch で囲まない。**Breaker・Judge バッチ・miss-finder の opus 化は Issue #111**（精度優先。miss-finder の effort max は元のまま維持）。**Judge バッチの effort は #111 で high→max 化 → Issue #113 で high へ戻した**（≤4 件/バッチの有界作業量に max は過剰。時間・トークン効率の再バランス）。

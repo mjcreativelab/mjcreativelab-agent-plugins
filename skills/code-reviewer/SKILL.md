@@ -55,7 +55,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 
 `{隔離モード}` = true のとき、手順 4（観点別チェック）を**メインセッションではなく Workflow で起動する単発レビューエージェント**（opus / effort max・コンテキスト隔離）に委ねる。会話・実装の文脈によるバイアスを排除した独立レビューが欲しい場合に使う。
 
-- **Workflow 利用可** → [references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cr-isolated-review`）を起動する。手順 1 で確定した `{対象}` と diff の取り方を `args`（`{ target, diffBase, focus }`）で渡し、エージェントが自分で diff を取得して本スキルの 6 観点でレビューし、5 区分の markdown を返す。オーケストレーター（メインセッション）が返却を受け取り、手順 5（出力）・手順 6（PR 投稿ゲート）を通常どおり実施する（**投稿・コミットはオーケストレーターの責務**。エージェントにはさせない）
+- **Workflow 利用可** → [references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cr-isolated-review`）を起動する。手順 1 で確定した `{対象}` と diff の取り方を `args`（`{ target, diffBase, focus, startedAt }`。`startedAt` は起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` で実測した開始日時）で渡し、エージェントが自分で diff を取得して本スキルの 6 観点でレビューし、5 区分の markdown を返す。オーケストレーター（メインセッション）が返却を受け取り、手順 5（出力）・手順 6（PR 投稿ゲート）を通常どおり実施する（**投稿・コミットはオーケストレーターの責務**。エージェントにはさせない）
 - **Workflow 不能**（他エージェント・旧バージョン等）→ メインセッションでの通常レビュー（手順 4）に **degrade** し、その旨を 1 行明示する
 - `{隔離モード}` = false（デフォルト）→ 現行どおりメインセッションでレビューする（会話コンテキストを活用する）
 
@@ -63,7 +63,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 
 ### 同期ノート
 
-本モードの隔離レビュー観点（6 観点のうち可読性を除いた実装欠陥系の骨格）は、smart-issue-resolve 雛形 B（`sir-claude-review-set`）の reviewerPrompt と共通の骨格を持つ。この骨格は本ファイルの `cr-isolated-review` を含む複数スキルへ意図的に二重化されている。骨格を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（`cr-isolated-review` を含む 4 スキル）をすべて同期する。可読性を観点に含めるかは各スキルの identity として意図的に異なる（本スキルは含む）。
+本モードの隔離レビュー観点（6 観点のうち可読性を除いた実装欠陥系の骨格）は、smart-issue-resolve 雛形 B（`sir-claude-review-set`）の reviewerPrompt と共通の骨格を持つ。この骨格は本ファイルの `cr-isolated-review` を含む複数スキルへ意図的に二重化されている。骨格を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（`cr-isolated-review` を含む 4 スキル）をすべて同期する。可読性を観点に含めるかは各スキルの identity として意図的に異なる（本スキルは含む）。雛形のエージェントプロンプト・スキーマ description は英語、出力（5 区分 markdown・`log()`）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
 
 ## 観点
 - **仕様整合**: 要件・設計ドキュメントとの一致

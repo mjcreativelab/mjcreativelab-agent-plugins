@@ -9,7 +9,11 @@ smart-issue-resolve の実装・レビューを担う役割別エージェント
 - スクリプトはこのファイルの雛形を**そのまま** `script` に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、各雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
-- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、各 `agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（共通フィールド。`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）。新しい `agent()` 呼び出しを追加する場合もこの規約に従う
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`log()` で開始日時・進捗・ラウンド結果を可視化する。時刻の取得は 2 系統（スクリプト自身は時刻を生成できない）:
+  - **開始日時**: オーケストレーターが起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測し、`args.startedAt` として渡す（全雛形共通・省略可）。スクリプトは冒頭の開始ログに使う。**ログ表示専用で、`agent()` のプロンプトへは埋め込まない**（resume 時に `agent()` の (prompt, opts) キャッシュ一致を保つため）
+  - **途中経過の時刻**: 各 `agent()` はプロンプト末尾の共通指示（`TAIL_NOTE`）で `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実行し、結果を構造化出力の `nowJst`（共通フィールド。`NOW_JST_FIELD`）として返す。スクリプトは完了ログ（`log(`[YYYY-MM-DD hh:mm:ss JST] ...`)`）に使うほか、直近値を `lastJst` に保持して次のラウンド開始・judge 起動などの開始ログに使う（`parallel()` バッチは各結果の `nowJst` の最大値を完了時刻とする）
+  - **ラウンド結果**: 各レビューラウンドの終了時に、指摘 / 裁定の内訳（真の欠陥・仕様未定・除外件数）と各指摘のタイトル・重大度、fix の採用 / 不採用を `log()` で出力する（件数上限つき）。新しい `agent()` 呼び出しを追加する場合もこの規約に従う
+- **プロンプトは英語・出力は日本語**: `agent()` に渡すプロンプト本文・スキーマ `description` は英語で記述する（指示追従の精度向上）。ユーザーが読む内容 — 構造化出力の中身・引き継ぎファイル（design.md / impl-notes.md / breaker-round-*.md 等）・`log()` 文字列・`meta`・カテゴリ enum 値（`真の欠陥` / `仕様未定` / `低優先度` / `ノイズ`）— は日本語のまま（`TAIL_NOTE` が日本語出力を指示する）
 - ツール結果に返る `scriptPath` を控えておくと、同じ雛形の再起動（レビューセット続行など）は `{scriptPath, args}` で再送できる。中断・失敗からの再開は `resumeFromRunId` を使う
 
 ## 作業ディレクトリと context.md
@@ -75,7 +79,7 @@ bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <対象ラウ�
 
 設計（条件付き）→ 実装 → 独立 QA（不合格なら開発者修正、最大 2 回）→ 設計整合・保守可用性レビュー → 反映 → QA 再確認。
 
-`args`: `{ workDir, issueNumber, defaultBranch, needDesign }`
+`args`: `{ workDir, issueNumber, defaultBranch, needDesign, startedAt }`（`startedAt`: 起動直前にオーケストレーターが `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` で実測した開始日時。開始ログ表示専用・省略可）
 
 ```js
 export const meta = {
@@ -95,8 +99,10 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
+let lastJst = args.startedAt || ''
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -110,7 +116,7 @@ const FINDINGS_SCHEMA = {
         properties: {
           title: { type: 'string' },
           severity: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-          basis: { type: 'string', description: 'ファイルパス・行番号など一次情報' },
+          basis: { type: 'string', description: 'Primary evidence such as file path and line numbers' },
           detail: { type: 'string' },
         },
       },
@@ -142,7 +148,7 @@ const QA_SCHEMA = {
   required: ['pass', 'executed', 'issues', 'nowJst'],
   properties: {
     pass: { type: 'boolean' },
-    executed: { type: 'string', description: '実行したテスト・lint コマンドと結果要約' },
+    executed: { type: 'string', description: 'Commands executed for tests / lint and a result summary' },
     issues: {
       type: 'array',
       items: { type: 'object', required: ['title', 'detail'], properties: { title: { type: 'string' }, detail: { type: 'string' } } },
@@ -166,99 +172,119 @@ const DESIGN_SCHEMA = {
   type: 'object',
   required: ['summary', 'nowJst'],
   properties: {
-    summary: { type: 'string', description: 'design.md の要点（10 行以内）' },
+    summary: { type: 'string', description: 'Gist of design.md (within 10 lines)' },
     nowJst: NOW_JST_FIELD,
   },
 }
 
-const qaPrompt = (extra) => `あなたは独立 QA エージェントである。開発者の自己申告を信用せず、自分でテストを実行して検証する。
-1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準を把握する）
-2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更
-3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する（手動確認方針の場合はその確認を可能な範囲で実施する）
-4. Issue の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
-5. ファイル名に .breaker-probe. を含む使い捨てテストが変更セットに残っていれば issues として報告する
-制約: コード・ファイルを変更しない。コミット・push はしない。${extra}
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。executed に実行コマンドと結果要約、問題は issues に列挙する。${TIME_NOTE}`
+const qaPrompt = (extra) => `You are an independent QA agent. Do not trust the developer's self-report; run the verification yourself.
+1. Read ${ctx} (test policy, acceptance criteria, diff base).
+2. Inspect the changes: git diff origin/${args.defaultBranch}...HEAD, plus uncommitted changes visible via git status / git diff.
+3. Following the test policy in context.md, run the relevant-scope tests and lint yourself (if the policy is manual verification, perform it as far as possible).
+4. Verify each acceptance criterion of the Issue, one by one, against the code and execution results.
+5. If any throwaway test whose filename contains .breaker-probe. remains in the change set, report it in issues.
+Constraints: do not modify code or files. Do not commit or push. ${extra}
+Verdict: set pass=true only when all tests pass and the acceptance criteria are met. Put the executed commands and a result summary into executed, and list problems in issues. ${TAIL_NOTE}`
 
-log('実装フェーズ開始: Issue #' + args.issueNumber)
+const logQaIssues = (qaResult) => {
+  if (qaResult.pass) return
+  for (const it of qaResult.issues.slice(0, 5)) log(`- QA指摘: ${it.title}`)
+  if (qaResult.issues.length > 5) log(`- QA指摘: …他${qaResult.issues.length - 5}件`)
+}
+
+log(`${ts(lastJst)}実装フェーズ開始: Issue #${args.issueNumber}`)
 
 let design = null
 if (args.needDesign) {
-  design = await agent(`あなたは設計役(ソフトウェアアーキテクト)である。実装には着手しない。
-1. ${ctx} を読む（Issue 要件・受け入れ基準・プロジェクト固有基準）
-2. 関連コードを調査し（エントリポイント・依存グラフ・既存パターン・境界条件）、要件を満たす設計方針を確定する
-3. ${args.workDir}/design.md に次を書く: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項
-制約: コードは変更しない。コミット・push はしない。判断できない仕様は独断で確定せず「未確定事項」に列挙する。
-最終出力: summary に design.md の要点（10 行以内）。${TIME_NOTE}`,
+  design = await agent(`You are the designer (software architect). Do not start implementing.
+1. Read ${ctx} (Issue requirements, acceptance criteria, project-specific standards).
+2. Investigate the relevant code (entry points, dependency graph, existing patterns, boundary conditions) and settle a design approach that satisfies the requirements.
+3. Write the following sections to ${args.workDir}/design.md: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項.
+Constraints: do not modify code. Do not commit or push. Do not unilaterally settle specs you cannot decide — list them under 未確定事項.
+Final output: put the gist of design.md (within 10 lines) into summary. ${TAIL_NOTE}`,
     { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max', schema: DESIGN_SCHEMA })
   if (design === null) return { status: 'agent-failed', at: 'design' }
+  lastJst = design.nowJst || lastJst
   log(`[${design.nowJst} JST] Design 完了`)
 }
 
-const impl = await agent(`あなたは GitHub Issue #${args.issueNumber} を実装する開発者である。
-1. ${ctx} を読む${args.needDesign ? `。続いて ${args.workDir}/design.md の設計方針に従う。未確定事項があれば最小の合理的解釈を選び、判断内容を impl-notes.md に記録する` : ''}
-2. 計画・設計でカバーされない部分はコードベース調査で補う（エントリポイント・依存グラフ・既存パターン・lint / 型チェック等の品質ゲート）
-3. 実装前に context.md のテスト方針に従って関連スコープのテストを一度実行し、ベースライン（既存の失敗）を記録する
-4. Issue の要件・受け入れ基準・追加指示に沿って実装する。スコープは Issue 記載内容（と計画・設計の範囲）に限定する
-5. 同じスコープのテストを再実行し、既存テストの壊れがないこと・新規要件を満たすことを確認する
-6. ${notes} に次を書く: 変更ファイル / 要件対応（受け入れ基準ごと） / 自分で判断した事項 / テスト結果（ベースライン比較）
-制約: コミット・push はしない。Issue と無関係な変更を混ぜない。${TIME_NOTE}`,
+const impl = await agent(`You are the developer implementing GitHub Issue #${args.issueNumber}.
+1. Read ${ctx}${args.needDesign ? `, then follow the design approach in ${args.workDir}/design.md. Where it lists 未確定事項 (open questions), pick the minimal reasonable interpretation and record your decision in impl-notes.md` : ''}.
+2. Fill the gaps the plan / design does not cover with your own codebase investigation (entry points, dependency graph, existing patterns, quality gates such as lint / type checks).
+3. Before implementing, run the relevant-scope tests once per the test policy in context.md and record the baseline (pre-existing failures).
+4. Implement per the Issue requirements, acceptance criteria, and extra instructions. Keep the scope limited to what the Issue (and the plan / design) covers.
+5. Re-run the same test scope and confirm no existing tests broke and the new requirements are met.
+6. Write to ${notes}: 変更ファイル / 要件対応（受け入れ基準ごと） / 自分で判断した事項 / テスト結果（ベースライン比較）.
+Constraints: do not commit or push. Do not mix in changes unrelated to the Issue. ${TAIL_NOTE}`,
   { label: 'dev:implement', phase: 'Implement', model: 'opus', effort: 'max', schema: IMPL_SCHEMA })
 if (impl === null) return { status: 'agent-failed', at: 'implement' }
+lastJst = impl.nowJst || lastJst
 log(`[${impl.nowJst} JST] Implement 完了`)
 
 let qa = await agent(qaPrompt(''), { label: 'qa:verify', phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
 if (qa === null) return { status: 'agent-failed', at: 'qa' }
-log(`[${qa.nowJst} JST] QA 完了（pass=${qa.pass}）`)
+lastJst = qa.nowJst || lastJst
+log(`[${qa.nowJst} JST] QA 完了（pass=${qa.pass}${qa.pass ? '' : `・指摘${qa.issues.length}件`}）`)
+logQaIssues(qa)
 
 let qaFixRounds = 0
 while (!qa.pass && qaFixRounds < 2) {
   qaFixRounds++
-  const fix = await agent(`あなたは Issue #${args.issueNumber} を実装した開発者である。独立 QA から次の指摘が返った:
+  log(`${ts(lastJst)}QA修正${qaFixRounds}回目 開始`)
+  const fix = await agent(`You are the developer who implemented Issue #${args.issueNumber}. Independent QA returned these findings:
 ${JSON.stringify(qa.issues, null, 2)}
-1. ${ctx} と ${notes} を読み、実装文脈を復元する
-2. 指摘を検証して修正する（QA の誤検出と判断した場合は理由を rejected に記録する）
-3. 関連スコープのテストを再実行する
-4. ${notes} を更新する
-制約: コミット・push はしない。${TIME_NOTE}`,
+1. Read ${ctx} and ${notes} to restore the implementation context.
+2. Verify each finding and fix it (if you judge one to be a QA false positive, record the reason in rejected).
+3. Re-run the relevant-scope tests.
+4. Update ${notes}.
+Constraints: do not commit or push. ${TAIL_NOTE}`,
     { label: 'dev:qa-fix-' + qaFixRounds, phase: 'QA', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) return { status: 'agent-failed', at: 'qa-fix' }
+  lastJst = fix.nowJst || lastJst
   log(`[${fix.nowJst} JST] QA修正${qaFixRounds}回目 完了（採用${fix.adopted.length}件）`)
-  qa = await agent(qaPrompt('前回 QA の指摘への対応後の再検証である。'), { label: 'qa:re-verify-' + qaFixRounds, phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+  qa = await agent(qaPrompt('This is re-verification after the developer addressed the previous QA findings.'), { label: 'qa:re-verify-' + qaFixRounds, phase: 'QA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
   if (qa === null) return { status: 'agent-failed', at: 'qa' }
-  log(`[${qa.nowJst} JST] QA再検証${qaFixRounds}回目 完了（pass=${qa.pass}）`)
+  lastJst = qa.nowJst || lastJst
+  log(`[${qa.nowJst} JST] QA再検証${qaFixRounds}回目 完了（pass=${qa.pass}${qa.pass ? '' : `・指摘${qa.issues.length}件`}）`)
+  logQaIssues(qa)
 }
 if (!qa.pass) return { status: 'qa-failed', impl, qa }
 
-const arch = await agent(`あなたは設計役である。実装完了後の変更を、設計整合と保守・可用性の観点でレビューする。
-1. ${ctx} を読む${args.needDesign ? `。${args.workDir}/design.md の設計方針とも照合する` : ''}
-2. git diff origin/${args.defaultBranch}...HEAD と未コミット変更を確認する
-3. 次の観点で「修正価値のある欠陥」のみ指摘する:
-   - 設計整合: 設計方針・実装計画・既存アーキテクチャ（レイヤー責務・依存方向）からの逸脱
-   - 保守性: 過度な結合・テスト容易性の低下・変更波及の広さ・不要な抽象化
-   - 可用性・運用: タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・可観測性（ログ・メトリクス）の欠落・デプロイ / ロールバックの脆さ
-制約: コードは変更しない。コミット・push はしない。可読性・命名・スタイルは対象外。各指摘に根拠（ファイル・行）と重大度を付ける。指摘が無ければ items を空配列にする。${TIME_NOTE}`,
+const arch = await agent(`You are the designer. Review the completed change for design conformance, maintainability, and availability.
+1. Read ${ctx}${args.needDesign ? ` and also check against the design approach in ${args.workDir}/design.md` : ''}.
+2. Inspect git diff origin/${args.defaultBranch}...HEAD and the uncommitted changes.
+3. Report only defects worth fixing, from these aspects:
+   - Design conformance: deviation from the design approach, the implementation plan, or the existing architecture (layer responsibilities, dependency direction)
+   - Maintainability: excessive coupling, reduced testability, wide change ripple, unnecessary abstraction
+   - Availability / operations: missing timeouts / retries, behavior on failure or dependency degradation, resource exhaustion, missing observability (logs / metrics), fragile deploy / rollback
+Constraints: do not modify code. Do not commit or push. Readability, naming, and style are out of scope. Attach evidence (file, line) and severity to each finding. If there are no findings, return an empty items array. ${TAIL_NOTE}`,
   { label: 'architect:review', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })
 if (arch === null) return { status: 'agent-failed', at: 'arch-review' }
+lastJst = arch.nowJst || lastJst
 log(`[${arch.nowJst} JST] ArchReview 完了（指摘${arch.items.length}件）`)
+for (const it of arch.items.slice(0, 10)) log(`- [${it.severity}] ${it.title}`)
+if (arch.items.length > 10) log(`- …他${arch.items.length - 10}件`)
 
 let archFix = null
 if (arch.items.length > 0) {
-  archFix = await agent(`あなたは Issue #${args.issueNumber} を実装した開発者（レビュイー）である。設計役のレビュー指摘を判定・反映する:
+  archFix = await agent(`You are the developer (reviewee) who implemented Issue #${args.issueNumber}. Judge and apply the designer's review findings:
 ${JSON.stringify(arch.items, null, 2)}
-1. ${ctx} と ${notes} を読み、指摘を 1 件ずつ「採用 / 不採用」に分類する
-   - 採用: 仕様未充足・バグ・回帰リスク・設計 / 保守 / 可用性の欠陥を根拠付きで正しく突いている指摘
-   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する）
-2. 採用指摘を修正し、関連スコープのテストを再実行する
-3. ${notes} を更新する
-制約: コミット・push はしない。${TIME_NOTE}`,
+1. Read ${ctx} and ${notes}, then classify each finding as 採用 (adopt) or 不採用 (reject):
+   - Adopt: findings that correctly identify, with evidence, an unmet spec, a bug, a regression risk, or a design / maintainability / availability defect.
+   - Reject: invalid, would cause over-engineering, or out of the Issue's scope (record the reason in one line).
+2. Fix the adopted findings and re-run the relevant-scope tests.
+3. Update ${notes}.
+Constraints: do not commit or push. ${TAIL_NOTE}`,
     { label: 'dev:arch-fix', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (archFix === null) return { status: 'agent-failed', at: 'arch-fix' }
-  log(`[${archFix.nowJst} JST] ArchFix 完了（採用${archFix.adopted.length}件）`)
+  lastJst = archFix.nowJst || lastJst
+  log(`[${archFix.nowJst} JST] ArchFix 完了（採用${archFix.adopted.length}件・不採用${archFix.rejected.length}件）`)
   if (archFix.adopted.length > 0) {
-    qa = await agent(qaPrompt('設計整合レビュー反映後の再検証である。'), { label: 'qa:post-arch', phase: 'ArchReview', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
+    qa = await agent(qaPrompt('This is re-verification after the design-conformance review was applied.'), { label: 'qa:post-arch', phase: 'ArchReview', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
     if (qa === null) return { status: 'agent-failed', at: 'qa' }
-    log(`[${qa.nowJst} JST] QA(post-arch) 完了（pass=${qa.pass}）`)
+    lastJst = qa.nowJst || lastJst
+    log(`[${qa.nowJst} JST] QA(post-arch) 完了（pass=${qa.pass}${qa.pass ? '' : `・指摘${qa.issues.length}件`}）`)
+    logQaIssues(qa)
     if (!qa.pass) return { status: 'qa-failed', impl, qa, archFix }
   }
 }
@@ -272,8 +298,8 @@ return { status: 'ok', impl, qa, designed: design !== null, archFindings: arch.i
 
 1 セット = 最大 3 ラウンド。「レビュー（標準: レビュワー / 敵対: Breaker→Judge）→ 開発者の採用判定・修正・テスト」を収束（採用 0 件）まで回し、収束時はセット内で最終 QA まで実施して返る。3 ラウンドごとの続行確認はオーケストレーターがセット間に行う。
 
-`args`: `{ workDir, issueNumber, branch, defaultBranch, mode, startRound, priorSummary, cleanStreak, securityAudit, securityReason }`
-（`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字。継続セットでは**前セット最終ラウンドの採用修正内容〔title/action〕も含める** — 差分スコープをセット跨ぎで連続させるため）。`cleanStreak`: 連続クリーンラウンド数の引き継ぎ値（初回は 0 / 省略可。前セットが `cleanStreak: 1` で 3 ラウンド上限に達した場合、続行セットへ渡すと round 1 が差分スコープ解除の確認ラウンドになり dry-twice 収束がセット境界を跨いで機能する）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。レンズ S の Breaker プロンプト（監査統合ラウンド）に埋め込まれるため `securityAudit: true` のときは必ず渡す）
+`args`: `{ workDir, issueNumber, branch, defaultBranch, mode, startRound, priorSummary, cleanStreak, securityAudit, securityReason, startedAt }`
+（`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字。継続セットでは**前セット最終ラウンドの採用修正内容〔title/action〕も含める** — 差分スコープをセット跨ぎで連続させるため）。`cleanStreak`: 連続クリーンラウンド数の引き継ぎ値（初回は 0 / 省略可。前セットが `cleanStreak: 1` で 3 ラウンド上限に達した場合、続行セットへ渡すと round 1 が差分スコープ解除の確認ラウンドになり dry-twice 収束がセット境界を跨いで機能する）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。レンズ S の Breaker プロンプト（監査統合ラウンド）に埋め込まれるため `securityAudit: true` のときは必ず渡す。`startedAt`: 起動直前にオーケストレーターが `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` で実測した開始日時〔開始ログ表示専用・省略可。継続セットの再起動でも再実測して渡す。`agent()` プロンプトへは埋め込まれないため resume のキャッシュ一致に影響しない〕）
 
 ```js
 export const meta = {
@@ -297,15 +323,17 @@ const diffPath = args.workDir + '/diff.md'
 // （エージェントの自己申告に依存しない fail-safe。再生成漏れは次ラウンドで不一致となり、各レビュー役が自前の git 取得へフォールバックする）
 let diffRound = args.startRound
 
-const diffNote = (expected, targeted) => `レビュー対象は現在ブランチ ${args.branch} の変更全体で、その diff は正本ファイル ${diffPath}（origin/${args.defaultBranch}...HEAD のコミット済み diff + 未コミット変更のスナップショット）に用意されている。Read で読み、自分で git を実行して取り直さない。
-- 鮮度の確認: ヘッダの「対象ラウンド」が ${expected} であること
-- フォールバック: ファイルが無い / 対象ラウンドが ${expected} と異なる / 前ラウンドの採用修正が反映されておらず明らかに不整合、のいずれかのときだけ、自分で git diff origin/${args.defaultBranch}...HEAD と git status / git diff HEAD を実行して取得する（ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。未コミット変更は staged 済みのものを落とさないよう引数なしの git diff ではなく git diff HEAD を使う ＝ 正本 diff.md と同じ範囲）
-- 読み方: ${targeted ? '先頭のヘッダと変更ファイル一覧（--stat）をまず読み、以降は担当バッチの反例 evidence が指すファイル / 行に対応する箇所だけを offset を指定して読む（全文は通読しない。裁定は evidence 限定照合で足りる）' : '長いファイルなので Read が truncate されたら offset を進めて全文を読む'}
-- スナップショットに含まれないもの: 未追跡ファイルの内容と、生成後に作られたファイル（Breaker の .breaker-probe. 反例テスト等）。これらはリポジトリから直接 Read する
-- diff.md は「どこを見るか」の入力にすぎない。判断根拠はリポジトリの実コードであり、該当ファイルの Read と周辺の grep による照合は従来どおり必須（diff の抜粋だけで判断しない）`
+const diffNote = (expected, targeted) => `The review target is the entire change on branch ${args.branch}; its diff is provided as the canonical file ${diffPath} (a snapshot of the committed diff origin/${args.defaultBranch}...HEAD plus uncommitted working-tree changes). Read it with the Read tool; do not re-fetch the diff with git yourself.
+- Freshness check: the header field 対象ラウンド (target round) must be ${expected}.
+- Fallback: only when the file is missing, the target round differs from ${expected}, or the previous round's adopted fixes are clearly not reflected, fetch the diff yourself with git diff origin/${args.defaultBranch}...HEAD plus git status / git diff HEAD (local ${args.defaultBranch} can be stale — always use origin/${args.defaultBranch} as the base; use git diff HEAD, not bare git diff, so staged changes are not dropped = the same range as the canonical diff.md).
+- How to read: ${targeted ? 'read the header and the changed-file list (--stat) first; afterwards read only the spots pointed to by the evidence of the counterexamples in your batch, using offset (do not read the whole file — adjudication only needs evidence-scoped verification)' : 'the file is long, so if Read truncates it, advance offset until you have read all of it'}.
+- Not included in the snapshot: contents of untracked files, and files created after generation (e.g. the Breaker probe tests named with .breaker-probe.). Read those directly from the repository.
+- diff.md is only an input telling you where to look. The basis for judgment is the real code in the repository; reading the relevant files and grepping their surroundings remains mandatory (do not judge from diff excerpts alone).`
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
+let lastJst = args.startedAt || ''
 
 const FINDINGS_SCHEMA = {
   type: 'object',
@@ -319,8 +347,8 @@ const FINDINGS_SCHEMA = {
         properties: {
           title: { type: 'string' },
           severity: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-          category: { type: 'string', enum: ['真の欠陥', '仕様未定'], description: '敵対モードの Judge のみ設定' },
-          basis: { type: 'string', description: 'ファイルパス・行番号など一次情報' },
+          category: { type: 'string', enum: ['真の欠陥', '仕様未定'], description: 'Set only by the Judge in adversarial mode' },
+          basis: { type: 'string', description: 'Primary evidence such as file path and line numbers' },
           detail: { type: 'string' },
         },
       },
@@ -328,7 +356,7 @@ const FINDINGS_SCHEMA = {
     dismissed: {
       type: 'array',
       items: { type: 'object', required: ['title', 'category'], properties: { title: { type: 'string' }, category: { type: 'string', enum: ['低優先度', 'ノイズ'] } } },
-      description: '採用対象外（監査性のため件数とタイトルのみ残す）',
+      description: 'Not adopted (keep only count and title for auditability)',
     },
     nowJst: NOW_JST_FIELD,
   },
@@ -347,7 +375,7 @@ const FIX_SCHEMA = {
       items: { type: 'object', required: ['title', 'reason'], properties: { title: { type: 'string' }, reason: { type: 'string' } } },
     },
     testsPassed: { type: 'boolean' },
-    diffRegenerated: { type: 'boolean', description: 'レビュー正本 diff.md の再生成（gen-diff.sh）に成功したか。鮮度ガードの判定はスクリプト側のスタンプで行うため動作は変えないが、劣化の観測値として返却の diffDegraded へ伝播する（必須。判定に使わないからといって省略しない）' },
+    diffRegenerated: { type: 'boolean', description: 'Whether regenerating the canonical review diff.md (gen-diff.sh) succeeded. The freshness guard is enforced by the script-side stamp, so this does not change behavior, but it propagates to diffDegraded in the return value as an observability signal (required — do not omit it just because it is not used for the decision)' },
     notes: { type: 'string' },
     nowJst: NOW_JST_FIELD,
   },
@@ -378,9 +406,9 @@ const BREAK_SCHEMA = {
         required: ['title', 'scenario', 'verified'],
         properties: {
           title: { type: 'string' },
-          scenario: { type: 'string', description: '反例・攻撃シナリオ・不変条件違反の内容' },
-          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'], description: 'fail=反例テストで検証済み / UNVERIFIED=実行で確認できない仮説' },
-          evidence: { type: 'string', description: 'ファイルパス・行・テスト実行結果など' },
+          scenario: { type: 'string', description: 'The counterexample, attack scenario, or invariant violation' },
+          verified: { type: 'string', enum: ['fail', 'UNVERIFIED'], description: 'fail = verified by a probe test / UNVERIFIED = hypothesis that could not be verified by execution' },
+          evidence: { type: 'string', description: 'File path, line, test execution results, etc.' },
         },
       },
     },
@@ -394,33 +422,33 @@ const BREAK_S_SCHEMA = {
   required: ['counterexamples', 'nowJst'],
   properties: {
     counterexamples: BREAK_SCHEMA.properties.counterexamples,
-    auditWritten: { type: 'boolean', description: 'セキュリティ監査ラウンドで security-audit.md を書き出せたか（監査ラウンドのレンズ S のみ設定）' },
+    auditWritten: { type: 'boolean', description: 'Whether security-audit.md was written in the security-audit round (set only by lens S in the audit round)' },
     nowJst: NOW_JST_FIELD,
   },
 }
 
 const records = []
 const priorSummary = args.priorSummary || ''
-const history = () => records.map((r) => `ラウンド${r.round}: 指摘 ${r.findings} 件 / 採用 ${r.adopted} 件`).join('\n')
-const prior = () => (priorSummary || history()) ? `\n## 前ラウンドまでの経緯\n${priorSummary}${priorSummary && history() ? '\n' : ''}${history()}\n` : ''
+const history = () => records.map((r) => `Round ${r.round}: ${r.findings} findings / ${r.adopted} adopted`).join('\n')
+const prior = () => (priorSummary || history()) ? `\n## Prior rounds\n${priorSummary}${priorSummary && history() ? '\n' : ''}${history()}\n` : ''
 
 // 攻撃観点のレンズ分割（S/C/O）。union = 現行 Breaker の全観点（内容の追加・削除・改変なし）。レンズ S は監査役を統合
 const LENSES = [
   { id: 'S', token: 'sec', label: 'Security',
-    aspects: `- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出・Confused Deputy（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
-- プロジェクト固有基準のうちセキュリティに関わるもの（context.md に提示がある場合、その違反も攻撃シナリオに含める）` },
+    aspects: `- Security: authorization bypass, injection, secret leakage, TOCTOU, PII exposure, confused deputy (if ${args.workDir}/security-audit.md exists, always consult it and reflect its threats and attack scenarios)
+- Security-related project-specific standards (if provided in context.md, include their violations as attack scenarios)` },
   { id: 'C', token: 'corr', label: 'Correctness/Data',
-    aspects: `- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
-- 回帰: 既存挙動・呼び出し元の破壊
-- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
-- アーキテクチャ: レイヤー責務の逸脱・境界侵犯・未検証の実行パス` },
+    aspects: `- Spec: unmet acceptance criteria, contract violations, backward-compatibility breakage, version skew / schema drift
+- Regression: breaking existing behavior or callers
+- Data integrity & performance: transaction boundaries, atomicity, idempotency (double execution), broken concurrent updates, partial failure, reentrancy, irreversible state changes, N+1 or excessive I/O, computational complexity
+- Architecture: layer-responsibility violations, boundary intrusion, unverified execution paths` },
   { id: 'O', token: 'ops', label: 'Ops/Maintainability',
-    aspects: `- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
-- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）` },
+    aspects: `- Operations, maintainability, availability: missing observability, fragile deploy / rollback, excessive coupling, missing timeouts / retries, behavior on failure or dependency degradation, resource exhaustion, single points of failure
+- Project-specific standards (if provided in context.md, include their violations as attack scenarios)` },
 ]
 
 // 単発 Breaker（差分スコープのラウンド 2+ / dry-twice 確認ラウンド用）。aspects は LENSES の結合で生成し、観点 union の不変を構造的に保証する（Issue #113: 分割並列は包括ラウンド限定）
-const LENS_ALL = { id: 'ALL', token: 'all', label: '全観点', solo: true, aspects: LENSES.map((l) => l.aspects).join('\n') }
+const LENS_ALL = { id: 'ALL', token: 'all', label: 'All aspects', solo: true, aspects: LENSES.map((l) => l.aspects).join('\n') }
 
 // 差分スコープ化: ラウンド 1（初回セット）は全 diff 包括レビュー、以降は直前ラウンドの採用修正差分を重点対象にする（重点付けであり抑制ではない。diff 基準は全体維持）
 const fixDelta = (i) => {
@@ -429,111 +457,111 @@ const fixDelta = (i) => {
   const adoptedItems = (last && last.adoptedItems) || []
   const deltaList = adoptedItems.length
     ? adoptedItems.map((a) => `- ${a.title}: ${a.action}`).join('\n')
-    : '（前セットまでの採用修正。上記「前ラウンドまでの経緯」を参照）'
-  return `\n## 差分スコープ（このラウンドの重点）\n直前ラウンドで以下の修正が入った。これらが触れたファイル・領域とその波及（呼び出し元・依存）を重点対象とし、修正が新たに導入した回帰・不整合を最優先で探す:\n${deltaList}\n重点付けであって抑制ではない: スコープ外でも明白な重大欠陥に気づけば報告してよい。ただし未関連ファイルの網羅的な再読込・新規の反例テスト作成はこの重点領域に絞り、無駄な広域探索をしない。\n`
+    : '(Fixes adopted in earlier sets — see "Prior rounds" above.)'
+  return `\n## Delta scope (focus of this round)\nThe previous round adopted the fixes below. Focus on the files / areas they touched and their ripple (callers, dependencies), and hunt first for regressions or inconsistencies newly introduced by these fixes:\n${deltaList}\nThis is prioritization, not restriction: still report obvious critical defects outside this scope. However, limit exhaustive re-reading of unrelated files and new probe-test creation to this focus area; avoid wasteful wide-area exploration.\n`
 }
 
 // 標準レビュワーの観点グループ分割（G1/G2/G3）。union = 現行の全 9 観点（内容の追加・削除・改変なし）。Breaker のレンズ分割（S/C/O）と同型で、標準モードのレビュワーを 3 グループの並列エージェントにする
 const REVIEWER_GROUPS = [
-  { id: 'g1', label: '仕様/バグ/テスト',
-    aspects: `- 仕様充足: Issue の要件・受け入れ基準を満たしているか
-- バグ: ロジック誤り・エッジケース・境界条件・エラーハンドリング漏れ
-- テストカバレッジ: 新規 / 変更ロジックの検証網羅（正常系・異常系・境界値）` },
-  { id: 'g2', label: '回帰/データ整合性・性能/危険箇所',
-    aspects: `- 回帰リスク: 既存の挙動・テスト・呼び出し元を壊す変更はないか
-- データ整合性・性能: トランザクション境界・原子性・冪等性・並行更新の整合性、N+1・過剰な I/O・計算量
-- 実装レベルの危険箇所: インジェクション・秘密情報の混入・認可漏れ・依存脆弱性` },
-  { id: 'g3', label: '運用・保守・可用性/アーキテクチャ境界/固有基準',
-    aspects: `- 運用・保守・可用性: 可観測性の欠落、デプロイ / ロールバック・設定管理、過度な結合・テスト容易性、タイムアウト・リトライ・障害時の劣化・リソース枯渇・単一障害点
-- アーキテクチャ境界: レイヤー責務の逸脱・境界侵犯
-- プロジェクト固有基準との整合（context.md に提示がある場合のみ）` },
+  { id: 'g1', label: 'Spec/Bugs/Tests',
+    aspects: `- Spec fulfillment: does the change satisfy the Issue requirements and acceptance criteria?
+- Bugs: logic errors, edge cases, boundary conditions, missing error handling
+- Test coverage: verification coverage of new / changed logic (happy path, error path, boundary values)` },
+  { id: 'g2', label: 'Regression/Data-Performance/Hotspots',
+    aspects: `- Regression risk: changes that break existing behavior, tests, or callers
+- Data integrity & performance: transaction boundaries, atomicity, idempotency, concurrent-update consistency; N+1, excessive I/O, computational complexity
+- Implementation-level hotspots: injection, committed secrets, missing authorization, vulnerable dependencies` },
+  { id: 'g3', label: 'Ops-Maintainability/Architecture/Project-standards',
+    aspects: `- Operations, maintainability, availability: missing observability; deploy / rollback and config management; excessive coupling and testability; timeouts, retries, degradation on failure, resource exhaustion, single points of failure
+- Architecture boundaries: layer-responsibility violations, boundary intrusion
+- Conformance to project-specific standards (only if provided in context.md)` },
 ]
 
 // 単発レビュワー（差分スコープのラウンド 2+ / dry-twice 確認ラウンド用）。aspects は REVIEWER_GROUPS の結合で生成し、観点 union の不変を構造的に保証する（Issue #113: 分割並列は包括ラウンド限定）
-const REVIEWER_ALL = { id: 'all', label: '全観点', solo: true, aspects: REVIEWER_GROUPS.map((g) => g.aspects).join('\n') }
+const REVIEWER_ALL = { id: 'all', label: 'All aspects', solo: true, aspects: REVIEWER_GROUPS.map((g) => g.aspects).join('\n') }
 
-const reviewerGroupPrompt = (round, group, delta) => `あなたは GitHub Issue #${args.issueNumber} 対応の実装コードのレビュワー${group.solo ? '' : `（観点グループ ${group.id}: ${group.label}）`}である。実装には関与していない独立の立場から、${group.solo ? '全観点を横断して' : '担当グループの観点に絞って'}修正価値のある欠陥のみを指摘する。
-## 入力
-1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. レビュー対象（ラウンド ${round}）
+const reviewerGroupPrompt = (round, group, delta) => `You are a reviewer of the implementation for GitHub Issue #${args.issueNumber}${group.solo ? '' : ` (aspect group ${group.id}: ${group.label})`}. From an independent position uninvolved in the implementation, report only defects worth fixing, ${group.solo ? 'covering all aspects' : 'focusing on the aspects of your group'}.
+## Input
+1. Read ${ctx} (Issue requirements, implementation plan, project-specific standards).
+2. Review target (round ${round}):
 ${diffNote(diffRound)}
 ${prior()}${delta}
-## レビュー観点${group.solo ? '（全 9 観点を横断する）' : `（担当グループ ${group.id} に集中する。他グループの観点は別レビュワーが担当するため深追いしない）`}
+## Review aspects${group.solo ? ' (cover all 9 aspects)' : ` (focus on group ${group.id}; the other groups are covered by other reviewers — do not chase them)`}
 ${group.aspects}
-## 制約
-- 可読性・命名・スタイルは対象外（修正価値のある欠陥のみ）
-- 各指摘に根拠（ファイルパス・行番号など一次情報）と重大度を付ける
-- コード・ファイルを変更しない（レビューのみ）。コミットしない
-- 指摘が無ければ items を空配列にする
-${TIME_NOTE}`
+## Constraints
+- Readability, naming, and style are out of scope (only defects worth fixing).
+- Attach evidence (primary sources such as file path and line numbers) and severity to each finding.
+- Do not modify code or files (review only). Do not commit.
+- If there are no findings, return an empty items array.
+${TAIL_NOTE}`
 
 // レンズ別 Breaker プロンプト。プロンプト本体は共通で、攻撃観点だけレンズ定義（lens.aspects）に差し替える。
 // レンズ S かつ isAuditRound（securityAudit 初回セット round 1）のときは、監査役を統合して STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施する（独立の前段監査スロットを消す）
-const breakerLensPrompt = (round, lens, delta, isAuditRound) => `あなたは Breaker${lens.solo ? '' : `（レンズ ${lens.id}: ${lens.label}）`}である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。${lens.solo ? '全攻撃観点を横断して' : '担当レンズの観点に絞って'}反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
-## 入力
-1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. レビュー対象（ラウンド ${round}）
+const breakerLensPrompt = (round, lens, delta, isAuditRound) => `You are a Breaker${lens.solo ? '' : ` (lens ${lens.id}: ${lens.label})`}. Do not merely read the implementation for GitHub Issue #${args.issueNumber} — break it. Enumerate counterexamples, attack scenarios, and invariant violations, ${lens.solo ? 'covering all attack aspects' : 'focusing on the aspects of your lens'}. Stay independent of the implementation, and default to skepticism: treat implementations that only hold on the happy path as real weaknesses, and grant no credit to good intentions, partial fixes, or promises of follow-up work.
+## Input
+1. Read ${ctx} (Issue requirements, implementation plan, project-specific standards).
+2. Review target (round ${round}):
 ${diffNote(diffRound)}
-${prior()}${delta}${isAuditRound ? `\n## セキュリティ監査（このラウンドで break の前に実施する）\nSTRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙し、${args.workDir}/security-audit.md に書き出してから下記のセキュリティ観点で break する。自動発動の理由: ${args.securityReason}。監査を security-audit.md に書き出せたら auditWritten を true、書き出せなかった場合も auditWritten を false にして内蔵セキュリティ観点での break は必ず続行する。\n` : ''}## 攻撃観点${lens.solo ? '（全観点を横断する）' : `（担当レンズ ${lens.id} に集中する。他レンズの観点は別 Breaker が担当するため深追いしない）`}
+${prior()}${delta}${isAuditRound ? `\n## Security audit (perform in this round, before breaking)\nFrom the STRIDE, authentication / authorization, data flow, secrets, and PII perspectives, enumerate the threats to this change and the attack scenarios to verify, write them to ${args.workDir}/security-audit.md, then break using the security aspects below. Reason for auto-activation: ${args.securityReason}. Set auditWritten to true if you wrote security-audit.md; if you could not, set it to false and still proceed to break with the built-in security aspects.\n` : ''}## Attack aspects${lens.solo ? ' (cover all)' : ` (focus on lens ${lens.id}; the other lenses are covered by other Breakers — do not chase them)`}
 ${lens.aspects}
-## 反例テスト
-- 可能な仮説は最小 failing テストとして書き、context.md のテストスコープで実行して検証する。テストファイル名はレンズ固有トークン \`${lens.token}-\` を前方に付け、\`.breaker-probe.\` を必ず部分文字列として保持する（例: \`${lens.token}-foo.breaker-probe.test.ts\`）。\`.breaker-probe-xxx.\` のようにトークンを \`.breaker-probe.\` の間へ挟まない（後始末・QA が \`.breaker-probe.\` のサブストリング一致で検出するため壊さない）
-${lens.solo ? '' : `- 全レンズが同一ワークツリーで同時にテストするため、自分のレンズの probe（\`${lens.token}-*.breaker-probe.\`）のみを対象に実行する。テストランナーの競合で実行できない仮説は verified: UNVERIFIED とする（Judge が保守的に扱う）\n`}- pass した仮説は破棄し、その反例テストは自分で削除して終える。fail した仮説は検証済み反例（verified: fail）として、テストをツリーに残したまま報告する（後続の開発者が採用時に正規回帰テスト化 / 不採用時に削除する）
-- 実行で確認できない仮説は verified: UNVERIFIED とする
-## 出力
-- ${args.workDir}/breaker-round-${round}-${lens.token}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く（レンズごとに別ファイル。並列レンズ間の上書き競合を避ける）
-- 構造化出力の counterexamples に同じ内容を返す${isAuditRound ? '。security-audit.md を書き出せたかを auditWritten に返す' : ''}
-制約: 反例テスト以外のコード変更をしない（security-audit.md への書き出しは可）。コミットしない。${TIME_NOTE}`
+## Probe tests
+- Where possible, write each hypothesis as a minimal failing test and verify it by running it within the test scope in context.md. Prefix the test filename with the lens token \`${lens.token}-\` and keep \`.breaker-probe.\` as a substring (e.g. \`${lens.token}-foo.breaker-probe.test.ts\`). Never insert the token inside \`.breaker-probe.\` (as in \`.breaker-probe-xxx.\`) — cleanup and QA detect probes by substring-matching \`.breaker-probe.\`, so do not break it.
+${lens.solo ? '' : `- All lenses test concurrently in the same worktree, so run only your own probes (\`${lens.token}-*.breaker-probe.\`). If a hypothesis cannot be run because of test-runner contention, mark it verified: UNVERIFIED (the Judge treats it conservatively).\n`}- Discard hypotheses whose test passes, and delete those probe tests yourself before finishing. Report hypotheses whose test fails as verified counterexamples (verified: fail) and leave the test in the tree (the developer later converts adopted ones into regular regression tests and deletes rejected ones).
+- Mark hypotheses that cannot be verified by execution as verified: UNVERIFIED.
+## Output
+- Write the counterexample list (scenario, evidence, test execution results) to ${args.workDir}/breaker-round-${round}-${lens.token}.md (one file per lens, to avoid concurrent overwrite between parallel lenses).
+- Return the same content in the structured output counterexamples${isAuditRound ? ', and whether you wrote security-audit.md in auditWritten' : ''}.
+Constraints: no code changes other than probe tests (writing security-audit.md is allowed). Do not commit. ${TAIL_NOTE}`
 
-const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `あなたは Judge（裁定者）である。別のエージェント（Breaker）が生成した反例・攻撃シナリオを、リポジトリの実コードと照合して裁定する。Breaker に迎合せず、独立した視点で判断する。あなたは実装にも反例生成にも関与していない。これはラウンド ${round} の反例をバッチ分割した ${batchNum}/${batchTotal} 番目のバッチである。
-## 入力
-1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. レビュー対象（ラウンド ${round}）
+const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `You are the Judge (adjudicator). Another agent (the Breaker) generated counterexamples / attack scenarios; adjudicate them by checking them against the real code in the repository. Do not defer to the Breaker — judge independently. You were involved in neither the implementation nor the counterexample generation. This is batch ${batchNum}/${batchTotal} of the round-${round} counterexamples.
+## Input
+1. Read ${ctx} (Issue requirements, implementation plan, project-specific standards).
+2. Review target (round ${round}):
 ${diffNote(diffRound, true)}
-3. このバッチで裁定する反例（これ以外は扱わない）:
+3. The counterexamples to adjudicate in this batch (handle no others):
 ${JSON.stringify(batch, null, 2)}
 ${prior()}
-## 裁定タスク
-各反例を実コードと照合し、次の 4 カテゴリに分類する:
-- 真の欠陥: 仕様違反・セキュリティ・回帰・運用 / 保守 / 可用性・データ整合性 / 性能・テストカバレッジ不足・アーキテクチャ逸脱・プロジェクト固有基準違反として妥当で、修正価値がある
-- 仕様未定: 仕様が曖昧で、Breaker が勝手な前提を置いている（要仕様確認）
-- 低優先度: 妥当だが重大度が低く、修正コストに見合わない
-- ノイズ: 反証不能・誤解・的外れ（除外）
-## 照合の限定（着実に進める）
-- 裁定対象は上記インラインのバッチの反例のみ。他バッチの反例・${args.workDir}/breaker-round-${round}-*.md（レンズ別の Breaker 出力）の他項目は読まない・扱わない
-- 照合は各反例の evidence が指すファイル / 行に限定する。evidence が無い反例は diff の変更範囲とシナリオ本文が名指しする箇所に照合を限定する。いずれの場合も無関係な広域 grep・全サービス横断の探索はしない
-- 3 分以内に着実に tool を進める（一つの探索で止まり続けない）
-- Breaker が見落とした欠陥の独立探索はこのバッチでは行わない（バッチ間の重複を避けるため）
-## 制約
-- 可読性・命名・スタイルは対象外
-- 「真の欠陥」は次の 4 点に答えられるものだけにする: (1) 何が起きるか (2) なぜそのコードパスが脆弱か (3) 想定される影響 (4) リスクを下げる具体策。答えられない懸念は低優先度またはノイズに分類する
-- 弱い指摘を複数並べるより、根拠を防御できる強い指摘を優先する
-- コード・ファイルを変更しない（裁定のみ）。コミットしない
-- items には「真の欠陥」「仕様未定」のみを入れ（category を設定）、低優先度・ノイズは dismissed に件数とタイトルだけ残す
-${TIME_NOTE}`
+## Adjudication task
+Check each counterexample against the real code and classify it into exactly one of these 4 categories (use these exact Japanese values for category):
+- 真の欠陥 (true defect): valid as a spec violation, security issue, regression, operations / maintainability / availability problem, data-integrity / performance problem, missing test coverage, architecture violation, or project-specific-standard violation — worth fixing.
+- 仕様未定 (spec undecided): the spec is ambiguous and the Breaker made an arbitrary assumption (needs spec confirmation).
+- 低優先度 (low priority): valid but low severity; not worth the fix cost.
+- ノイズ (noise): unfalsifiable, a misunderstanding, or off the mark (excluded).
+## Scoped verification (keep moving steadily)
+- Adjudicate only the inline batch above. Do not read or handle other batches or the other entries of ${args.workDir}/breaker-round-${round}-*.md (per-lens Breaker output).
+- Limit verification to the files / lines pointed to by each counterexample's evidence. If a counterexample has no evidence, limit verification to the diff's changed range and the places its scenario names. In either case, do not run unrelated wide-area greps or cross-service exploration.
+- Keep tool calls progressing steadily within ~3 minutes (do not stall on a single exploration).
+- Do not independently hunt for defects the Breaker missed in this batch (avoids duplication across batches).
+## Constraints
+- Readability, naming, and style are out of scope.
+- Classify as 真の欠陥 only counterexamples that can answer all 4 of: (1) what happens, (2) why that code path is vulnerable, (3) the expected impact, (4) a concrete mitigation. Concerns that cannot answer them go to 低優先度 or ノイズ.
+- Prefer a few strong, defensible findings over many weak ones.
+- Do not modify code or files (adjudication only). Do not commit.
+- Put only 真の欠陥 and 仕様未定 into items (set category); leave 低優先度 / ノイズ in dismissed with count and title only.
+${TAIL_NOTE}`
 
-const fixPrompt = (round, items) => `あなたは GitHub Issue #${args.issueNumber} を実装した開発者（レビュイー）である。ラウンド ${round} のレビュー指摘を判定・反映する:
+const fixPrompt = (round, items) => `You are the developer (reviewee) who implemented GitHub Issue #${args.issueNumber}. Judge and apply the round-${round} review findings:
 ${JSON.stringify(items, null, 2)}
-1. ${ctx} と ${notes} を読み、実装文脈を復元する
-2. 指摘を 1 件ずつ「採用 / 不採用」に分類する:
-   - 採用: 仕様未充足・バグ・回帰リスク・実装レベルの危険箇所を根拠付きで正しく突いている指摘
-   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する。Judge が「真の欠陥」と裁定した指摘でも、修正が過剰対応になるなら不採用にしてよい）
-3. 採用指摘を修正し、関連スコープのテストを再実行する（壊れたまま終えない）
-4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換（リネーム・配置換え）し、それ以外は削除する
-5. ${notes} を更新する
-6. 最終ステップ（修正・テスト・反例テストの整理がすべて終わった後に実行する）: 次ラウンドのレビュー正本 diff.md を再生成する
+1. Read ${ctx} and ${notes} to restore the implementation context.
+2. Classify each finding as 採用 (adopt) or 不採用 (reject):
+   - Adopt: findings that correctly identify, with evidence, an unmet spec, a bug, a regression risk, or an implementation-level hotspot.
+   - Reject: invalid, would cause over-engineering, or out of the Issue scope (record the reason in one line). Even findings the Judge classified as 真の欠陥 may be rejected if fixing them would be overcorrection.
+3. Fix the adopted findings and re-run the relevant-scope tests (do not leave them broken).
+4. Clean up the probe tests containing .breaker-probe.: convert the ones corresponding to adopted defects into regular regression tests (rename / relocate); delete the rest.
+5. Update ${notes}.
+6. Final step (only after fixes, tests, and probe-test cleanup are all done): regenerate the canonical review diff for the next round:
    bash ${args.workDir}/gen-diff.sh origin/${args.defaultBranch} ${round + 1}
-   成功したら diffRegenerated を true、スクリプトが無い / 非ゼロ終了なら false にして返す（false のとき次ラウンドのレビュー役は自前の git 取得へフォールバックする）。diff.md を手で編集しない
-制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`
+   Set diffRegenerated to true on success, or false if the script is missing / exits non-zero (when false, next-round reviewers fall back to fetching the diff via git themselves). Do not hand-edit diff.md.
+Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${TAIL_NOTE}`
 
-const qaPrompt = () => `あなたは独立 QA エージェントである。レビューループ収束後・コミット前の最終検証を行う。
-1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
-2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff HEAD で見える未コミット変更（staged 済みの変更を落とさないよう引数なしの git diff ではなく git diff HEAD を使う。開発者が生成した ${diffPath} は使わない。自己申告を信用しない独立検証のため、diff は自分で取得する）
-3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する
-4. Issue の受け入れ基準を 1 件ずつ検証する
-5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
-制約: コード・ファイルを変更しない。コミットしない。
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。${TIME_NOTE}`
+const qaPrompt = () => `You are an independent QA agent performing the final verification after review-loop convergence, before commit.
+1. Read ${ctx} (test policy, acceptance criteria, diff base).
+2. Inspect the changes: git diff origin/${args.defaultBranch}...HEAD, plus uncommitted changes via git status / git diff HEAD (use git diff HEAD, not bare git diff, so staged changes are not dropped. Do not use the developer-generated ${diffPath} — independent verification does not trust self-reports, so fetch the diff yourself).
+3. Following the test policy in context.md, run the relevant-scope tests and lint yourself.
+4. Verify each acceptance criterion of the Issue, one by one.
+5. If any file containing .breaker-probe. remains in the change set, report it in issues.
+Constraints: do not modify code or files. Do not commit.
+Verdict: set pass=true only when all tests pass and the acceptance criteria are met. ${TAIL_NOTE}`
 
 // セキュリティ監査はレンズ S の Breaker に統合済み（securityAudit 初回セット round 1 で STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施）。独立の前段監査スロットは持たない。auditFailed はレンズ S が監査を書き出せなかった場合に立てる
 let auditFailed = false
@@ -547,15 +575,20 @@ let diffDegraded = false
 let cleanStreak = args.cleanStreak || 0
 const specQuestions = []
 
+log(`${ts(lastJst)}レビューセット開始（mode=${args.mode}・round ${args.startRound}〜${args.startRound + 2}）`)
+
 for (let i = 0; i < 3; i++) {
   const round = args.startRound + i
   // dry-twice: 前ラウンドがクリーン（指摘0/採用0）だった直後は確認ラウンド。差分スコープを解除しフルスコープで見直す（揺らぎ由来の見逃しを拾う）
   const isConfirmRound = cleanStreak === 1
-  log(`レビューラウンド ${round}（${args.mode}）開始${isConfirmRound ? '（確認ラウンド: 連続クリーン確認・差分スコープ解除）' : ''}`)
-  let findings = null
   const delta = isConfirmRound ? '' : fixDelta(i)
   // 分割並列は包括ラウンド（初回セット round 1）限定。差分スコープのラウンド 2+・確認ラウンド・継続セットは単発 1 体（全観点横断）で実施する（Issue #113: トークン・ストール露出の抑制）
   const comprehensive = args.startRound === 1 && i === 0 && !isConfirmRound
+  const launchDesc = args.mode === 'adversarial'
+    ? `Breaker ${comprehensive ? '3 レンズ（S/C/O）並列' : '単発 1 体'}`
+    : `レビュワー ${comprehensive ? '3 グループ（G1/G2/G3）並列' : '単発 1 体'}`
+  log(`${ts(lastJst)}レビューラウンド ${round}（${args.mode}）開始${isConfirmRound ? '（確認ラウンド: 連続クリーン確認・差分スコープ解除）' : ''} — ${launchDesc}を起動`)
+  let findings = null
   if (args.mode === 'adversarial') {
     // 包括ラウンドは Breaker を観点別レンズ（S/C/O）に分割しフラット parallel で同時起動、以降は単発 Breaker（LENS_ALL）1 体。レンズ S は securityAudit 初回セット round 1 のとき監査を内蔵実施する（前段の独立監査スロットを消す）
     const isAuditRound = !!args.securityAudit && i === 0
@@ -573,11 +606,12 @@ for (let i = 0; i < 3; i++) {
       if (sResult === null || sResult.auditWritten === false) { auditFailed = true; log(`レンズ S の監査書き出しに失敗（内蔵セキュリティ観点のみで続行）`) }
     }
     const breakerTimes = okLenses.map((r) => r.nowJst).filter(Boolean).sort()
-    if (breakerTimes.length) log(`[${breakerTimes[breakerTimes.length - 1]} JST] breaker r${round} 完了（${okLenses.length}/${lenses.length} レンズ・反例${okLenses.reduce((n, r) => n + (r.counterexamples || []).length, 0)}件）`)
+    if (breakerTimes.length) { lastJst = breakerTimes[breakerTimes.length - 1]; log(`[${lastJst} JST] breaker r${round} 完了（${okLenses.length}/${lenses.length} レンズ・反例${okLenses.reduce((n, r) => n + (r.counterexamples || []).length, 0)}件）`) }
     const scen = okLenses.flatMap((r) => r.counterexamples || [])
     const BATCH = 4
     const batches = []
     for (let b = 0; b < scen.length; b += BATCH) batches.push(scen.slice(b, b + BATCH))
+    if (batches.length > 0) log(`${ts(lastJst)}judge r${round} 起動（反例${scen.length}件・${batches.length}バッチ並列）`)
     const batchResults = batches.length === 0 ? [] : await parallel(batches.map((batch, bi) => () =>
       agent(judgeBatchPrompt(round, batch, bi + 1, batches.length),
         { label: `judge:r${round}-b${bi + 1}`, phase: 'Review', model: 'opus', effort: 'high', schema: FINDINGS_SCHEMA })))
@@ -585,7 +619,7 @@ for (let i = 0; i < 3; i++) {
     if (batches.length > 0 && ok.length === 0) { status = 'agent-failed'; break }
     if (ok.length < batches.length) { judgeDegraded = true; log(`judge r${round}: ${batches.length - ok.length}/${batches.length} バッチ失敗（部分裁定で続行・未裁定の反例あり）`) }
     const judgeTimes = ok.map((r) => r.nowJst).filter(Boolean).sort()
-    if (judgeTimes.length) log(`[${judgeTimes[judgeTimes.length - 1]} JST] judge r${round} 完了（${ok.length}/${batches.length} バッチ）`)
+    if (judgeTimes.length) { lastJst = judgeTimes[judgeTimes.length - 1]; log(`[${lastJst} JST] judge r${round} 完了（${ok.length}/${batches.length} バッチ）`) }
     findings = { items: ok.flatMap((r) => r.items || []), dismissed: ok.flatMap((r) => r.dismissed || []) }
   } else {
     // 包括ラウンドは標準レビュワーを観点別グループ（G1/G2/G3）に分割しフラット parallel で同時起動、以降は単発レビュワー（REVIEWER_ALL）1 体。union = 現行 9 観点で内容は不変。Judge 段は無く各グループの items を単純結合する（グループ間の重複指摘は fix の採用判定で統合。敵対レンズ重複と同じ扱い）。一部グループ失敗は reviewerDegraded で伝播
@@ -597,13 +631,18 @@ for (let i = 0; i < 3; i++) {
     if (okGroups.length === 0) { status = 'agent-failed'; break }
     if (okGroups.length < groups.length) { reviewerDegraded = true; log(`reviewer r${round}: ${groups.length - okGroups.length}/${groups.length} グループ失敗（部分レビューで続行・未探索の観点あり）`) }
     const reviewerTimes = okGroups.map((r) => r.nowJst).filter(Boolean).sort()
-    if (reviewerTimes.length) log(`[${reviewerTimes[reviewerTimes.length - 1]} JST] reviewer r${round} 完了（${okGroups.length}/${groups.length} グループ・指摘${okGroups.reduce((n, r) => n + (r.items || []).length, 0)}件）`)
+    if (reviewerTimes.length) { lastJst = reviewerTimes[reviewerTimes.length - 1]; log(`[${lastJst} JST] reviewer r${round} 完了（${okGroups.length}/${groups.length} グループ・指摘${okGroups.reduce((n, r) => n + (r.items || []).length, 0)}件）`) }
     findings = { items: okGroups.flatMap((r) => r.items || []), dismissed: okGroups.flatMap((r) => r.dismissed || []) }
   }
   if (findings === null) { status = 'agent-failed'; break }
   // クリーン判定: 「指摘0件」「真の欠陥0件（仕様未定のみ）」「採用0件」を統一的に「クリーン」とし、連続 2 回（cleanStreak >= 2）で収束する。1 回目クリーンでは即 break せず確認ラウンドへ進む
-  specQuestions.push(...findings.items.filter((it) => it.category === '仕様未定'))
+  const specItems = findings.items.filter((it) => it.category === '仕様未定')
+  specQuestions.push(...specItems)
   const trueDefects = findings.items.filter((it) => it.category !== '仕様未定')
+  // ラウンド結果の可視化: 指摘の内訳と各タイトルを log で出す（件数上限つき）
+  log(`${ts(lastJst)}ラウンド ${round} レビュー結果: ${args.mode === 'adversarial' ? `真の欠陥${trueDefects.length}件・仕様未定${specItems.length}件・除外${(findings.dismissed || []).length}件` : `指摘${findings.items.length}件・除外${(findings.dismissed || []).length}件`}`)
+  for (const it of findings.items.slice(0, 10)) log(`- [${it.severity || '-'}] ${it.title}${it.category === '仕様未定' ? '〔仕様未定〕' : ''}`)
+  if (findings.items.length > 10) log(`- …他${findings.items.length - 10}件`)
   let clean = false
   if (findings.items.length === 0 || trueDefects.length === 0) {
     records.push({ round, findings: findings.items.length, adopted: 0, rejected: [], dismissed: (findings.dismissed || []).length })
@@ -614,7 +653,12 @@ for (let i = 0; i < 3; i++) {
     // （再生成漏れは次ラウンドでスタンプ不一致となり、各レビュー役が自前の git 取得へフォールバックする ＝ 安全側）
     diffRound = round + 1
     if (fix === null) { status = 'agent-failed'; break }
-    log(`[${fix.nowJst} JST] dev fix r${round} 完了（採用${fix.adopted.length}件）`)
+    lastJst = fix.nowJst || lastJst
+    log(`[${fix.nowJst} JST] dev fix r${round} 完了（採用${fix.adopted.length}件・不採用${fix.rejected.length}件${fix.testsPassed ? '' : '・テスト失敗'}）`)
+    for (const a of fix.adopted.slice(0, 10)) log(`- 採用: ${a.title}`)
+    if (fix.adopted.length > 10) log(`- 採用: …他${fix.adopted.length - 10}件`)
+    for (const rj of fix.rejected.slice(0, 5)) log(`- 不採用: ${rj.title}（${rj.reason}）`)
+    if (fix.rejected.length > 5) log(`- 不採用: …他${fix.rejected.length - 5}件`)
     if (fix.diffRegenerated === false) { diffDegraded = true; log(`dev fix r${round}: diff.md の再生成に失敗（次ラウンドのレビュー役は自前の git 取得へフォールバックする）`) }
     records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length, adoptedItems: fix.adopted })
     if (!fix.testsPassed) { status = 'tests-failing'; break }
@@ -622,8 +666,8 @@ for (let i = 0; i < 3; i++) {
   }
   if (clean) {
     cleanStreak++
-    if (cleanStreak >= 2) { converged = true; break }
-    log(`ラウンド ${round}: クリーン（連続 ${cleanStreak} 回）。差分スコープを解除した確認ラウンドで再検証する`)
+    if (cleanStreak >= 2) { converged = true; log(`${ts(lastJst)}ラウンド ${round}: クリーン（連続 2 回）→ 収束`); break }
+    log(`${ts(lastJst)}ラウンド ${round}: クリーン（連続 ${cleanStreak} 回）。差分スコープを解除した確認ラウンドで再検証する`)
   } else {
     cleanStreak = 0
   }
@@ -632,11 +676,15 @@ for (let i = 0; i < 3; i++) {
 let finalQa = null
 if (converged) {
   if (args.mode === 'adversarial') {
-    await agent(`現在の変更セット（git status / git diff で確認）にファイル名へ .breaker-probe. を含むファイルが残っていれば、それらをすべて削除する。採用された欠陥の回帰テストは開発者が正規名へ変換済みのため、.breaker-probe. が名前に残るファイルは使い捨てと定義されている。それ以外の変更は一切しない。残っていなければ何もしない。コミット・push はしない。`,
+    await agent(`If any files whose names contain .breaker-probe. remain in the current change set (check via git status / git diff), delete them all. Regression tests for adopted defects were already renamed by the developer, so any file still containing .breaker-probe. in its name is throwaway by definition. Make no other changes. If none remain, do nothing. Do not commit or push. Output language: Japanese.`,
       { label: 'dev:probe-cleanup', phase: 'FinalQA', model: 'sonnet', effort: 'low' })
   }
   finalQa = await agent(qaPrompt(), { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
-  if (finalQa === null) { status = 'agent-failed' } else { log(`[${finalQa.nowJst} JST] FinalQA 完了（pass=${finalQa.pass}）`) }
+  if (finalQa === null) { status = 'agent-failed' } else {
+    lastJst = finalQa.nowJst || lastJst
+    log(`[${finalQa.nowJst} JST] FinalQA 完了（pass=${finalQa.pass}${finalQa.pass ? '' : `・指摘${finalQa.issues.length}件`}）`)
+    for (const it of (finalQa.pass ? [] : finalQa.issues.slice(0, 5))) log(`- QA指摘: ${it.title}`)
+  }
 }
 
 // 仕様未定は確認ラウンド（未変更コードの再レビュー）等で同一項目が再収集されうるため、返却前に title で重複排除する（確認ラウンドで新規に見つかった仕様確認は保持し、完全な重複のみ除く）
@@ -647,7 +695,7 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 返却の扱い:
 
 - `converged: true` → まず `specQuestions` が空であることを確認する（非空なら下記の `specQuestions` 処理を先に行い、仕様確定で修正が生じたら未収束として次セットへ回す。この経路ではコミットしない）。空なら `finalQa.pass` を確認して「収束後のコミット・PR 作成」へ（`pass: false` なら自動コミットを中止し issues を提示して相談）。加えて `judgeDegraded: true` のときは未裁定の反例が残るため、収束していても自動コミット前にユーザーへ確認する（下記 `judgeDegraded`）
-- `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + **前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems` の title/action）** を入れ、**返却の `cleanStreak` も次セットの `args` に引き継いで**同じ scriptPath で再起動する（差分スコープをセット跨ぎで連続させる。`cleanStreak: 1` を引き継ぐと次セット round 1 が差分スコープ解除の確認ラウンドになり dry-twice 収束がセット境界を跨いで機能する）
+- `converged: false` かつ `status: 'ok'`（3 ラウンド消化）→ 上限チェック: `records` の残指摘を要約提示して AskUserQuestion（続行 / 打ち切り / 中止）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + **前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems` の title/action）** を入れ、**返却の `cleanStreak` も次セットの `args` に引き継いで**同じ scriptPath で再起動する（`startedAt` は再実測して渡す。差分スコープをセット跨ぎで連続させる。`cleanStreak: 1` を引き継ぐと次セット round 1 が差分スコープ解除の確認ラウンドになり dry-twice 収束がセット境界を跨いで機能する）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目。オーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になった場合は未収束として扱い、次セット（または開発者修正 1 回 + 再収束確認）へ進む
 - `auditFailed: true` → レンズ S の Breaker がセキュリティ監査（`security-audit.md` の書き出し）を完了できず、内蔵のセキュリティ観点のみで break された（監査の欠落）。完了報告に明記する
 - `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O のいずれか）が失敗し、その観点の反例が生成されないまま収束扱いになった。未探索の攻撃観点が残り、`finalQa`（テスト・受け入れ基準の検証）は当該クラスの欠陥をバックストップしない。完了報告に明記し、自動コミット前にユーザーへ確認する（`auditFailed` / `judgeDegraded` と同型の劣化伝播）
@@ -666,6 +714,7 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 > - **レビュー役のモデル opus 化**（標準レビュワー〔グループ・単発とも〕・Breaker〔レンズ・単発とも。S 含む〕・Judge バッチを `model: 'opus'` に。QA・probe-cleanup は検証・掃除役のため sonnet 維持〔対象外〕。fix / dev は既に opus。Judge バッチの `effort` は `'high'`〔上記の Issue #113 戻し〕）
 > - **セキュリティ監査役のレンズ S 統合**（`securityAudit` 初回セット round 1 でレンズ S が STRIDE 監査 → `security-audit.md` 書き出し → break を 1 エージェントで実施。独立の前段監査スロットは削除。`auditWritten` フラグで「監査のみ失敗」を `auditFailed` として区別）
 > - **差分スコープ化**（`records[].adoptedItems` に採用修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドの修正差分とその波及に重点付けする `fixDelta()`。ラウンド 1 は全 diff 包括レビュー。diff 基準は全体維持で重点付けであり抑制ではない）
+> - **プロンプトの英語化 + 進捗ログ規約（Issue #122）**（`agent()` プロンプト・スキーマ description は英語、出力内容・`log()`・カテゴリ enum 値は日本語。`TAIL_NOTE` による日本語出力 + `nowJst`〔`%Y-%m-%d %H:%M:%S`〕指示、`args.startedAt` の開始ログ、`lastJst` 導出のラウンド開始 / judge 起動ログ、ラウンド終了時の指摘・採用内訳ログ〔件数上限つき〕）
 >
 > plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・probe 命名の不変条件・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる（差分スコープは「plan-editor の採用計画修正が触れた計画節＋影響領域」に読み替える。Breaker のフィールド名は resolve = `counterexamples` / plan = `scenarios`）。
 >
@@ -675,13 +724,13 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 >
 > **claude / codex 系の非対称**: 雛形 C（`sir-codex-breaker`）の Breaker はレンズ分割せず単発のまま（Codex 利用制限中のため本 Issue では現状維持）。claude 系だけがレンズ分割・差分スコープ化・diff 正本ファイル化される非対称を許容する。
 >
-> また、雛形 B の `reviewerGroupPrompt` / `breakerLensPrompt` / `judgeBatchPrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。攻撃観点（レンズの union で表現される内容）・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も同期する（レンズ分割・差分スコープ・バッチ並列化は resolve/plan 間の構造同期で、攻撃観点・裁定基準の内容を変えないため単体スキルへの内容同期は不要。cra の Judge バッチ並列化 + miss-finder 分離は cra 側で別途実装）。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
+> また、雛形 B の `reviewerGroupPrompt` / `breakerLensPrompt` / `judgeBatchPrompt`（レビュー観点・攻撃観点・4 分類裁定基準）と雛形 C（`sir-codex-breaker`）の Breaker プロンプトは、単体スキル `code-reviewer`（`--isolated` の単発隔離レビュー）・`code-reviewer-adversarial`（`--claude-judge` の Breaker×Judge）へも移植済み。攻撃観点（レンズの union で表現される内容）・裁定基準を変更したら、これら単体スキルの `references/agent-orchestration.md` も**英語表現のまま**同期する（レンズ分割・差分スコープ・バッチ並列化は resolve/plan 間の構造同期で、攻撃観点・裁定基準の内容を変えないため単体スキルへの内容同期は不要。cra の Judge バッチ並列化 + miss-finder 分離は cra 側で別途実装）。マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」を参照。
 
 ## 雛形 C: codex 敵対モードの Breaker（sir-codex-breaker）
 
 codex 敵対モード（--codex-advs-review-loop / セキュリティ自動発動）のラウンドで、Judge（Codex）に渡す反例を独立 Sonnet エージェントが生成する。1 ラウンド 1 起動。
 
-`args`: `{ workDir, issueNumber, branch, defaultBranch, round, priorSummary, securityAudit, securityReason }`（`securityAudit` はセキュリティ自動発動時のラウンド 1 のみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。監査役プロンプトに埋め込まれるため `securityAudit: true` のときは必ず渡す）
+`args`: `{ workDir, issueNumber, branch, defaultBranch, round, priorSummary, securityAudit, securityReason, startedAt }`（`securityAudit` はセキュリティ自動発動時のラウンド 1 のみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。監査役プロンプトに埋め込まれるため `securityAudit: true` のときは必ず渡す。`startedAt`: 起動直前に実測した開始日時〔開始ログ表示専用・省略可〕）
 
 ```js
 export const meta = {
@@ -697,10 +746,12 @@ export const meta = {
 args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const ctx = args.workDir + '/context.md'
-const diffNote = `レビュー対象は現在ブランチ ${args.branch} の変更全体（git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更）。ローカル ${args.defaultBranch} は origin より古いことがあるため、必ず origin/${args.defaultBranch} を基準にする。`
+const diffNote = `The review target is the entire change on the current branch ${args.branch} (git diff origin/${args.defaultBranch}...HEAD plus uncommitted changes visible via git status / git diff). Local ${args.defaultBranch} can be stale — always diff against origin/${args.defaultBranch}.`
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
+let lastJst = args.startedAt || ''
 
 const BREAK_SCHEMA = {
   type: 'object',
@@ -727,54 +778,60 @@ const AUDIT_SCHEMA = {
   type: 'object',
   required: ['summary', 'nowJst'],
   properties: {
-    summary: { type: 'string', description: '攻撃シナリオの要点（15 行以内）' },
+    summary: { type: 'string', description: 'Gist of the attack scenarios (within 15 lines)' },
     nowJst: NOW_JST_FIELD,
   },
 }
 
+log(`${ts(lastJst)}Breaker ラウンド ${args.round} 開始${args.securityAudit ? '（セキュリティ監査つき）' : ''}`)
+
 let auditNote = ''
 let auditFailed = false
 if (args.securityAudit) {
-  const audit = await agent(`あなたはセキュリティ監査役である。実装コードの敵対的レビューに先立ち、攻撃シナリオの観点を提供する。
-1. ${ctx} を読む
+  const audit = await agent(`You are a security auditor. Ahead of the adversarial review of the implementation, provide attack-scenario perspectives.
+1. Read ${ctx}.
 2. ${diffNote}
-3. STRIDE・認証 / 認可・データフロー・秘密情報・PII の観点で、この変更に対する脅威と検証すべき攻撃シナリオを列挙する
-4. ${args.workDir}/security-audit.md に書く
-自動発動の理由: ${args.securityReason}
-制約: リポジトリのコード（ソースファイル）を変更しない（security-audit.md への書き出しは可）。コミット・push はしない。最終出力: summary に攻撃シナリオの要点（15 行以内）。${TIME_NOTE}`,
+3. From the STRIDE, authentication / authorization, data flow, secrets, and PII perspectives, enumerate the threats to this change and the attack scenarios that should be verified.
+4. Write them to ${args.workDir}/security-audit.md.
+Reason for auto-activation: ${args.securityReason}
+Constraints: do not modify repository source files (writing security-audit.md is allowed). Do not commit or push. Final output: put the gist of the attack scenarios (within 15 lines) into summary. ${TAIL_NOTE}`,
     { label: 'security:audit', phase: 'Audit', model: 'sonnet', effort: 'max', schema: AUDIT_SCHEMA })
   if (audit) {
-    auditNote = `\n## セキュリティ監査観点（攻撃シナリオに必ず含める）\n${audit.summary}\n詳細: ${args.workDir}/security-audit.md\n`
+    auditNote = `\n## Security-audit perspectives (must be reflected in your attack scenarios)\n${audit.summary}\nDetails: ${args.workDir}/security-audit.md\n`
+    lastJst = audit.nowJst || lastJst
     log(`[${audit.nowJst} JST] セキュリティ監査 完了`)
   } else {
     auditFailed = true
   }
 }
 
-const breaker = await agent(`あなたは Breaker である。GitHub Issue #${args.issueNumber} 対応の実装を「読む」のではなく「壊す」。反例・攻撃シナリオ・不変条件違反を列挙する。実装には関与していない独立の立場を保ち、デフォルトは懐疑: 正常系でしか成立しない実装は実在の弱点として扱い、善意・部分的な修正・「後続対応の見込み」に信用を与えない。
-## 入力
-1. ${ctx} を読む（Issue 要件・実装計画・プロジェクト固有基準）
-2. ${diffNote}（ラウンド ${args.round}）
-${args.priorSummary ? `\n## 前ラウンドまでの経緯\n${args.priorSummary}\n` : ''}${auditNote}
-## 攻撃観点(横断する)
-- セキュリティ: 認可逸脱・インジェクション・秘密情報漏洩・TOCTOU・PII 露出・Confused Deputy（${args.workDir}/security-audit.md があれば必ず参照し、記載の脅威・攻撃シナリオも反映する）
-- 仕様: 受け入れ基準未充足・契約違反・後方互換性破壊・version skew / スキーマドリフト
-- 回帰: 既存挙動・呼び出し元の破壊
-- 運用・保守・可用性: 可観測性の欠落・デプロイ / ロールバックの脆さ・過度な結合・タイムアウト / リトライ欠如・障害時や依存劣化時の挙動・リソース枯渇・単一障害点
-- データ整合性・性能: トランザクション境界・原子性・冪等性（二重実行）・並行更新の破れ・部分失敗・再入可能性・不可逆な状態変更・N+1 や過剰 I/O・計算量
-- アーキテクチャ: レイヤー責務の逸脱・境界侵犯・未検証の実行パス
-- プロジェクト固有基準（context.md に提示がある場合、その違反も攻撃シナリオに含める）
-## 反例テスト
-- 可能な仮説は最小 failing テストとして書き、context.md のテストスコープで実行して検証する。テストファイル名には必ず .breaker-probe. を含める
-- pass した仮説は破棄し、その反例テストは自分で削除して終える。fail した仮説は検証済み反例（verified: fail）として、テストをツリーに残したまま報告する
-- 実行で確認できない仮説は verified: UNVERIFIED とする
-## 出力
-- ${args.workDir}/breaker-round-${args.round}.md に反例リスト（シナリオ・根拠・テスト実行結果）を書く
-- 構造化出力の counterexamples に同じ内容を返す
-制約: 反例テスト以外のコード変更をしない。コミットしない。${TIME_NOTE}`,
+const breaker = await agent(`You are a Breaker. Do not merely read the implementation for GitHub Issue #${args.issueNumber} — break it. Enumerate counterexamples, attack scenarios, and invariant violations. Stay independent of the implementation, and default to skepticism: treat implementations that only hold on the happy path as real weaknesses, and grant no credit to good intentions, partial fixes, or promises of follow-up work.
+## Input
+1. Read ${ctx} (Issue requirements, implementation plan, project-specific standards).
+2. ${diffNote} (round ${args.round})
+${args.priorSummary ? `\n## Prior rounds\n${args.priorSummary}\n` : ''}${auditNote}
+## Attack aspects (cover all)
+- Security: authorization bypass, injection, secret leakage, TOCTOU, PII exposure, confused deputy (if ${args.workDir}/security-audit.md exists, always consult it and reflect its threats and attack scenarios)
+- Spec: unmet acceptance criteria, contract violations, backward-compatibility breakage, version skew / schema drift
+- Regression: breaking existing behavior or callers
+- Operations, maintainability, availability: missing observability, fragile deploy / rollback, excessive coupling, missing timeouts / retries, behavior on failure or dependency degradation, resource exhaustion, single points of failure
+- Data integrity & performance: transaction boundaries, atomicity, idempotency (double execution), broken concurrent updates, partial failure, reentrancy, irreversible state changes, N+1 or excessive I/O, computational complexity
+- Architecture: layer-responsibility violations, boundary intrusion, unverified execution paths
+- Project-specific standards (if provided in context.md, include their violations as attack scenarios)
+## Probe tests
+- Where possible, write each hypothesis as a minimal failing test and verify it by running it within the test scope in context.md. The test filename must contain .breaker-probe.
+- Discard hypotheses whose test passes, and delete those probe tests yourself before finishing. Report hypotheses whose test fails as verified counterexamples (verified: fail) and leave the test in the tree.
+- Mark hypotheses that cannot be verified by execution as verified: UNVERIFIED.
+## Output
+- Write the counterexample list (scenario, evidence, test execution results) to ${args.workDir}/breaker-round-${args.round}.md.
+- Return the same content in the structured output counterexamples.
+Constraints: no code changes other than probe tests. Do not commit. ${TAIL_NOTE}`,
   { label: 'breaker:r' + args.round, phase: 'Break', model: 'sonnet', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed' }
+lastJst = breaker.nowJst || lastJst
 log(`[${breaker.nowJst} JST] breaker r${args.round} 完了（反例${breaker.counterexamples.length}件）`)
+for (const c of breaker.counterexamples.slice(0, 10)) log(`- [${c.verified}] ${c.title}`)
+if (breaker.counterexamples.length > 10) log(`- …他${breaker.counterexamples.length - 10}件`)
 
 return { status: 'ok', counterexamples: breaker.counterexamples, breakerFile: args.workDir + '/breaker-round-' + args.round + '.md', auditFailed }
 ```
@@ -785,7 +842,7 @@ return { status: 'ok', counterexamples: breaker.counterexamples, breakerFile: ar
 
 codex 系ラウンドで、Codex のレビュー結果を開発者エージェントが判定・反映する。起動前にオーケストレーターがレビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出しておく（標準モード: Codex の指摘全件、敵対モード: 裁定の真の欠陥 + ユーザー確認で仕様が確定した項目。いずれも要約・取捨選択・再解釈をしない。物理ゲート: このファイルが無ければ起動しない）。
 
-`args`: `{ workDir, issueNumber, round }`
+`args`: `{ workDir, issueNumber, round, startedAt }`（`startedAt`: 起動直前に実測した開始日時〔開始ログ表示専用・省略可〕）
 
 ```js
 export const meta = {
@@ -800,8 +857,9 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 const ctx = args.workDir + '/context.md'
 const notes = args.workDir + '/impl-notes.md'
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
 
 const FIX_SCHEMA = {
   type: 'object',
@@ -821,18 +879,24 @@ const FIX_SCHEMA = {
   },
 }
 
-const fix = await agent(`あなたは GitHub Issue #${args.issueNumber} を実装した開発者（レビュイー）である。ラウンド ${args.round} のレビュー指摘を判定・反映する。
-1. ${ctx} と ${notes} を読み、実装文脈を復元する
-2. ${args.workDir}/findings-round-${args.round}.md のレビュー指摘を 1 件ずつ「採用 / 不採用」に分類する:
-   - 採用: 仕様未充足・バグ・回帰リスク・実装レベルの危険箇所を根拠付きで正しく突いている指摘
-   - 不採用: 妥当性がない・オーバーエンジニアリングを招く・Issue のスコープ外（理由を 1 行で記録する。Judge が「真の欠陥」と裁定した指摘でも、修正が過剰対応になるなら不採用にしてよい）
-3. 採用指摘を修正し、context.md のテスト方針に従って関連スコープのテストを再実行する（壊れたまま終えない）
-4. .breaker-probe. を含む反例テストを整理する: 採用した欠陥に対応するものは正規の回帰テストへ変換し、それ以外は削除する
-5. ${notes} を更新する
-制約: コミット・push はしない。指摘の再解釈・要約による弱体化をしない（判定は採用 / 不採用の分類と理由の明記のみ）。${TIME_NOTE}`,
+log(`${ts(args.startedAt)}dev fix ラウンド ${args.round} 開始`)
+
+const fix = await agent(`You are the developer (reviewee) who implemented GitHub Issue #${args.issueNumber}. Judge and apply the round-${args.round} review findings.
+1. Read ${ctx} and ${notes} to restore the implementation context.
+2. Classify each finding in ${args.workDir}/findings-round-${args.round}.md as 採用 (adopt) or 不採用 (reject):
+   - Adopt: findings that correctly identify, with evidence, an unmet spec, a bug, a regression risk, or an implementation-level hotspot.
+   - Reject: invalid, would cause over-engineering, or out of the Issue scope (record the reason in one line). Even findings the Judge classified as 真の欠陥 may be rejected if fixing them would be overcorrection.
+3. Fix the adopted findings and re-run the relevant-scope tests per the test policy in context.md (do not leave them broken).
+4. Clean up the probe tests containing .breaker-probe.: convert the ones corresponding to adopted defects into regular regression tests; delete the rest.
+5. Update ${notes}.
+Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${TAIL_NOTE}`,
   { label: 'dev:fix-r' + args.round, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
 if (fix === null) return { status: 'agent-failed' }
-log(`[${fix.nowJst} JST] dev fix r${args.round} 完了（採用${fix.adopted.length}件）`)
+log(`[${fix.nowJst} JST] dev fix r${args.round} 完了（採用${fix.adopted.length}件・不採用${fix.rejected.length}件）`)
+for (const a of fix.adopted.slice(0, 10)) log(`- 採用: ${a.title}`)
+if (fix.adopted.length > 10) log(`- 採用: …他${fix.adopted.length - 10}件`)
+for (const rj of fix.rejected.slice(0, 5)) log(`- 不採用: ${rj.title}（${rj.reason}）`)
+if (fix.rejected.length > 5) log(`- 不採用: …他${fix.rejected.length - 5}件`)
 
 return { status: 'ok', fix }
 ```
@@ -841,7 +905,7 @@ return { status: 'ok', fix }
 
 codex 系ループの収束（または打ち切りで完了処理を選択した）後、および claude 系で**打ち切り**を選択した（雛形 B の最終 QA が未実施の）場合に、自動コミット・PR の前に独立検証を行う。claude 系の収束時は雛形 B が内蔵実行するため不要。
 
-`args`: `{ workDir, issueNumber, defaultBranch }`
+`args`: `{ workDir, issueNumber, defaultBranch, startedAt }`（`startedAt`: 起動直前に実測した開始日時〔開始ログ表示専用・省略可〕）
 
 ```js
 export const meta = {
@@ -855,8 +919,9 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const ctx = args.workDir + '/context.md'
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
 
 const QA_SCHEMA = {
   type: 'object',
@@ -872,17 +937,20 @@ const QA_SCHEMA = {
   },
 }
 
-const qa = await agent(`あなたは独立 QA エージェントである。レビューループ完了後・コミット前の最終検証を行う。
-1. ${ctx} を読む（テスト方針・受け入れ基準・diff 基準）
-2. 変更内容を確認する: git diff origin/${args.defaultBranch}...HEAD と、git status / git diff で見える未コミット変更
-3. context.md のテスト方針に従い、関連スコープのテスト・lint を自分で実行する
-4. Issue #${args.issueNumber} の受け入れ基準を 1 件ずつ、コードと実行結果に照らして検証する
-5. .breaker-probe. を含むファイルが変更セットに残っていれば issues として報告する
-制約: コード・ファイルを変更しない。コミット・push はしない。
-判定: テストが全て通り受け入れ基準を満たすときのみ pass=true。${TIME_NOTE}`,
+log(`${ts(args.startedAt)}最終 QA 開始`)
+
+const qa = await agent(`You are an independent QA agent performing the final verification after the review loop, before commit.
+1. Read ${ctx} (test policy, acceptance criteria, diff base).
+2. Inspect the changes: git diff origin/${args.defaultBranch}...HEAD, plus uncommitted changes visible via git status / git diff.
+3. Following the test policy in context.md, run the relevant-scope tests and lint yourself.
+4. Verify each acceptance criterion of Issue #${args.issueNumber}, one by one, against the code and execution results.
+5. If any file containing .breaker-probe. remains in the change set, report it in issues.
+Constraints: do not modify code or files. Do not commit or push.
+Verdict: set pass=true only when all tests pass and the acceptance criteria are met. ${TAIL_NOTE}`,
   { label: 'qa:final', phase: 'FinalQA', model: 'sonnet', effort: 'high', schema: QA_SCHEMA })
 if (qa === null) return { status: 'agent-failed' }
-log(`[${qa.nowJst} JST] FinalQA 完了（pass=${qa.pass}）`)
+log(`[${qa.nowJst} JST] FinalQA 完了（pass=${qa.pass}${qa.pass ? '' : `・指摘${qa.issues.length}件`}）`)
+for (const it of (qa.pass ? [] : qa.issues.slice(0, 5))) log(`- QA指摘: ${it.title}`)
 
 return { status: 'ok', qa }
 ```
