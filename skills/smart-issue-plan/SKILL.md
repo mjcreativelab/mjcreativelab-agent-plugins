@@ -266,6 +266,7 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
 1. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sip-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない）
 2. **context.md / plan.md の書き出し** — 雛形の書式で `{作業Dir}/context.md`（Issue 要件・`-p` 指示・プロジェクト固有基準）と `{作業Dir}/plan.md`（確定した初期計画の全文）を書く
 3. **ゲート** — `{作業Dir}/context.md` と `{作業Dir}/plan.md` のどちらか一方でも存在しない場合は Workflow を起動しない（作成に戻る）
+4. **開始日時の実測** — 起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測し、`startedAt` として Workflow の `args` に含める（開始ログ表示用。継続セットの再起動でも再実測する）
 
 レビュー内容:
 
@@ -276,7 +277,7 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
 Workflow 返却の扱い（詳細は [references/agent-orchestration.md](references/agent-orchestration.md)）:
 
 - `converged: true` → まず `specQuestions` が空か確認する。空でなければ下記の `specQuestions` 処理を先に行う（最終ラウンドの全指摘が「仕様未定」でも `converged: true` で返るため）。空なら収束確定 → `plan.md` を投稿フェーズへ
-- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動（差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させる）
+- `converged: false`（3 ラウンド消化）→ 上限チェックの AskUserQuestion。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動（`startedAt` は再実測して渡す。差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させる）
 - `specQuestions` が空でない → 裁定「仕様未定」の項目をオーケストレーターが AskUserQuestion で確認し、確定内容を `{作業Dir}/context.md`（追加指示）へ追記する。修正が必要になれば未収束として次セットへ回す（`converged: true` で返っていても投稿しない）
 - `auditFailed: true` → レンズ S の Breaker がセキュリティ監査（`security-audit.md` の書き出し）を完了できなかった旨を完了報告に明記する
 - `breakerDegraded: true` → 一部の Breaker レンズ（S/C/O）が失敗し、その観点の攻撃シナリオが未生成のまま収束扱いになった旨を完了報告に明記し、`plan.md` 投稿前にユーザーへ確認する

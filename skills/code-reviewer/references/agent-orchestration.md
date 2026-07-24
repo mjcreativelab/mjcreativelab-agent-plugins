@@ -7,13 +7,14 @@ code-reviewer の `--isolated` モードで起動する、コンテキスト隔�
 - スクリプトはこの雛形を**そのまま** `script`（または本ファイルから抽出した `scriptPath`）に渡し、可変値はすべて `args` で渡す（スクリプト本文を書き換えない。プロンプト文はスクリプトに内蔵済み）
 - `args` は JSON 値として渡す（文字列化した JSON を渡さない）。ただし呼び出し経路によっては文字列（`typeof args === 'string'`）で着弾する環境があるため、雛形は meta 直後に正規化シム（`args = typeof args === 'string' ? JSON.parse(args) : (args || {})`）を持つ。文字列・オブジェクトどちらで届いても本文のトップレベル `args.` 参照が機能する
 - Workflow スクリプト内では `Date.now()` / `Math.random()` / 引数なし `new Date()` は使えない（雛形は使用していない）
-- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`agent()` はプロンプト末尾の指示（`TIME_NOTE`）で `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプト側は `agent()` 呼び出し直後にその値で `log(`[HH:MM JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）
+- **進捗の可視化**: IDE 拡張では `/workflows` の進捗表示が使えないため、`log()` で開始日時・完了を可視化する。開始日時はオーケストレーターが起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測して `args.startedAt` で渡し（省略可・ログ表示専用で `agent()` プロンプトへは埋め込まない — resume のキャッシュ一致を保つ）、`agent()` はプロンプト末尾の指示（`TAIL_NOTE`）で同フォーマットの時刻を実行して構造化出力の `nowJst`（`NOW_JST_FIELD`）として返す。スクリプトは `agent()` 呼び出し直後にその値で `log(`[YYYY-MM-DD hh:mm:ss JST] ...`)` する（スクリプト自身は時刻を生成できないため、必ずエージェントの返り値から取得する）
+- **プロンプトは英語・出力は日本語**: `agent()` に渡すプロンプト本文・スキーマ `description` は英語で記述する（指示追従の精度向上）。ユーザーが読む内容 — レビュー結果（5 区分 markdown）・`log()` 文字列・`meta` — は日本語のまま（`TAIL_NOTE` が日本語出力を指示する）
 - レビュー結果の出力（チャット表示）と PR 投稿ゲートはオーケストレーター（メインセッション）が担う。エージェントはレビュー結果（5 区分 markdown）を返すだけで、投稿・コミットはしない
 
 ## 雛形: 単発隔離レビュー（cr-isolated-review）
 
-`args`: `{ target, diffBase, focus }`
-（`target`: レビュー対象の識別子〔PR 番号 / ブランチ名 / `ref..ref` / パス / "未コミット変更"〕。`diffBase`: diff の取り方の説明〔例: 「`git diff main...HEAD` + 未コミット変更」「`git diff <ref>..<ref>`」「PR #N の diff を GitHub MCP で取得」「指定パス配下のみ」〕。`focus`: 追加の重点観点。無ければ空文字）
+`args`: `{ target, diffBase, focus, startedAt }`
+（`target`: レビュー対象の識別子〔PR 番号 / ブランチ名 / `ref..ref` / パス / "未コミット変更"〕。`diffBase`: diff の取り方の説明〔例: 「`git diff main...HEAD` + 未コミット変更」「`git diff <ref>..<ref>`」「PR #N の diff を GitHub MCP で取得」「指定パス配下のみ」〕。`focus`: 追加の重点観点。無ければ空文字。`startedAt`: 起動直前に実測した開始日時〔開始ログ表示専用・省略可〕）
 
 ```js
 export const meta = {
@@ -25,46 +26,49 @@ export const meta = {
 // args は文字列で届く環境があるため正規化する（トップレベルの args. 参照を機能させる防御シム）
 args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
-const NOW_JST_FIELD = { type: 'string', description: '完了時刻(JST)。`TZ=Asia/Tokyo date \'+%H:%M\'` の出力をそのまま入れる' }
-const TIME_NOTE = "最後に `TZ=Asia/Tokyo date '+%H:%M'` を実行し、結果を nowJst に入れる。"
+const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
+const TAIL_NOTE = "Output language: write all output content (the review markdown and structured output fields) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const ts = (t) => (t ? `[${t} JST] ` : '')
 
 const REVIEW_SCHEMA = {
   type: 'object',
   required: ['review', 'nowJst'],
   properties: {
-    review: { type: 'string', description: '5 区分markdown（該当すれば Codex クロスチェック推奨節を含む）' },
+    review: { type: 'string', description: 'The 5-section markdown (including the Codex cross-check section when applicable)' },
     nowJst: NOW_JST_FIELD,
   },
 }
 
-const result = await agent(`あなたは実装コードのレビュワーである。会話・実装の文脈を持たない独立の立場から、仕様整合・設計適合・可読性を担保するレビューを行う。
-## レビュー対象
-- 対象: ${args.target}
-- diff の取得: ${args.diffBase}
-  上記に従って変更されたファイルと行を自分で特定する（PR 対象なら GitHub MCP の pull_request_read 等で diff を取得。大きい場合は diff テキストと変更ファイルリストのみ保持する）。関連する要件ドキュメント・ADR・Issue があれば参照して仕様と照合する。
-${args.focus ? `- 重点観点: ${args.focus}\n` : ''}## 観点（6 観点で確認する）
-- 仕様整合: 要件・設計ドキュメントとの一致
-- 設計適合: 既存アーキテクチャ・コンベンションとの整合
-- 可読性: 命名・構造・コメント（最終仕様のみ。履歴コメントは NG）
-- テスト: カバレッジの妥当性・境界条件の扱い
-- オーバーエンジニアリング: 過剰な抽象化・未使用の拡張性
-- 横断影響: skills・設定・他ドメインへの影響漏れ（関連テスト・ドキュメント・CI 設定・類似パターンの他箇所を grep 推奨）
-## 出力フォーマット（5 区分。該当が無い区分も「なし」と明記する）
+log(`${ts(args.startedAt)}隔離レビュー開始（対象: ${args.target}）`)
+
+const result = await agent(`You are a reviewer of implemented code. From an independent position without the conversational / implementation context, review the change to ensure spec conformance, design fit, and readability.
+## Review target
+- Target: ${args.target}
+- Diff acquisition: ${args.diffBase}
+  Identify the changed files and lines yourself accordingly (for a PR target, fetch the diff via GitHub MCP tools such as pull_request_read; if large, keep only the diff text and the changed-file list). If related requirement docs, ADRs, or Issues exist, consult them and check the change against the spec.
+${args.focus ? `- Focus aspects: ${args.focus}\n` : ''}## Aspects (check all 6)
+- 仕様整合: agreement with requirements and design documents
+- 設計適合: consistency with the existing architecture and conventions
+- 可読性: naming, structure, comments (final spec only; history comments are not acceptable)
+- テスト: coverage adequacy and boundary-condition handling
+- オーバーエンジニアリング: excessive abstraction, unused extensibility
+- 横断影響: missed impact on skills, configs, and other domains (grep recommended: related tests, docs, CI configs, similar patterns elsewhere)
+## Output format (5 sections; sections with no findings must still appear, marked なし)
 ### 🚫 ブロッカー
-（マージ不可の問題）
+(problems that block merging)
 ### ⚠️ 推奨
-（改善すべきだがマージは可能）
+(should be fixed, but merging is possible)
 ### 💬 nit
-（好みの範囲・次回対応可）
+(matter of taste; can be addressed next time)
 ### ✅ Good
-（良い実装・判断）
+(good implementations and decisions)
 ### 🔄 横断影響
-（skills・設定・関連ドメインへの影響漏れ検出結果）
-記述ルール: 各指摘は「何が・なぜ・どう直す」の 3 点セット（✅ Good は「何が・なぜ」の 2 要素で可）。サンプルは 3 行程度までの断片に留める（関数全体や完成形コードを書かない）。妥当性が疑わしい指摘は自ら検証してから出す。
-認証・認可 / 決済・課金 / データスキーマ / 外部 API・依存契約のいずれかに該当する変更が含まれる場合は、5 区分の直後に「### Codex クロスチェック推奨」節（理由: 該当カテゴリ）を追加する。
-## 制約
-- コード・ファイルを変更しない（レビューのみ）。コミット・push はしない。PR への投稿もしない（呼び出し元が行う）
-最終出力: review に上記 5 区分（該当すれば Codex クロスチェック推奨節を含む）の markdown をそのまま入れる。${TIME_NOTE}`,
+(results of the cross-cutting impact check on skills, configs, and related domains)
+Writing rules: each finding is a 3-part set — what / why / how to fix (✅ Good may be 2 parts: what / why). Keep code samples to fragments of ~3 lines (no full functions or finished code). Verify dubious findings yourself before reporting them.
+If the change touches authentication / authorization, payment / billing, data schemas, or external API / dependency contracts, append the section 「### Codex クロスチェック推奨」 (理由: the matching category) right after the 5 sections.
+## Constraints
+- Do not modify code or files (review only). Do not commit or push. Do not post to the PR (the caller does that).
+Final output: put the 5-section markdown (including the Codex cross-check section when applicable) verbatim into review. ${TAIL_NOTE}`,
   { label: 'reviewer:isolated', phase: 'Review', model: 'opus', effort: 'max', schema: REVIEW_SCHEMA })
 if (result === null) return { review: null }
 log(`[${result.nowJst} JST] レビュー完了`)
@@ -76,4 +80,4 @@ return { review: result.review }
 
 ## 同期ノート
 
-本雛形のレビュー観点は SKILL.md「観点」節（6 観点）と一致させる。敵対レビューの Breaker / Judge プロンプトや smart-issue-resolve 雛形 B の reviewerPrompt との共有関係は CLAUDE.md「スキル改修時の注意」を参照する。
+本雛形のレビュー観点は SKILL.md「観点」節（6 観点）と一致させる。敵対レビューの Breaker / Judge プロンプトや smart-issue-resolve 雛形 B の reviewerPrompt との共有関係は CLAUDE.md「スキル改修時の注意」を参照する。プロンプトは英語・出力（5 区分 markdown・`log()`）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。

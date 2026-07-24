@@ -162,7 +162,7 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
 2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない）。あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
 3. **context.md の書き出し** — 雛形の書式で `{作業Dir}/context.md` を書く（Issue 要件・実装計画要約・`-p` 指示・ブランチ / diff 基準・テスト方針・プロジェクト固有基準）。テスト方針には関連スコープの実行コマンドを具体化して書く。テストが特定できない / フレームワークが不明な場合は、手動確認方針（再現手順・確認すべき画面や API レスポンス等）をユーザーに提示・合意してから書く
 4. **ゲート** — `{作業Dir}/context.md` が存在しない場合は Workflow を起動しない（作成に戻る）
-5. **実装 Workflow の起動** — 雛形 A（sir-implement）を起動する。`needDesign` は「計画が無い、または計画の実装手順が具体ファイルに落ちていない」場合に true。内部フロー: 設計役（条件付き）→ 開発者 → 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 開発者の採用判定・反映 → QA 再確認
+5. **実装 Workflow の起動** — 雛形 A（sir-implement）を起動する。Workflow の起動（雛形 A〜E 共通）では、起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測した開始日時を `startedAt` として `args` に含める（開始ログ表示用。グローバルルールの開始日時表示と同じ実測値を使い回してよい）。`needDesign` は「計画が無い、または計画の実装手順が具体ファイルに落ちていない」場合に true。内部フロー: 設計役（条件付き）→ 開発者 → 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 開発者の採用判定・反映 → QA 再確認
 6. **結果の扱い**:
    - `status: ok` → 「レビューモードの確定」へ
    - `status: qa-failed` → QA の指摘を提示してユーザーに相談する（勝手に次へ進まない）
@@ -253,7 +253,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 
 **実行形態**:
 
-- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。**新規セットを起動する直前に必ず `bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <startRound>` を実行してレビュー正本 `{作業Dir}/diff.md` を生成する**（初回セット・継続セットのいずれも。生成しないとそのセットの round 1 でレビュー役が全員 git フォールバックに落ちる。ただし `resumeFromRunId` による同一セットの再開では生成しない — 再開後のスクリプトは進行済みの期待スタンプを保持しており、作り直すとスタンプが巻き戻って残りラウンドが不要にフォールバックする）。オーケストレーターは返却（`converged` / `records` / `specQuestions` / `cleanStreak`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させるため。再起動前の diff.md 再生成も忘れない）
+- **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。**新規セットを起動する直前に必ず `bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <startRound>` を実行してレビュー正本 `{作業Dir}/diff.md` を生成する**（初回セット・継続セットのいずれも。生成しないとそのセットの round 1 でレビュー役が全員 git フォールバックに落ちる。ただし `resumeFromRunId` による同一セットの再開では生成しない — 再開後のスクリプトは進行済みの期待スタンプを保持しており、作り直すとスタンプが巻き戻って残りラウンドが不要にフォールバックする）。オーケストレーターは返却（`converged` / `records` / `specQuestions` / `cleanStreak`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させるため。再起動前の diff.md 再生成と `startedAt` の再実測も忘れない）
 - **codex 系** — オーケストレーターがラウンド単位で回す。レビュー・裁定は Skill ツールで `codex:rescue` を呼び（従来どおり）、敵対の Breaker は雛形 C、修正は雛形 D で行う。敵対の裁定に「仕様未定」が含まれる場合は、雛形 D に渡す前にオーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を context.md（追加指示）へ追記する。雛形 D の起動前に、レビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出す（標準: Codex の指摘全件、敵対: 裁定の真の欠陥 + 確定した仕様未定。要約・取捨選択をしない。物理ゲート: このファイルが無ければ起動しない）
 
 #### 標準モード（codex 系: --codex-review-loop）
@@ -278,7 +278,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
 
-> **同期ノート**: 雛形 B/C のレビュワー・Breaker・Judge プロンプト（レビュー観点・攻撃観点・4 分類裁定基準）は、単体スキル `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へ移植済み。観点・裁定基準を変更したら、それらの `references/agent-orchestration.md` も同期する（マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の同期ノート）。
+> **同期ノート**: 雛形 B/C のレビュワー・Breaker・Judge プロンプト（レビュー観点・攻撃観点・4 分類裁定基準）は、単体スキル `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へ移植済み。観点・裁定基準を変更したら、それらの `references/agent-orchestration.md` も同期する（マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の同期ノート）。雛形のエージェントプロンプト・スキーマ description は英語、ユーザーが読む内容（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
 
 ### 収束後のコミット・PR 作成
 

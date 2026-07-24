@@ -179,7 +179,7 @@ Judge の修正コスト（S/M/L）と重大度から、着手順序の提案を
 `{claude judge}` = true のとき、または Codex が使えず Workflow が使えるとき（「Judge 利用不能時のフォールバック」）、Phase 1（Breaker）と Phase 2（Judge）を **Workflow で起動する独立 Opus エージェント 2 体**に置き換える。Judge も別系統モデル（Codex）ではなく独立 Opus になるため、独立性は**コンテキスト隔離 + 役割分離**で担保する（別系統モデルの独立性はない → 認証 / 認可 / 決済 / スキーマ / 外部 API などの重要変更では実 Codex ＝デフォルトの codex-judge を推奨）。
 
 - **単発**（ループ・収束判定は持たない。このスキルはループスキルではない）。[references/agent-orchestration.md](references/agent-orchestration.md) の雛形（`cra-claude-judge`）を起動する:
-  1. **Breaker（独立 Opus / effort max）** — Phase 0 で確定した `{対象}` / diff の取り方 / `{テストコマンド}` / `{重点観点}` を `args`（`{ target, diffBase, testCmd, focus }`）で渡す。攻撃観点・反例テスト（`.breaker-probe.` 命名）の規律はプロンプトに内蔵（smart-issue-resolve 雛形 B の breakerPrompt からの移植）
+  1. **Breaker（独立 Opus / effort max）** — Phase 0 で確定した `{対象}` / diff の取り方 / `{テストコマンド}` / `{重点観点}` を `args`（`{ target, diffBase, testCmd, focus, startedAt }`。`startedAt` は起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` で実測した開始日時）で渡す。攻撃観点・反例テスト（`.breaker-probe.` 命名）の規律はプロンプトに内蔵（smart-issue-resolve 雛形 B の breakerPrompt からの移植）
   2. **Judge（独立 Opus・バッチ並列 + miss-finder 分離）** — Breaker の反例を ≤4 件/バッチに分割し、フラット `parallel` で並列に裁定する（各バッチ effort high・evidence 限定照合・4 カテゴリ〔真の欠陥 / 仕様未定 / 低優先度 / ノイズ〕・防御基準は雛形 B と同一）。Breaker 見落としの独立探索は **miss-finder（別の独立 Opus / effort max・diff スコープ）** が並列で担い、同じ 4 分類基準で自己分類する。一部バッチ失敗は `judgeDegraded`（未裁定の反例が残る）、miss-finder 失敗は `missSearchFailed`（独立探索のみ喪失・より軽い劣化）で返る
 - Phase 0（前提把握・テストランナー確定・ゲート出力）、Phase 3（最終出力）、Phase 4（PR 投稿ゲート）は codex-judge と共通で再利用する。Workflow 返却の `items`（真の欠陥 / 仕様未定）・`dismissed`（低優先度 / ノイズの件数）を Phase 3 の構造に整形する。Phase 3 サマリの「Judge:」欄は `Codex (via codex:rescue)` の代わりに `独立 Opus エージェント（コンテキスト隔離・バッチ並列 + miss-finder）` と記す。`judgeDegraded: true` は未裁定の反例が残る旨を Phase 3 出力に明記し PR 投稿ゲート前にユーザーへ確認、`missSearchFailed: true` はその旨を Phase 3 出力に明記する
 - Phase 3 の出力・Phase 4 の投稿の前に、`.breaker-probe.` を含む反例テストが変更セットに残っていれば取り除く（単発レビューの使い捨て。回帰テスト化するかは呼び出し元の判断）
@@ -190,7 +190,7 @@ Judge の修正コスト（S/M/L）と重大度から、着手順序の提案を
 
 ### 同期ノート
 
-claude-judge モードの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）は smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の breakerPrompt / judgeBatchPrompt からの移植である。攻撃観点・裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。Judge のバッチ並列化 + miss-finder 分離は cra 固有の構造変更（Issue #107。裁定基準の内容は不変のため resolve/plan への内容同期は不要）。Breaker はレンズ分割しない（resolve/plan の雛形 B/sip とは意図的に非対称 — 単発レビューはラウンド往復が無く、Breaker 1 本の全観点走査を維持する）。
+claude-judge モードの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）は smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の breakerPrompt / judgeBatchPrompt からの移植である。攻撃観点・裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。Judge のバッチ並列化 + miss-finder 分離は cra 固有の構造変更（Issue #107。裁定基準の内容は不変のため resolve/plan への内容同期は不要）。Breaker はレンズ分割しない（resolve/plan の雛形 B/sip とは意図的に非対称 — 単発レビューはラウンド往復が無く、Breaker 1 本の全観点走査を維持する）。雛形のエージェントプロンプト・スキーマ description は英語、出力（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
 
 ## PR 書き出しモード
 
