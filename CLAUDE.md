@@ -135,6 +135,8 @@ skills/                          # 配布 skill の正本（直接編集・npx �
   disk-space-cleanup/            # ディスク空き容量の確保（開発系キャッシュのスキャン→確認→削除）
   # エージェント記憶管理
   memory-dream/                  # 記憶階層の consolidation（重複・矛盾・陳腐化の除去。Dreams の手動再現）
+  agents-md-improver/            # CLAUDE.md / AGENTS.md 等エージェント指示ファイルの監査・改善（品質レポート→承認後更新。公式 claude-md-management の移植）
+  agents-md-revise/              # セッションの学びを CLAUDE.md / AGENTS.md 等へ反映（diff 提示→承認後追記。公式 claude-md-management の移植）
 internal/                        # 内部 skill（npx 標準探索ルート外・配布対象外）
   auto-release/                  # repo-level タグ発行・GitHub Release（リポジトリ自身のリリース用）
   global-config-pull/            # ~/.claude/ → dotfiles/claude/ へ取り込む
