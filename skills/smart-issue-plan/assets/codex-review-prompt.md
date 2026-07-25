@@ -1,10 +1,10 @@
 # Codex レビュー依頼テンプレート（実装計画）
 
-標準モード（`--codex-review-loop`）のループ手順 1 で `codex:rescue` に渡す依頼文のテンプレート。`<>` を埋めて task として渡す。敵対的モード（`--codex-advs-review-loop`）の Judge 依頼は [codex-judge-prompt.md](codex-judge-prompt.md) を使う。
+標準モード（`--codex-review-loop`）のループ手順 1 でレビューを取得する依頼文のテンプレート。`<>` を埋めて、**Claude Code ホスト**では `codex:rescue` へ task として渡し、**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している場合。`codex:rescue` は存在しない）では `codex exec` の入力として渡す。敵対的モード（`--codex-advs-review-loop`）の Judge 依頼は [codex-judge-prompt.md](codex-judge-prompt.md) を使う。
 
 ---
 
-## codex:rescue への依頼文テンプレート
+## Codex への依頼文テンプレート（codex:rescue / codex exec 共通）
 
 ```
 あなたは GitHub Issue の実装計画のレビュアーとして振る舞う。
@@ -59,12 +59,12 @@
 
 ## 呼び出し時の注意
 
-- このテンプレート全体を埋めたうえで、Skill ツールの `codex:rescue` に task として渡す
+- このテンプレート全体を埋めたうえで渡す。**Claude Code ホスト**では Skill ツールの `codex:rescue` に task として渡す。**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は存在しない）では `codex exec`（非対話・毎回新規セッション。例: `codex exec --sandbox read-only -C <リポジトリルート> -` で stdin からテンプレートを読ませる。レビューのみでファイル変更をさせないため `--sandbox read-only` を明示する）を Bash から起動する。いずれの経路でも、計画を作成している現在のセッションとは独立した新規セッションでレビューを取得し、同一セッション内で自己レビューを完結させない
 - Codex はリポジトリにアクセスできるため、計画とコードの照合（ファイル実在確認・前提検証）は Codex 側に行わせる
 - Codex に計画やコードの修正を行わせない（レビューのみ）。修正は Claude 側の妥当性判定を経てから行う
 - 返ってきた指摘の再解釈・要約による弱体化をしない（妥当性判定は採用 / 不採用の分類と理由の明記のみ）
 
-## 運用ノート: silent death（ハング・静止死）からの復旧
+## 運用ノート: silent death（ハング・静止死）からの復旧（Claude Code ホスト / codex:rescue 経由）
 
 Codex のレビュープロセスは、ジョブレジストリ上 `running` のまま静かに死ぬことがある。レビュー結果がいつまでも返らない場合は、フォールバックに切り替える前に以下の順で復旧を試みる:
 
@@ -73,4 +73,8 @@ Codex のレビュープロセスは、ジョブレジストリ上 `running` の
 3. **復旧（resume が最効率）** — companion の cancel（`/codex:cancel`）で stale ジョブを落とす → resume 候補が復活する（`task-resume-candidate` が `available: true` を返す）→ `--resume` を付けて `codex:rescue` を再投入する。調査コンテキストを引き継いで続きから実行されるため、fresh 再実行より大幅に速い
 4. **予防** — companion を Bash で直接起動する経路では timeout を 600000ms（10 分）に明示する（デフォルト 120 秒では長いレビューが親側から切られる）。長時間が見込まれるレビューは `--background` 実行でプロセスのライフサイクルを呼び出し元の Bash から切り離すことを検討する
 
-復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue 利用不能時）」に切り替える。
+復旧（cancel → `--resume` 再投入）を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue / codex exec が利用不能時）」に切り替える。
+
+## Codex CLI ホストでの補足
+
+`codex exec` は呼び出し元の Bash（Codex CLI 自身が実行する shell）内で同期的に完了を待つ同期呼び出しで、上記の companion 側ジョブレジストリによる stall 検知・復旧手順の対象外である（`codex exec` 自体のセッション記録の有無は関知しない。復旧手段として使えるのは `codex exec resume` 程度）。長いレビューでタイムアウトしないよう呼び出し側の Bash の timeout を十分に長く取り、それでも応答がなく完了しない場合は複雑な復旧手順を適用せず、そのまま「フォールバック（codex:rescue / codex exec が利用不能時）」に切り替える。

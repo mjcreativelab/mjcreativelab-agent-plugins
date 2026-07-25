@@ -33,7 +33,7 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
 | レビュワー（claude 標準） | Workflow エージェント | opus / max | diff レビュー（codex 標準と同一観点。包括ラウンド〔初回セット round 1〕のみ観点を G1/G2/G3 の 3 グループに分割し並列起動、以降のラウンドは単発 1 体〔全 9 観点横断〕。diff は正本ファイル `{作業Dir}/diff.md` を読む） |
 | Breaker / Judge（敵対） | Workflow エージェント | opus / max（Judge バッチのみ high。codex 系 Breaker〔雛形 C〕のみ sonnet / max） | 反例生成（Breaker・max。claude 系は包括ラウンドのみ攻撃観点を S/C/O の 3 レンズに分割し並列起動、以降は単発 1 体）と裁定（Judge・high。Breaker の反例を ≤4 件/バッチに分割し並列裁定）。コンテキスト隔離で実装文脈から独立（claude 系の diff は `{作業Dir}/diff.md` を読む） |
 | セキュリティ監査役 | Workflow エージェント | opus / max（codex 系〔雛形 C〕のみ sonnet / max） | セキュリティ自動発動時に STRIDE・認可・データフローの観点を敵対的レビューへ注入（claude 系〔雛形 B〕はレンズ S の Breaker に統合され初回ラウンドで監査を内蔵実施・codex 系〔雛形 C〕は独立エージェント） |
-| レビュワー / Judge（codex 系） | codex:rescue | -（別系統モデル） | Codex によるレビュー・裁定（従来どおり） |
+| レビュワー / Judge（codex 系） | Claude Code ホストは codex:rescue、Codex CLI ホストは codex exec | -（別系統モデル） | Codex によるレビュー・裁定 |
 
 - model はエイリアス指定（環境で利用可能な最新の同系統モデルに解決される）。effort を明示指定できるのは Workflow ツールの `agent()` のみのため、エージェント起動はすべて **Workflow ツール**で行う（本スキルの指示による呼び出しは Workflow の明示オプトインに該当する）
 - **Workflow ツールが使えない環境**（他エージェント・旧バージョン）では、オーケストレーションせずメインセッションが実装フローを直接実施する（従来動作への degradation。claude 系レビューループは利用不可 → フォールバック参照）
@@ -224,7 +224,7 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 セキュリティ影響ありと判定し、かつ `{レビューモード}` が `off` または `standard` の場合、`{レビューモード}` を `adversarial` に昇格させ、発動理由（検出したシグナル）をユーザーに 1 行で明示する。`{レビュー系統}` は次のとおり決める:
 
 - 系統フラグが明示されている → その系統のまま adversarial へ昇格
-- フラグ未指定（`off` からの自動発動） → `codex:rescue` が利用可能なら `codex`、利用不能なら `claude`（Workflow 必須）。両方利用不能ならフォールバック参照
+- フラグ未指定（`off` からの自動発動） → codex 系のレビュー取得経路（Claude Code ホストの `codex:rescue` / Codex CLI ホストの `codex exec`）のいずれかが利用可能なら `codex`、いずれも利用不能なら `claude`（Workflow 必須）。両方利用不能ならフォールバック参照
 
 > `{ループ明示}` = false（フラグ未指定でセキュリティ検出により発動）の場合、レビューは実施するが **収束後のコミット・PR 自動実行は行わない**（手順 7 の通常完了案内に切り替える）。外部への副作用（push・PR）を伴う自動化は明示オプトイン時のみ。
 
@@ -254,18 +254,23 @@ degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レ�
 **実行形態**:
 
 - **claude 系** — 骨格 1〜4 の 1 セット（最大 3 ラウンド）を雛形 B（sir-claude-review-set）の Workflow 1 回で実行する（収束時はセット内で最終 QA まで実施して返る）。**新規セットを起動する直前に必ず `bash {作業Dir}/gen-diff.sh origin/<デフォルトブランチ> <startRound>` を実行してレビュー正本 `{作業Dir}/diff.md` を生成する**（初回セット・継続セットのいずれも。生成しないとそのセットの round 1 でレビュー役が全員 git フォールバックに落ちる。ただし `resumeFromRunId` による同一セットの再開では生成しない — 再開後のスクリプトは進行済みの期待スタンプを保持しており、作り直すとスタンプが巻き戻って残りラウンドが不要にフォールバックする）。オーケストレーターは返却（`converged` / `records` / `specQuestions` / `cleanStreak`）を受けて、上限チェック（AskUserQuestion）と裁定「仕様未定」のユーザー確認を行い、確定した仕様は context.md（追加指示）へ追記する（修正が必要になれば未収束として続行）。続行なら `startRound` を +3、`priorSummary` に経緯要約 + 前セット最終ラウンドの採用修正内容（`records` 末尾の `adoptedItems`）を入れ、**返却の `cleanStreak` も引き継いで**同じ scriptPath で再起動する（ラウンド 2 以降の差分スコープと dry-twice の連続クリーン判定をセット跨ぎで連続させるため。再起動前の diff.md 再生成と `startedAt` の再実測も忘れない）
-- **codex 系** — オーケストレーターがラウンド単位で回す。レビュー・裁定は Skill ツールで `codex:rescue` を呼び（従来どおり）、敵対の Breaker は雛形 C、修正は雛形 D で行う。敵対の裁定に「仕様未定」が含まれる場合は、雛形 D に渡す前にオーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を context.md（追加指示）へ追記する。雛形 D の起動前に、レビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出す（標準: Codex の指摘全件、敵対: 裁定の真の欠陥 + 確定した仕様未定。要約・取捨選択をしない。物理ゲート: このファイルが無ければ起動しない）
+- **codex 系** — オーケストレーターがラウンド単位で回す。レビュー・裁定の取得はホストで分岐する（**Claude Code ホスト**は Skill ツールで `codex:rescue` を呼ぶ従来どおりの経路、**Codex CLI ホスト**＝本 skill 自体を Codex CLI が実行している場合は `codex exec` で独立した新規セッションを起動する経路。詳細は下記「標準モード」「敵対的モード」）。敵対の Breaker は雛形 C、修正は雛形 D で行う。敵対の裁定に「仕様未定」が含まれる場合は、雛形 D に渡す前にオーケストレーターが AskUserQuestion でユーザーに仕様を確認し、確定内容を context.md（追加指示）へ追記する。雛形 D の起動前に、レビュー結果を `{作業Dir}/findings-round-<N>.md` に書き出す（標準: Codex の指摘全件、敵対: 裁定の真の欠陥 + 確定した仕様未定。要約・取捨選択をしない。物理ゲート: このファイルが無ければ起動しない）
 
 #### 標準モード（codex 系: --codex-review-loop）
 
-[assets/codex-review-prompt.md](assets/codex-review-prompt.md) のテンプレートを埋め、Skill ツールで `codex:rescue` を呼び出す。Codex が単独で diff をレビューし、指摘を返す。返った指摘は雛形 D（開発者エージェント）で判定・反映する。
+[assets/codex-review-prompt.md](assets/codex-review-prompt.md) のテンプレートを埋め、レビューを取得する:
+
+- **Claude Code ホスト**（Skill ツールが使える）: Skill ツールで `codex:rescue` を呼び出す
+- **Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は Claude Code 専用のため存在しない）: `codex exec`（非対話・毎回新規セッション）を Bash から起動しテンプレートを渡す。実装を行っている現在のセッションとは独立した新規セッションでレビューを取得し、同一セッション内で自己レビューを完結させない（独立性が失われるため）
+
+Codex が単独で diff をレビューし、指摘を返す。返った指摘は雛形 D（開発者エージェント。Workflow 不能な degraded 環境ではメインセッションが代行）で判定・反映する。
 
 #### 敵対的モード（codex 系: --codex-advs-review-loop / セキュリティ自動発動）
 
 Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造でレビューする:
 
 1. **Breaker（雛形 C: sir-codex-breaker）** — 実装文脈から隔離された Sonnet（effort max）エージェントが、反例・攻撃シナリオ・不変条件違反を列挙する（攻撃観点・反例テストの規律はプロンプトに内蔵。反例テストは `.breaker-probe.` 命名の使い捨てとして扱う）。Workflow が使えない環境では、メインセッションが雛形 C の Breaker プロンプト（攻撃観点・反例テストの規律）を自身に適用して代行する（従来動作）
-2. **Judge（Codex）** — [assets/codex-judge-prompt.md](assets/codex-judge-prompt.md) のテンプレートに Breaker の反例リストと反例テストの実行結果を埋め、Skill ツールで `codex:rescue` を呼び出す。Codex は各反例を「真の欠陥 / 仕様未定 / 低優先度 / ノイズ」に裁定し、独立にも diff をレビューして追加の真の欠陥を挙げる
+2. **Judge（Codex）** — [assets/codex-judge-prompt.md](assets/codex-judge-prompt.md) のテンプレートに Breaker の反例リストと反例テストの実行結果を埋め、レビューを取得する。**Claude Code ホスト**では Skill ツールで `codex:rescue` を呼び出す。**Codex CLI ホスト**（`codex:rescue` が存在しない）では `codex exec` を Bash から起動し、Breaker（雛形 C、または代行しているメインセッション）とは独立した新規セッションで裁定させる。Codex は各反例を「真の欠陥 / 仕様未定 / 低優先度 / ノイズ」に裁定し、独立にも diff をレビューして追加の真の欠陥を挙げる
 3. Judge が「真の欠陥」「仕様未定」に分類した指摘を、共通骨格の手順 2（雛形 D）に渡す
 
 > **共犯化の回避**: Judge（Codex）の裁定を Claude が模擬・代行しない。裁定者（Codex）が別系統モデルであることが codex 系敵対レビューの核。
@@ -298,10 +303,10 @@ behind 時のマージ確認・競合対応は履歴に影響するため、自�
 
 ### フォールバック
 
-**codex 系（codex:rescue 利用不能時）** — 以下のいずれかに該当する場合:
+**codex 系（codex:rescue / codex exec が利用不能時）** — 以下のいずれかに該当する場合:
 
-- **呼び出し不能** — Codex プラグイン未導入・Codex CLI 未設定・他エージェント環境などで `codex:rescue` が呼び出せない
-- **復旧不能なハング** — 呼び出し済みのレビュー/裁定が返らず（silent death）、[assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる）
+- **呼び出し不能** — レビュー取得の経路（Claude Code ホストの `codex:rescue` / Codex CLI ホストの `codex exec`）が使えない。具体的には: Claude Code ホストで Codex プラグイン未導入・Codex CLI 未設定により `codex:rescue` が呼び出せない、Codex CLI ホストで `codex` バイナリが未インストール・未認証などで `codex exec` の実行に失敗する、またはそれ以外のエージェント環境でいずれの経路も提供されない
+- **復旧不能なハング** — 呼び出し済みのレビュー/裁定が返らず（silent death）、[assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる。Codex CLI ホストの `codex exec` はジョブレジストリを持たない同期呼び出しのため、この複雑な復旧手順は対象外 — 単純にタイムアウト・失敗として「呼び出し不能」に倒す）
 
 該当した場合:
 
