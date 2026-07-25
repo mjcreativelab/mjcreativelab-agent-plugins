@@ -89,6 +89,6 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
 - **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、claude 系レビュワー = opus/max、独立 QA = sonnet/high 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
-- **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること）。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
+- **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること。後者はホストのコマンドサンドボックス内では起動できないため、サンドボックス外での昇格実行の承認が必要）。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
 - **git + GitHub MCP（または gh）** — レビューループ収束後の自動コミット・PR 作成に使用（コミット・push は git、PR 作成は GitHub MCP を優先。`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
 - **AskUserQuestion** — Issue 番号未指定時の確認、およびレビューループ 3 ラウンドごとの続行/打ち切り/中止の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）

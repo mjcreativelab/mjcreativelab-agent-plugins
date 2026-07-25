@@ -70,6 +70,6 @@ GitHub Issue の実装計画を作成・更新するスキル。
 
 - **git** — 分析時点 SHA の記録（`git rev-parse`）と更新モードでの変更点特定（`git log`）に使用（git が使えない環境では SHA は「未記録」となり、更新モードの差分検出が制限される）
 - **GitHub MCP サーバー** — Issue の読み取り・計画コメント投稿に必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
-- **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時のみ必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること）。セキュリティ自動発動時は codex 系優先だが、不在なら claude 系（Workflow）へフォールバックする
+- **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時のみ必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること。後者はホストのコマンドサンドボックス内では起動できないため、サンドボックス外での昇格実行の承認が必要）。セキュリティ自動発動時は codex 系優先だが、不在なら claude 系（Workflow）へフォールバックする
 - **Workflow ツール** — `--claude-review-loop` / `--claude-adv-review-loop` 使用時、および Codex 不在でのセキュリティ自動発動時に必須（Claude Code 固有。利用できない環境では claude 系レビューは実施されず通常フローへ degrade する）
 - **AskUserQuestion** — Issue 番号・要件の確認と、レビューループ 3 ラウンドごとの続行確認・仕様未定の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）
