@@ -20,11 +20,7 @@
       "mcp__claude_ai_Atlassian__getJiraIssue",
       "mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql"
     ],
-    "additionalDirectories": [
-      "~/.claude/plugins/cache/mjcreativelab-agent-prompts/mjc-git-workflow-tools/1.1.6/skills/smart-git-sync/assets",
-      "~/Work/RD_PoC/VTO/00.VTO_PRODUCT_IDEAS/bs-vto-app-event-display/.claude/tmp",
-      "/tmp"
-    ]
+    "additionalDirectories": ["/tmp"]
   },
   "hooks": {
     "PreToolUse": [
@@ -169,10 +165,10 @@
       }
     }
   },
-  "effortLevel": "xhigh",
+  "effortLevel": "max",
+  "tui": "fullscreen",
   "showThinkingSummaries": true,
   "skipWorkflowUsageWarning": true,
-  "autoUpdates": false,
-  "tui": "fullscreen",
-  "switchModelsOnFlag": true
+  "switchModelsOnFlag": true,
+  "autoUpdates": false
 }
