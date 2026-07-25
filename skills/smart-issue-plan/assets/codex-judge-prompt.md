@@ -71,7 +71,7 @@ Breaker に迎合せず、独立した視点で判断すること。
 
 ## 呼び出し時の注意
 
-- このテンプレート全体を埋めたうえで渡す。**Claude Code ホスト**では Skill ツールの `codex:rescue` に task として渡す。**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は存在しない）では `codex exec`（例: `codex exec --sandbox read-only -C <リポジトリルート> -` で stdin からテンプレートを読ませる。裁定のみでファイル変更をさせないため `--sandbox read-only` を明示する）を Bash から起動する。いずれの経路でも、Breaker を実施したセッションとは独立した新規セッションで裁定させる
+- このテンプレート全体を埋めたうえで渡す。**Claude Code ホスト**では Skill ツールの `codex:rescue` に task として渡す。**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は存在しない）では `codex exec` を起動する — 具体的な起動手順・失敗時の診断は [codex-review-prompt.md](codex-review-prompt.md) の「Codex CLI ホストでの補足」に必ず従う（ホストのサンドボックス内では起動できない・stdin リダイレクト漏れで無応答になる等、既知の落とし穴がある）。いずれの経路でも、Breaker を実施したセッションとは独立した新規セッションで裁定させる
 - Codex はリポジトリにアクセスできるため、計画とコードの照合（ファイル実在確認・前提検証・シナリオの成立性）は Codex 側に行わせる
 - Codex に計画やコードの修正を行わせない（裁定のみ）。修正は Claude 側の妥当性判定（過剰対応チェック）を経てから行う
 - 返ってきた裁定の再解釈・要約による弱体化をしない（妥当性判定は採用 / 不採用の分類と理由の明記のみ）

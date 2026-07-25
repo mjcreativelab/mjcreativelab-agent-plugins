@@ -248,7 +248,7 @@ Issue の内容から関連するキーワード・ファイルパス・機能�
 [assets/codex-review-prompt.md](assets/codex-review-prompt.md) のテンプレートを埋め、レビューを取得する:
 
 - **Claude Code ホスト**（Skill ツールが使える）: Skill ツールで `codex:rescue` を呼び出す
-- **Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は Claude Code 専用のため存在しない）: `codex exec`（非対話・毎回新規セッション）を Bash から起動しテンプレートを渡す。計画を作成している現在のセッションとは独立した新規セッションでレビューを取得し、同一セッション内で自己レビューを完結させない（独立性が失われるため）
+- **Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は Claude Code 専用のため存在しない）: `codex exec`（非対話・毎回新規セッション）を起動しテンプレートを渡す。起動手順（プロンプトの stdin リダイレクト・`-o` での出力回収・**ホストのサンドボックス外での昇格実行**）は [assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「Codex CLI ホストでの補足」に必ず従う。計画を作成している現在のセッションとは独立した新規セッションでレビューを取得し、同一セッション内で自己レビューを完結させない（独立性が失われるため）
 
 Codex が単独で計画とコードを照合してレビューする。
 
@@ -257,7 +257,7 @@ Codex が単独で計画とコードを照合してレビューする。
 Claude=Breaker × Codex=Judge の二者構造でレビューする。計画にはテスト対象のコードがないため、反例テストの代わりに **設計への攻撃シナリオ** を用いる。`code-reviewer-adversarial` スキルは `disable-model-invocation` のため Skill ツールから呼べない。その二者構造を本ループ内にインラインで再現する:
 
 1. **Breaker（Claude）** — 計画を「破る」観点で、設計が耐えるべき具体的な攻撃シナリオ・脅威・欠落コントロールを列挙する。デフォルトは懐疑: 正常系（happy path）しか想定していない手順は実在の弱点として扱い、「後で対応する」前提や部分的な対処に信用を与えない。セキュリティ観点では STRIDE（なりすまし・改ざん・否認・情報漏洩・DoS・権限昇格）・信頼境界・認可漏れ・PII/秘密情報の露出・注入面を、一般観点では移行失敗・後方互換性破壊・version skew／スキーマドリフト・品質ゲートの抜け・運用/保守/可用性の設計欠落（可観測性・デプロイ/ロールバック・障害時や依存劣化時の挙動・単一障害点・過度な結合）・データ整合性/性能の設計欠落（トランザクション境界・冪等性・並行更新・部分失敗・不可逆な状態変更・N+1 や過剰 I/O）・テストカバレッジ計画の不足・アーキテクチャ層責務の逸脱を洗い出す。「レビュー基準の収集」で得たプロジェクト固有ルールがあれば、その観点も攻撃シナリオに含める。各シナリオに、計画のどの手順・前提が対処できていないかを付す
-2. **Judge（Codex）** — [assets/codex-judge-prompt.md](assets/codex-judge-prompt.md) のテンプレートに計画全文と Breaker の攻撃シナリオを埋め、レビューを取得する。**Claude Code ホスト**では Skill ツールで `codex:rescue` を呼び出す。**Codex CLI ホスト**（`codex:rescue` が存在しない）では `codex exec` を Bash から起動し、Breaker（現在のセッション）とは独立した新規セッションで裁定させる。Codex はリポジトリの実コードと照合し、各シナリオを「真の欠陥 / 仕様未定 / 低優先度 / ノイズ」に裁定し、独立にも計画の欠陥を挙げる
+2. **Judge（Codex）** — [assets/codex-judge-prompt.md](assets/codex-judge-prompt.md) のテンプレートに計画全文と Breaker の攻撃シナリオを埋め、レビューを取得する。**Claude Code ホスト**では Skill ツールで `codex:rescue` を呼び出す。**Codex CLI ホスト**（`codex:rescue` が存在しない）では `codex exec` を起動し、Breaker（現在のセッション）とは独立した新規セッションで裁定させる（起動手順は [assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「Codex CLI ホストでの補足」に従う）。Codex はリポジトリの実コードと照合し、各シナリオを「真の欠陥 / 仕様未定 / 低優先度 / ノイズ」に裁定し、独立にも計画の欠陥を挙げる
 3. Judge が「真の欠陥」「仕様未定」に分類した指摘を、共通骨格の手順 2（妥当性判定）に渡す
 
 > **共犯化の回避**: Judge（Codex）の裁定を Claude が模擬・代行しない。Breaker（Claude）と Judge（Codex）が別系統モデルであることが敵対的レビューの核。
@@ -306,8 +306,8 @@ Workflow 返却の扱い（詳細は [references/agent-orchestration.md](referen
 
 **codex 系（codex:rescue / codex exec が利用不能時）** — 以下のいずれかに該当する場合:
 
-- **呼び出し不能** — レビュー取得の経路（Claude Code ホストの `codex:rescue` / Codex CLI ホストの `codex exec`）が使えない。具体的には: Claude Code ホストで Codex プラグイン未導入・Codex CLI 未設定により `codex:rescue` が呼び出せない、Codex CLI ホストで `codex` バイナリが未インストール・未認証などで `codex exec` の実行に失敗する、またはそれ以外のエージェント環境でいずれの経路も提供されない
-- **復旧不能なハング** — 呼び出し済みのレビュー/裁定が返らず（silent death）、[assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる。Codex CLI ホストの `codex exec` はジョブレジストリを持たない同期呼び出しのため、この複雑な復旧手順は対象外 — 単純にタイムアウト・失敗として「呼び出し不能」に倒す）
+- **呼び出し不能** — レビュー取得の経路（Claude Code ホストの `codex:rescue` / Codex CLI ホストの `codex exec`）が使えない。具体的には: Claude Code ホストで Codex プラグイン未導入・Codex CLI 未設定により `codex:rescue` が呼び出せない、Codex CLI ホストで `codex` バイナリが未インストール・未認証・昇格実行が承認されない（ホストのサンドボックス内では `codex exec` は起動できない）などで `codex exec` の実行に失敗する、またはそれ以外のエージェント環境でいずれの経路も提供されない
+- **復旧不能なハング** — 呼び出し済みのレビュー/裁定が返らず（silent death）、[assets/codex-review-prompt.md](assets/codex-review-prompt.md) の「運用ノート」に従った復旧（cancel → `--resume` 再投入）を 2 回試みても完了しない（ハング時は即フォールバックせず、必ず先に復旧を試みる。Codex CLI ホストの `codex exec` はジョブレジストリを持たない同期呼び出しのため、この複雑な復旧手順は対象外 — 同テンプレートの「Codex CLI ホストでの補足」の診断〔stdin リダイレクト漏れ・昇格の欠落・timeout 不足〕を確認して再実行し、解消しなければ「呼び出し不能」に倒す）
 
 該当した場合:
 
