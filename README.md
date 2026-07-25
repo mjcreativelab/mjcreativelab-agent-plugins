@@ -16,7 +16,7 @@ Claude Code / Codex / Cursor / Gemini など各種エージェント用のスキ
 | 事業企画 | [business-ideation](skills/business-ideation/) |
 | デザイン | [game-ui-design](skills/game-ui-design/) |
 | システムメンテナンス | [disk-space-cleanup](skills/disk-space-cleanup/) |
-| エージェント記憶管理 | [memory-dream](skills/memory-dream/) |
+| エージェント記憶管理 | [memory-dream](skills/memory-dream/), [agents-md-improver](skills/agents-md-improver/), [agents-md-revise](skills/agents-md-revise/) |
 
 コード開発ライフサイクル系は `/software-architect` → 実装 → `/code-reviewer` → `/security-auditor` の流れで組み合わせて使うことを想定。
 
