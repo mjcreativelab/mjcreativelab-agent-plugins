@@ -20,7 +20,7 @@ GitHub Issue の実装計画を作成・更新するスキル。
 | オプション        | 説明                                       |
 | ----------------- | ------------------------------------------ |
 | `-p <プロンプト>` | 計画の観点・制約に関する追加指示を渡す     |
-| `--codex-review-loop`（`-cdxrl`） | 投稿前に Codex 標準レビューループを実施し、収束後は承認ゲートなしで自動投稿する（Claude Code + Codex プラグイン環境前提） |
+| `--codex-review-loop`（`-cdxrl`） | 投稿前に Codex 標準レビューループを実施し、収束後は承認ゲートなしで自動投稿する（Claude Code + Codex プラグイン環境、または Codex CLI ホスト〔本 skill 自体を Codex CLI が実行している場合〕で `codex exec` が使える環境が前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | 投稿前に Claude=Breaker × Codex=Judge の敵対的レビューループを実施する。収束後の自動投稿は標準と同じ |
 | `--claude-review-loop`（`-cldrl`） | 投稿前に Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準計画レビューループを実施する（Codex 不要・Claude Code の Workflow ツール前提）。収束後の自動投稿は codex 系と同じ |
 | `--claude-adv-review-loop`（`-cldarl`） | 投稿前に独立 Opus の Breaker × Judge による敵対的計画レビューループを実施する（Codex 不要・Workflow ツール前提） |
@@ -33,7 +33,7 @@ GitHub Issue の実装計画を作成・更新するスキル。
 
 **codex 系**（別系統モデル Codex による独立レビュー）:
 
-- **標準（`--codex-review-loop` / `-cdxrl`）**: Codex（`codex:rescue` 経由）が単独で計画とコードを照合してレビューする
+- **標準（`--codex-review-loop` / `-cdxrl`）**: Codex（Claude Code ホストは `codex:rescue` 経由、Codex CLI ホスト＝本 skill 自体を Codex CLI が実行している場合は `codex exec` の独立セッション）が単独で計画とコードを照合してレビューする
 - **敵対的（`--codex-advs-review-loop` / `-cdxarl`）**: Claude=Breaker（設計への攻撃シナリオ・脅威・欠落コントロールの列挙）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。計画にはテスト対象のコードがないため、反例テストの代わりに攻撃シナリオを用いる。`code-reviewer-adversarial` スキルは `disable-model-invocation` のため直接委譲できないので、その二者構造をループ内にインライン再現している
 
 **claude 系**（Codex 不要・Claude Code の Workflow ツールで起動する独立 Opus エージェント。コンテキスト隔離 + 役割分離で独立性を担保）:
@@ -44,10 +44,10 @@ GitHub Issue の実装計画を作成・更新するスキル。
 
 共通:
 
-- **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や計画から検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示）。系統はフラグ明示ならその系統、未指定なら `codex:rescue` 利用可能時は codex・不能時は claude にフォールバックする。ただしこの自動発動のみのケースでは**投稿前の承認ゲートを維持する**（外部投稿の自動化は明示オプトイン時のみ）
+- **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や計画から検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示）。系統はフラグ明示ならその系統、未指定なら codex 系のレビュー取得経路（`codex:rescue` / `codex exec`）が利用可能時は codex・不能時は claude にフォールバックする。ただしこの自動発動のみのケースでは**投稿前の承認ゲートを維持する**（外部投稿の自動化は明示オプトイン時のみ）
 - 収束後の自動投稿（フラグ明示時のみ）はプレビュー承認をスキップする
 - 投稿本文の末尾に `🤖 Codex レビュー済み（標準…）` / `🤖 Codex 敵対的レビュー済み（Breaker×Judge…）` / `🤖 Claude レビュー済み（標準…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus…）` を記載する
-- レビューが使えない環境（codex 系は `codex:rescue` 不能、claude 系は Workflow ツール不能）では Claude がレビュー・裁定を代行せず、通常フロー（承認ゲートあり）にフォールバックする（レビュー済み表記なし）
+- レビューが使えない環境（codex 系は `codex:rescue` / `codex exec` いずれも不能、claude 系は Workflow ツール不能）では Claude がレビュー・裁定を代行せず、通常フロー（承認ゲートあり）にフォールバックする（レビュー済み表記なし）
 
 ## 動作モード
 
@@ -70,6 +70,6 @@ GitHub Issue の実装計画を作成・更新するスキル。
 
 - **git** — 分析時点 SHA の記録（`git rev-parse`）と更新モードでの変更点特定（`git log`）に使用（git が使えない環境では SHA は「未記録」となり、更新モードの差分検出が制限される）
 - **GitHub MCP サーバー** — Issue の読み取り・計画コメント投稿に必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
-- **Codex プラグイン（`codex:rescue` スキル）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時のみ必須。セキュリティ自動発動時は codex 系優先だが、不在なら claude 系（Workflow）へフォールバックする
+- **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時のみ必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること）。セキュリティ自動発動時は codex 系優先だが、不在なら claude 系（Workflow）へフォールバックする
 - **Workflow ツール** — `--claude-review-loop` / `--claude-adv-review-loop` 使用時、および Codex 不在でのセキュリティ自動発動時に必須（Claude Code 固有。利用できない環境では claude 系レビューは実施されず通常フローへ degrade する）
 - **AskUserQuestion** — Issue 番号・要件の確認と、レビューループ 3 ラウンドごとの続行確認・仕様未定の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）

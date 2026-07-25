@@ -1,10 +1,10 @@
 # Codex Judge 依頼テンプレート（敵対的モード・実装計画）
 
-敵対的モード（`--codex-advs-review-loop` / セキュリティ自動発動）のループで、Breaker（Claude）が生成した設計への攻撃シナリオを Codex（Judge）に裁定させる依頼文のテンプレート。計画にはテスト対象のコードがないため、反例テストの代わりに攻撃シナリオを用いる。`<>` を埋めて `codex:rescue` に task として渡す。標準モードのレビュー依頼は [codex-review-prompt.md](codex-review-prompt.md) を使う。
+敵対的モード（`--codex-advs-review-loop` / セキュリティ自動発動）のループで、Breaker（Claude）が生成した設計への攻撃シナリオを Codex（Judge）に裁定させる依頼文のテンプレート。計画にはテスト対象のコードがないため、反例テストの代わりに攻撃シナリオを用いる。`<>` を埋めて、**Claude Code ホスト**では `codex:rescue` へ task として渡し、**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している場合。`codex:rescue` は存在しない）では `codex exec` の入力として渡す。標準モードのレビュー依頼は [codex-review-prompt.md](codex-review-prompt.md) を使う。
 
 ---
 
-## codex:rescue への依頼文テンプレート
+## Codex への依頼文テンプレート（codex:rescue / codex exec 共通）
 
 ```
 あなたは GitHub Issue の実装計画の Judge（裁定者）として振る舞う。
@@ -71,11 +71,11 @@ Breaker に迎合せず、独立した視点で判断すること。
 
 ## 呼び出し時の注意
 
-- このテンプレート全体を埋めたうえで、Skill ツールの `codex:rescue` に task として渡す
+- このテンプレート全体を埋めたうえで渡す。**Claude Code ホスト**では Skill ツールの `codex:rescue` に task として渡す。**Codex CLI ホスト**（本 skill 自体を Codex CLI が実行している。`codex:rescue` は存在しない）では `codex exec`（例: `codex exec --sandbox read-only -C <リポジトリルート> -` で stdin からテンプレートを読ませる。裁定のみでファイル変更をさせないため `--sandbox read-only` を明示する）を Bash から起動する。いずれの経路でも、Breaker を実施したセッションとは独立した新規セッションで裁定させる
 - Codex はリポジトリにアクセスできるため、計画とコードの照合（ファイル実在確認・前提検証・シナリオの成立性）は Codex 側に行わせる
 - Codex に計画やコードの修正を行わせない（裁定のみ）。修正は Claude 側の妥当性判定（過剰対応チェック）を経てから行う
 - 返ってきた裁定の再解釈・要約による弱体化をしない（妥当性判定は採用 / 不採用の分類と理由の明記のみ）
 
 ## 運用ノート: silent death（ハング・静止死）からの復旧
 
-silent death の検知・回収・復旧（cancel → `--resume` 再投入）・予防の手順は [codex-review-prompt.md](codex-review-prompt.md) の「運用ノート」に従う。復旧を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue 利用不能時）」に切り替える。
+silent death の検知・回収・復旧（cancel → `--resume` 再投入）・予防の手順（Claude Code ホスト / codex:rescue 経由）、および Codex CLI ホストでの補足は [codex-review-prompt.md](codex-review-prompt.md) の「運用ノート」に従う。復旧を 2 回試しても完了しない場合は、SKILL.md の「フォールバック（codex:rescue / codex exec が利用不能時）」に切り替える。
