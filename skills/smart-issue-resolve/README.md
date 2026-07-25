@@ -64,7 +64,8 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - claude 系のレビュー役（レビュワー / Breaker / Judge）は diff を各自で `git diff` せず、作業ディレクトリのレビュー正本 `diff.md` を読む（生成はセット起動前がオーケストレーター、ラウンド境界が開発者エージェント）。プロンプトに埋め込んだ期待スタンプ（対象ラウンド）と一致しない・ファイルが無い場合は自前の git 取得へフォールバックする（鮮度ガード）。リポジトリ実コードとの照合は従来どおり必須で、**独立 QA は diff.md に依存せず自分で git を実行する**
 - 敵対モードの裁定「仕様未定」（仕様が曖昧で要確認の指摘）は、対話できないエージェントに握り潰させず、オーケストレーターが AskUserQuestion でユーザーに確認して確定内容を context.md に反映する
 - 収束後の自動コミット・PR（フラグ明示時のみ）の前に、**独立 QA の最終ゲート**を通す（不合格なら自動コミットを中止して相談）。`smart-commit` / `smart-pr` は `disable-model-invocation` のため、コミット・push は `git`、PR 作成は GitHub MCP（不在時は `gh`）で直接実行する。機密ファイル警告・pre-commit hook・behind 時のマージ確認などの安全系は維持する
-- PR 本文のレビュアー向け補足に `🤖 Codex レビュー済み（…）` / `🤖 Claude レビュー済み（…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus…）` を記載する
+- 自動作成する PR のタイトル・本文は `smart-pr` と同じ形式にする（タイトル: `<type>(<scope>): <日本語説明>` 70 文字以内、本文: `assets/pr-template.md` の標準構成 / 簡易構成を変更の性質で選択）。テンプレートは `smart-pr` の同名ファイルの複製（スキル間ファイル参照ができないための意図的な二重化）
+- PR 本文に `🤖 Codex レビュー済み（…）` / `🤖 Claude レビュー済み（…）` / `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus…）` を記載する（標準構成なら `## 備考`、簡易構成なら `## レビュアー向け補足`）
 - レビュー取得経路（`codex:rescue` / `codex exec`）が使えない環境では Claude がレビュー・裁定を代行せず、従来の完了案内（コミット・PR は手動）にフォールバックする（レビュー済み表記なし）。ただしセキュリティ自動発動のケースに限り claude 敵対レビューで代替する。claude 系が使えない（Workflow なし）場合も同様に代行せずフォールバックする
 - 実装とは独立に敵対的レビューだけ行いたい場合は `/code-reviewer-adversarial` を直接使う
 - claude 系レビューのレビュワー・Breaker・Judge プロンプトは `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へも移植されている（`smart-issue-plan` の `sip-plan-review-set` も同骨格の変種）。観点・裁定基準を変えるときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（4 スキル）をすべて同期する
