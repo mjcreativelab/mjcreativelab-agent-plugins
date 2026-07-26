@@ -190,7 +190,7 @@ Judge の修正コスト（S/M/L）と重大度から、着手順序の提案を
 
 ### 同期ノート
 
-claude-judge モードの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）は smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の breakerPrompt / judgeBatchPrompt からの移植である。攻撃観点・裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。Judge のバッチ並列化 + miss-finder 分離は cra 固有の構造変更（Issue #107。裁定基準の内容は不変のため resolve/plan への内容同期は不要）。Breaker はレンズ分割しない（resolve/plan の雛形 B/sip とは意図的に非対称 — 単発レビューはラウンド往復が無く、Breaker 1 本の全観点走査を維持する）。雛形のエージェントプロンプト・スキーマ description は英語、出力（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
+claude-judge モードの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）は smart-issue-resolve `references/agent-orchestration.md` の雛形 B（`sir-claude-review-set`）の breakerPrompt / judgeBatchPrompt からの移植である。攻撃観点・裁定基準を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。Judge のバッチ並列化 + miss-finder 分離は cra 固有の構造変更（Issue #107。裁定基準の内容は不変のため resolve/plan への内容同期は不要）。Breaker はレンズ分割しない（resolve/plan の雛形 B/sip とは意図的に非対称 — 単発レビューはラウンド往復が無く、Breaker 1 本の全観点走査を維持する）。雛形のエージェントプロンプト・スキーマ description は英語、出力（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。Opus 役のプロンプト末尾には共通の英語抑制ノート `RESTRAINT_NOTE`（サブエージェント起動禁止・手順外の追加検証禁止・スコープ維持・出力簡潔化。Opus 5 プロンプトガイド準拠）を `TAIL_NOTE` の直前に付す（同期対象 4 スキルで共通）。
 
 ## PR 書き出しモード
 

@@ -183,3 +183,17 @@ Issue #111（PR #112）の精度優先強化を実レビューループで使用
 - **時刻の完全日時化と開始ログ**: `nowJst` を `%H:%M` → `%Y-%m-%d %H:%M:%S` に拡張。オーケストレーター実測の `args.startedAt`（ログ表示専用・プロンプト非埋め込みで resume キャッシュに影響しない）でセット開始を、直近 `nowJst`（`lastJst`）の導出でラウンド開始・judge 起動を `log()` 表示する
 - **ラウンド結果ログ**: ラウンド終了時に指摘 / 裁定の内訳（真の欠陥・仕様未定・除外）と各指摘タイトル（≤10 件 + 他 N 件）、fix / plan-editor の採用・不採用内訳（採用 ≤10・不採用 ≤5）を `log()` 出力。ログ増は 1 ラウンドあたり最大 30 行程度（トークンコストは軽微）
 - **採取予定（次回 dogfooding）**: 英語化前後の recall プロキシ（ラウンド 1 指摘数・不採用率・確認ラウンド追加検出）を本ファイルの #111 Phase C 実測と比較する。プロンプト言語だけの差なので、乖離が大きければ英語化起因を疑う
+
+## Opus 過剰処理の抑制ノート RESTRAINT_NOTE（2026-07-27 実装・実測待ち）
+
+Opus 化したレビュー役（#111）が過剰処理（サブエージェントの多量起動・冗長な出力）をする傾向への対処。[Prompting Claude Opus 5 ガイド](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5) の「Controlling subagent spawning」「Task scope and over-verification」「Written deliverable length」に基づき、4 スキル全雛形の `model: 'opus'` の全 `agent()` プロンプト末尾（`TAIL_NOTE` 直前）に共通の英語抑制ノート `RESTRAINT_NOTE` を追加した（resolve 雛形 A/B/D の 10 役・sip 4 役・cr 1 役・cra 3 役 = 18 箇所）:
+
+- サブエージェント起動・委任の禁止（検証目的含む。自分のツールコールで完結）— ガイド「Do not delegate work you can finish yourself in a handful of tool calls, and do not use subagents to verify or double-check your own work」
+- 手順に無い追加検証パス・再チェックの禁止 — Opus 5 は指示なしでも自己検証するため、明示的な検証指示は過剰検証を招く（compound する）
+- 依頼スコープの維持 — ガイド「Deliver what was asked, at the scope intended ... stop short of actions that are clearly beyond what was asked」
+- 出力・書き出しファイルの長さをタスクに合わせる — ガイド「cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate」（逐語採用）
+
+構造（レンズ分割・バッチ並列・dry-twice・diff 正本・model / effort 割り当て）は不変。sonnet 役（QA・probe-cleanup・雛形 C の監査役 / Breaker）には付けない。プロンプト文言が変わるため、旧 run への `resumeFromRunId` は該当 `agent()` からキャッシュ不一致で再実行になる（新規セットから普通に有効）。
+
+- **採取予定（次回 dogfooding）**: レビュー役 transcript のサブエージェント（Agent/Task）起動回数・出力トークン・所要時間を #113 / #122 実測と比較する。recall プロキシ（ラウンド 1 指摘数・不採用率）の劣化がないことも確認する
+- **次の候補レバー（未実施）**: ガイドは「レビュー精度は低 effort でも維持され、effort が主なコスト・時間レバー」と明言しており、レビュー役の `effort: 'max'` → `'high'` 降格が有望。#111/#113 の実測判断に関わるため、本変更（プロンプトのみ）の実測を見てから別途判断する

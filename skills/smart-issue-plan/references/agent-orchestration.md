@@ -75,6 +75,7 @@ const target = `The review target is the body of the implementation plan ${plan}
 
 const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
 const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
 const ts = (t) => (t ? `[${t} JST] ` : '')
 let lastJst = args.startedAt || ''
 
@@ -219,7 +220,7 @@ ${group.aspects}
 - Attach evidence (primary sources such as file path and line numbers, or the relevant part of the plan) and severity to each finding.
 - Do not modify the plan or the code (review only). Do not commit.
 - If there are no findings, return an empty items array.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 // レンズ別 Breaker プロンプト。プロンプト本体は共通で、攻撃観点だけレンズ定義（lens.aspects）に差し替える。
 // レンズ S かつ isAuditRound（securityAudit 初回セット round 1）のときは、監査役を統合して STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施する（独立の前段監査スロットを消す）
@@ -232,7 +233,7 @@ ${lens.aspects}
 ## Output
 - Write the attack-scenario list (scenario, the plan step / assumption that fails to address it, evidence) to ${args.workDir}/breaker-round-${round}-${lens.token}.md (one file per lens, to avoid concurrent overwrite between parallel lenses).
 - Return the same content in the structured output scenarios. Always attach unaddressed (which step / assumption of the plan fails to address it) to each scenario${isAuditRound ? ', and whether you wrote security-audit.md in auditWritten' : ''}.
-Constraints: do not modify the plan or the code (writing security-audit.md is allowed). Do not commit. ${TAIL_NOTE}`
+Constraints: do not modify the plan or the code (writing security-audit.md is allowed). Do not commit. ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `You are the Judge (adjudicator). Another agent (the Breaker) generated attack scenarios against the design; adjudicate them by checking them against the real code in the repository and the plan body. Do not defer to the Breaker — judge independently. You were involved in neither the plan's creation nor the scenario generation. This is batch ${batchNum}/${batchTotal} of the round-${round} attack scenarios.
 ## Input
@@ -258,7 +259,7 @@ Check each scenario against the real code and the plan body, and classify it int
 - Prefer a few strong, defensible findings over many weak ones.
 - Do not modify the plan or the code (adjudication only). Do not commit.
 - Put only 真の欠陥 and 仕様未定 into items (set category); leave 低優先度 / ノイズ in dismissed with count and title only.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const editPrompt = (round, items) => `You are the author (reviewee) of the implementation plan for GitHub Issue #${args.issueNumber}. Judge the round-${round} review findings and apply them to the plan ${plan}:
 ${JSON.stringify(items, null, 2)}
@@ -268,7 +269,7 @@ ${JSON.stringify(items, null, 2)}
    - Reject: invalid, would cause over-engineering, or out of the Issue scope (record the reason in one line). Even findings the Judge classified as 真の欠陥 may be rejected if addressing them would be overcorrection.
 3. Apply the adopted findings to ${plan} (edit the plan body; do not modify implementation code).
 4. Keep the plan structure (per [assets/plan-template.md](../assets/plan-template.md)) after the edits.
-Constraints: do not modify implementation code. Do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${TAIL_NOTE}`
+Constraints: do not modify implementation code. Do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 // セキュリティ監査はレンズ S の Breaker に統合済み（securityAudit 初回セット round 1 で STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施）。独立の前段監査スロットは持たない。auditFailed はレンズ S が監査を書き出せなかった場合に立てる
 let auditFailed = false
@@ -415,6 +416,7 @@ return { converged, status, records, specQuestions: uniqueSpecQuestions, auditFa
 - **セキュリティ監査役のレンズ S 統合**: `securityAudit` 初回セット round 1 でレンズ S が STRIDE 監査 → `security-audit.md` 書き出し → break を 1 エージェントで実施する（独立の前段監査スロットは削除。`auditWritten` フラグで「監査のみ失敗」を `auditFailed` として区別）
 - **差分スコープ化**: `records[].adoptedItems` に採用計画修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域に重点付けする `fixDelta()`。ラウンド 1 は計画全体の包括レビュー
 - **プロンプトの英語化 + 進捗ログ規約（Issue #122）**: `agent()` プロンプト・スキーマ description は英語、出力内容・`log()`・カテゴリ enum 値は日本語。`TAIL_NOTE` による日本語出力 + `nowJst`（`%Y-%m-%d %H:%M:%S`）指示、`args.startedAt` の開始ログ、`lastJst` 導出のラウンド開始 / judge 起動ログ、ラウンド終了時の指摘・採用内訳ログ（件数上限つき）
+- **Opus 抑制ノート（`RESTRAINT_NOTE`）**: `model: 'opus'` の全 `agent()` プロンプト末尾（`TAIL_NOTE` の直前）に共通の英語抑制ノート（サブエージェント起動・委任の禁止／手順に無い追加検証パスの禁止／依頼スコープの維持／出力・書き出しファイルの簡潔化。Opus 5 プロンプトガイド準拠）を付す（本雛形は全役 opus のため全 `agent()` に付く）
 
 同期しないもの（**意図的に異なる**）:
 
