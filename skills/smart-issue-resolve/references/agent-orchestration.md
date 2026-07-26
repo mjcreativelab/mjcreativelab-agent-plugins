@@ -177,6 +177,8 @@ const DESIGN_SCHEMA = {
   },
 }
 
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
+
 const qaPrompt = (extra) => `You are an independent QA agent. Do not trust the developer's self-report; run the verification yourself.
 1. Read ${ctx} (test policy, acceptance criteria, diff base).
 2. Inspect the changes: git diff origin/${args.defaultBranch}...HEAD, plus uncommitted changes visible via git status / git diff.
@@ -201,7 +203,7 @@ if (args.needDesign) {
 2. Investigate the relevant code (entry points, dependency graph, existing patterns, boundary conditions) and settle a design approach that satisfies the requirements.
 3. Write the following sections to ${args.workDir}/design.md: 方針 / 変更対象ファイル / データ・依存の流れ / リスク / テスト方針 / 未確定事項.
 Constraints: do not modify code. Do not commit or push. Do not unilaterally settle specs you cannot decide — list them under 未確定事項.
-Final output: put the gist of design.md (within 10 lines) into summary. ${TAIL_NOTE}`,
+Final output: put the gist of design.md (within 10 lines) into summary. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
     { label: 'architect:design', phase: 'Design', model: 'opus', effort: 'max', schema: DESIGN_SCHEMA })
   if (design === null) return { status: 'agent-failed', at: 'design' }
   lastJst = design.nowJst || lastJst
@@ -215,7 +217,7 @@ const impl = await agent(`You are the developer implementing GitHub Issue #${arg
 4. Implement per the Issue requirements, acceptance criteria, and extra instructions. Keep the scope limited to what the Issue (and the plan / design) covers.
 5. Re-run the same test scope and confirm no existing tests broke and the new requirements are met.
 6. Write to ${notes}: 変更ファイル / 要件対応（受け入れ基準ごと） / 自分で判断した事項 / テスト結果（ベースライン比較）.
-Constraints: do not commit or push. Do not mix in changes unrelated to the Issue. ${TAIL_NOTE}`,
+Constraints: do not commit or push. Do not mix in changes unrelated to the Issue. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
   { label: 'dev:implement', phase: 'Implement', model: 'opus', effort: 'max', schema: IMPL_SCHEMA })
 if (impl === null) return { status: 'agent-failed', at: 'implement' }
 lastJst = impl.nowJst || lastJst
@@ -237,7 +239,7 @@ ${JSON.stringify(qa.issues, null, 2)}
 2. Verify each finding and fix it (if you judge one to be a QA false positive, record the reason in rejected).
 3. Re-run the relevant-scope tests.
 4. Update ${notes}.
-Constraints: do not commit or push. ${TAIL_NOTE}`,
+Constraints: do not commit or push. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
     { label: 'dev:qa-fix-' + qaFixRounds, phase: 'QA', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (fix === null) return { status: 'agent-failed', at: 'qa-fix' }
   lastJst = fix.nowJst || lastJst
@@ -257,7 +259,7 @@ const arch = await agent(`You are the designer. Review the completed change for 
    - Design conformance: deviation from the design approach, the implementation plan, or the existing architecture (layer responsibilities, dependency direction)
    - Maintainability: excessive coupling, reduced testability, wide change ripple, unnecessary abstraction
    - Availability / operations: missing timeouts / retries, behavior on failure or dependency degradation, resource exhaustion, missing observability (logs / metrics), fragile deploy / rollback
-Constraints: do not modify code. Do not commit or push. Readability, naming, and style are out of scope. Attach evidence (file, line) and severity to each finding. If there are no findings, return an empty items array. ${TAIL_NOTE}`,
+Constraints: do not modify code. Do not commit or push. Readability, naming, and style are out of scope. Attach evidence (file, line) and severity to each finding. If there are no findings, return an empty items array. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
   { label: 'architect:review', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })
 if (arch === null) return { status: 'agent-failed', at: 'arch-review' }
 lastJst = arch.nowJst || lastJst
@@ -274,7 +276,7 @@ ${JSON.stringify(arch.items, null, 2)}
    - Reject: invalid, would cause over-engineering, or out of the Issue's scope (record the reason in one line).
 2. Fix the adopted findings and re-run the relevant-scope tests.
 3. Update ${notes}.
-Constraints: do not commit or push. ${TAIL_NOTE}`,
+Constraints: do not commit or push. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
     { label: 'dev:arch-fix', phase: 'ArchReview', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
   if (archFix === null) return { status: 'agent-failed', at: 'arch-fix' }
   lastJst = archFix.nowJst || lastJst
@@ -480,6 +482,8 @@ const REVIEWER_GROUPS = [
 // 単発レビュワー（差分スコープのラウンド 2+ / dry-twice 確認ラウンド用）。aspects は REVIEWER_GROUPS の結合で生成し、観点 union の不変を構造的に保証する（Issue #113: 分割並列は包括ラウンド限定）
 const REVIEWER_ALL = { id: 'all', label: 'All aspects', solo: true, aspects: REVIEWER_GROUPS.map((g) => g.aspects).join('\n') }
 
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
+
 const reviewerGroupPrompt = (round, group, delta) => `You are a reviewer of the implementation for GitHub Issue #${args.issueNumber}${group.solo ? '' : ` (aspect group ${group.id}: ${group.label})`}. From an independent position uninvolved in the implementation, report only defects worth fixing, ${group.solo ? 'covering all aspects' : 'focusing on the aspects of your group'}.
 ## Input
 1. Read ${ctx} (Issue requirements, implementation plan, project-specific standards).
@@ -493,7 +497,7 @@ ${group.aspects}
 - Attach evidence (primary sources such as file path and line numbers) and severity to each finding.
 - Do not modify code or files (review only). Do not commit.
 - If there are no findings, return an empty items array.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 // レンズ別 Breaker プロンプト。プロンプト本体は共通で、攻撃観点だけレンズ定義（lens.aspects）に差し替える。
 // レンズ S かつ isAuditRound（securityAudit 初回セット round 1）のときは、監査役を統合して STRIDE 監査 → security-audit.md 書き出し → セキュリティ break を 1 エージェントで実施する（独立の前段監査スロットを消す）
@@ -511,7 +515,7 @@ ${lens.solo ? '' : `- All lenses test concurrently in the same worktree, so run 
 ## Output
 - Write the counterexample list (scenario, evidence, test execution results) to ${args.workDir}/breaker-round-${round}-${lens.token}.md (one file per lens, to avoid concurrent overwrite between parallel lenses).
 - Return the same content in the structured output counterexamples${isAuditRound ? ', and whether you wrote security-audit.md in auditWritten' : ''}.
-Constraints: no code changes other than probe tests (writing security-audit.md is allowed). Do not commit. ${TAIL_NOTE}`
+Constraints: no code changes other than probe tests (writing security-audit.md is allowed). Do not commit. ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `You are the Judge (adjudicator). Another agent (the Breaker) generated counterexamples / attack scenarios; adjudicate them by checking them against the real code in the repository. Do not defer to the Breaker — judge independently. You were involved in neither the implementation nor the counterexample generation. This is batch ${batchNum}/${batchTotal} of the round-${round} counterexamples.
 ## Input
@@ -538,7 +542,7 @@ Check each counterexample against the real code and classify it into exactly one
 - Prefer a few strong, defensible findings over many weak ones.
 - Do not modify code or files (adjudication only). Do not commit.
 - Put only 真の欠陥 and 仕様未定 into items (set category); leave 低優先度 / ノイズ in dismissed with count and title only.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const fixPrompt = (round, items) => `You are the developer (reviewee) who implemented GitHub Issue #${args.issueNumber}. Judge and apply the round-${round} review findings:
 ${JSON.stringify(items, null, 2)}
@@ -552,7 +556,7 @@ ${JSON.stringify(items, null, 2)}
 6. Final step (only after fixes, tests, and probe-test cleanup are all done): regenerate the canonical review diff for the next round:
    bash ${args.workDir}/gen-diff.sh origin/${args.defaultBranch} ${round + 1}
    Set diffRegenerated to true on success, or false if the script is missing / exits non-zero (when false, next-round reviewers fall back to fetching the diff via git themselves). Do not hand-edit diff.md.
-Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${TAIL_NOTE}`
+Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const qaPrompt = () => `You are an independent QA agent performing the final verification after review-loop convergence, before commit.
 1. Read ${ctx} (test policy, acceptance criteria, diff base).
@@ -715,6 +719,7 @@ return { converged, status, records, finalQa, specQuestions: uniqueSpecQuestions
 > - **セキュリティ監査役のレンズ S 統合**（`securityAudit` 初回セット round 1 でレンズ S が STRIDE 監査 → `security-audit.md` 書き出し → break を 1 エージェントで実施。独立の前段監査スロットは削除。`auditWritten` フラグで「監査のみ失敗」を `auditFailed` として区別）
 > - **差分スコープ化**（`records[].adoptedItems` に採用修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドの修正差分とその波及に重点付けする `fixDelta()`。ラウンド 1 は全 diff 包括レビュー。diff 基準は全体維持で重点付けであり抑制ではない）
 > - **プロンプトの英語化 + 進捗ログ規約（Issue #122）**（`agent()` プロンプト・スキーマ description は英語、出力内容・`log()`・カテゴリ enum 値は日本語。`TAIL_NOTE` による日本語出力 + `nowJst`〔`%Y-%m-%d %H:%M:%S`〕指示、`args.startedAt` の開始ログ、`lastJst` 導出のラウンド開始 / judge 起動ログ、ラウンド終了時の指摘・採用内訳ログ〔件数上限つき〕）
+> - **Opus 抑制ノート（`RESTRAINT_NOTE`）**（Opus 5 プロンプトガイド準拠）: `model: 'opus'` の全 `agent()` プロンプト末尾（`TAIL_NOTE` の直前）に共通の英語抑制ノートを付す — サブエージェント起動・委任の禁止（検証目的含む。自分のツールコールで完結）／手順に無い追加検証パスの禁止／依頼スコープの維持／出力・書き出しファイルの簡潔化（filler・冗長サマリ・boilerplate の禁止）。sonnet 役（QA・probe-cleanup・雛形 C の監査役 / Breaker）には付けない
 >
 > plan 側はレビュー対象が計画テキスト（diff ではない）で、コード検証用の機構（反例テスト・probe 命名の不変条件・QA / 最終 QA・probe 後始末等）を持たない点が意図的に異なる（差分スコープは「plan-editor の採用計画修正が触れた計画節＋影響領域」に読み替える。Breaker のフィールド名は resolve = `counterexamples` / plan = `scenarios`）。
 >
@@ -879,6 +884,8 @@ const FIX_SCHEMA = {
   },
 }
 
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
+
 log(`${ts(args.startedAt)}dev fix ラウンド ${args.round} 開始`)
 
 const fix = await agent(`You are the developer (reviewee) who implemented GitHub Issue #${args.issueNumber}. Judge and apply the round-${args.round} review findings.
@@ -889,7 +896,7 @@ const fix = await agent(`You are the developer (reviewee) who implemented GitHub
 3. Fix the adopted findings and re-run the relevant-scope tests per the test policy in context.md (do not leave them broken).
 4. Clean up the probe tests containing .breaker-probe.: convert the ones corresponding to adopted defects into regular regression tests; delete the rest.
 5. Update ${notes}.
-Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${TAIL_NOTE}`,
+Constraints: do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
   { label: 'dev:fix-r' + args.round, phase: 'Fix', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
 if (fix === null) return { status: 'agent-failed' }
 log(`[${fix.nowJst} JST] dev fix r${args.round} 完了（採用${fix.adopted.length}件・不採用${fix.rejected.length}件）`)

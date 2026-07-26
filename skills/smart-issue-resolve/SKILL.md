@@ -283,7 +283,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 > claude 系の独立性は**コンテキスト隔離 + 役割分離**で担保する（レビュワー・Breaker・Judge は実装文脈を持たない fresh エージェント）。codex 系のような別系統モデルの独立性はないため、認証・決済・データスキーマ・外部 API 変更などの重要変更には codex 系を推奨する。
 
-> **同期ノート**: 雛形 B/C のレビュワー・Breaker・Judge プロンプト（レビュー観点・攻撃観点・4 分類裁定基準）は、単体スキル `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へ移植済み。観点・裁定基準を変更したら、それらの `references/agent-orchestration.md` も同期する（マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の同期ノート）。雛形のエージェントプロンプト・スキーマ description は英語、ユーザーが読む内容（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
+> **同期ノート**: 雛形 B/C のレビュワー・Breaker・Judge プロンプト（レビュー観点・攻撃観点・4 分類裁定基準）は、単体スキル `code-reviewer`（`--isolated`）・`code-reviewer-adversarial`（`--claude-judge`）へ移植済み。観点・裁定基準を変更したら、それらの `references/agent-orchestration.md` も同期する（マスターの同期対象一覧は CLAUDE.md「スキル改修時の注意」。詳細は [references/agent-orchestration.md](references/agent-orchestration.md) の同期ノート）。雛形のエージェントプロンプト・スキーマ description は英語、ユーザーが読む内容（指摘内容・`log()`・カテゴリ enum 値）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。Opus 役のプロンプト末尾には共通の英語抑制ノート `RESTRAINT_NOTE`（サブエージェント起動禁止・手順外の追加検証禁止・スコープ維持・出力簡潔化。Opus 5 プロンプトガイド準拠）を `TAIL_NOTE` の直前に付す（同期対象 4 スキルで共通）。
 
 ### 収束後のコミット・PR 作成
 

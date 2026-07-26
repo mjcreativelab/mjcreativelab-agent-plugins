@@ -34,6 +34,7 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
 const TAIL_NOTE = "Output language: write all output content (structured output fields and any files you write) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
 const ts = (t) => (t ? `[${t} JST] ` : '')
 let lastJst = args.startedAt || ''
 
@@ -112,7 +113,7 @@ ${args.focus ? `\n## Focus aspects (attack these with priority)\n${args.focus}\n
 - No code changes other than probe tests. Do not commit or push.
 - Do not report "good code" or readability findings (out of scope for this skill).
 - Mark unfalsifiable findings verified: UNVERIFIED and treat their confidence as low, expecting the Judge to cut them as noise.
-Final output: put the counterexample list into counterexamples (no dedup or categorization — that is the Judge's role). ${TAIL_NOTE}`,
+Final output: put the counterexample list into counterexamples (no dedup or categorization — that is the Judge's role). ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
   { label: 'breaker', phase: 'Break', model: 'opus', effort: 'max', schema: BREAK_SCHEMA })
 if (breaker === null) return { status: 'agent-failed', at: 'breaker' }
 lastJst = breaker.nowJst || lastJst
@@ -143,7 +144,7 @@ Check each counterexample against the real code and classify it into exactly one
 - Prefer a few strong, defensible findings over many weak ones.
 - Do not modify code or files (adjudication only). Do not commit.
 - Put only 真の欠陥 and 仕様未定 into items (set category, and attach fix to 真の欠陥 findings); leave 低優先度 / ノイズ in dismissed with count and title only.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const missFinderPrompt = () => `You are the Judge (adjudicator, miss-finding role). Another agent (the Breaker) generated counterexamples, but your role is to independently hunt for defects the Breaker missed. You were involved in neither the implementation nor the counterexample generation.
 ## Input
@@ -164,7 +165,7 @@ ${JSON.stringify(breaker.counterexamples, null, 2)}
 - Classify as 真の欠陥 only findings that can answer all 4 of: (1) what happens, (2) why that code path is vulnerable, (3) the expected impact, (4) a concrete mitigation. Concerns that cannot answer them go to 低優先度 or ノイズ.
 - Do not modify code or files (adjudication only). Do not commit.
 - Put only 真の欠陥 and 仕様未定 into items (set category, and attach fix to 真の欠陥 findings); leave 低優先度 / ノイズ in dismissed with count and title only.
-${TAIL_NOTE}`
+${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const scen = breaker.counterexamples || []
 const BATCH = 4
@@ -209,6 +210,6 @@ return { status: 'ok', items, dismissed, counterexamples: breaker.counterexample
 
 ## 同期ノート
 
-Breaker / Judge プロンプトの攻撃観点・4 分類裁定基準は smart-issue-resolve 雛形 B（`sir-claude-review-set`）と共通である。変更時は CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。プロンプトは英語・出力（構造化出力の中身・`log()`・カテゴリ enum 値）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。標準レビュー（可読性を含む観点）は本スキルの対象外で `/code-reviewer` に委ねる点は codex-judge モードと同じ。
+Breaker / Judge プロンプトの攻撃観点・4 分類裁定基準は smart-issue-resolve 雛形 B（`sir-claude-review-set`）と共通である。変更時は CLAUDE.md「スキル改修時の注意」の同期対象（smart-issue-resolve 雛形 B/C・smart-issue-plan `sip-plan-review-set`・code-reviewer の隔離モード）と揃える。プロンプトは英語・出力（構造化出力の中身・`log()`・カテゴリ enum 値）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。Opus 役のプロンプト末尾（`TAIL_NOTE` 直前）に付す共通の英語抑制ノート `RESTRAINT_NOTE`（サブエージェント起動禁止・手順外の追加検証禁止・スコープ維持・出力簡潔化。Opus 5 プロンプトガイド準拠）も同期対象 4 スキルで共通。標準レビュー（可読性を含む観点）は本スキルの対象外で `/code-reviewer` に委ねる点は codex-judge モードと同じ。
 
 **Judge のバッチ並列化 + miss-finder 分離（cra 固有・Issue #107）**: 単発 Judge を「Judge バッチ（`breaker.counterexamples` を ≤4 件/バッチに分割・フラット `parallel`・`effort: 'high'`・evidence 限定照合・見落とし探索なし）∥ miss-finder（1 体・`effort: 'max'`・diff スコープ・同じ 4 分類で自己分類）」の異種 thunk 群に置換した。裁定基準の**内容**は 4 分類のまま不変なので resolve/plan への内容同期は不要（バッチ分割・miss-finder 分離は cra 側の構造変更）。劣化伝播は `judgeDegraded`（バッチ失敗で未裁定の反例が残る＝硬い recall 欠損）・`missSearchFailed`（見落とし探索のみ喪失＝より軽い劣化）で区別する。`breaker` はレンズ分割しない（resolve/plan とは非対称・Issue #107 の対象表で cra 行は Judge 側のみを指示）。`no-throw parallel` 契約（Issue #88）に依存し `await parallel(...)` を try/catch で囲まない。**Breaker・Judge バッチ・miss-finder の opus 化は Issue #111**（精度優先。miss-finder の effort max は元のまま維持）。**Judge バッチの effort は #111 で high→max 化 → Issue #113 で high へ戻した**（≤4 件/バッチの有界作業量に max は過剰。時間・トークン効率の再バランス）。

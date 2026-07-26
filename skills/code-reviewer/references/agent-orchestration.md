@@ -28,6 +28,7 @@ args = typeof args === 'string' ? JSON.parse(args) : (args || {})
 
 const NOW_JST_FIELD = { type: 'string', description: "Completion time in JST: the verbatim output of `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'`" }
 const TAIL_NOTE = "Output language: write all output content (the review markdown and structured output fields) in Japanese; keep code identifiers, file paths, and commands as-is. Finally, run `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` and put its verbatim output into nowJst."
+const RESTRAINT_NOTE = "Execution discipline: complete this role yourself with your own tool calls — do not launch subagents (Agent/Task tools), even to verify or double-check your own work, and do not add verification passes beyond the steps above. Deliver what was asked, at the scope intended, and stop short of actions clearly beyond it. Match the length of your output and any files you write to what the task needs: cover the substance, but do not pad with filler sections, redundant summaries, or boilerplate."
 const ts = (t) => (t ? `[${t} JST] ` : '')
 
 const REVIEW_SCHEMA = {
@@ -68,7 +69,7 @@ Writing rules: each finding is a 3-part set — what / why / how to fix (✅ Goo
 If the change touches authentication / authorization, payment / billing, data schemas, or external API / dependency contracts, append the section 「### Codex クロスチェック推奨」 (理由: the matching category) right after the 5 sections.
 ## Constraints
 - Do not modify code or files (review only). Do not commit or push. Do not post to the PR (the caller does that).
-Final output: put the 5-section markdown (including the Codex cross-check section when applicable) verbatim into review. ${TAIL_NOTE}`,
+Final output: put the 5-section markdown (including the Codex cross-check section when applicable) verbatim into review. ${RESTRAINT_NOTE} ${TAIL_NOTE}`,
   { label: 'reviewer:isolated', phase: 'Review', model: 'opus', effort: 'max', schema: REVIEW_SCHEMA })
 if (result === null) return { review: null }
 log(`[${result.nowJst} JST] レビュー完了`)
@@ -80,4 +81,4 @@ return { review: result.review }
 
 ## 同期ノート
 
-本雛形のレビュー観点は SKILL.md「観点」節（6 観点）と一致させる。敵対レビューの Breaker / Judge プロンプトや smart-issue-resolve 雛形 B の reviewerPrompt との共有関係は CLAUDE.md「スキル改修時の注意」を参照する。プロンプトは英語・出力（5 区分 markdown・`log()`）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。
+本雛形のレビュー観点は SKILL.md「観点」節（6 観点）と一致させる。敵対レビューの Breaker / Judge プロンプトや smart-issue-resolve 雛形 B の reviewerPrompt との共有関係は CLAUDE.md「スキル改修時の注意」を参照する。プロンプトは英語・出力（5 区分 markdown・`log()`）は日本語という言語規約（Issue #122）も同期対象 4 スキルで共通。Opus 役のプロンプト末尾（`TAIL_NOTE` 直前）に付す共通の英語抑制ノート `RESTRAINT_NOTE`（サブエージェント起動禁止・手順外の追加検証禁止・スコープ維持・出力簡潔化。Opus 5 プロンプトガイド準拠）も同期対象 4 スキルで共通。

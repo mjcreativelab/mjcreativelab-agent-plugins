@@ -63,7 +63,7 @@ allowed-tools: Read, Bash, Grep, Glob, AskUserQuestion, Workflow
 
 ### 同期ノート
 
-本モードの隔離レビュー観点（6 観点のうち可読性を除いた実装欠陥系の骨格）は、smart-issue-resolve 雛形 B（`sir-claude-review-set`）の reviewerPrompt と共通の骨格を持つ。この骨格は本ファイルの `cr-isolated-review` を含む複数スキルへ意図的に二重化されている。骨格を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（`cr-isolated-review` を含む 4 スキル）をすべて同期する。可読性を観点に含めるかは各スキルの identity として意図的に異なる（本スキルは含む）。雛形のエージェントプロンプト・スキーマ description は英語、出力（5 区分 markdown・`log()`）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。
+本モードの隔離レビュー観点（6 観点のうち可読性を除いた実装欠陥系の骨格）は、smart-issue-resolve 雛形 B（`sir-claude-review-set`）の reviewerPrompt と共通の骨格を持つ。この骨格は本ファイルの `cr-isolated-review` を含む複数スキルへ意図的に二重化されている。骨格を変更するときは CLAUDE.md「スキル改修時の注意」の同期対象一覧（`cr-isolated-review` を含む 4 スキル）をすべて同期する。可読性を観点に含めるかは各スキルの identity として意図的に異なる（本スキルは含む）。雛形のエージェントプロンプト・スキーマ description は英語、出力（5 区分 markdown・`log()`）は日本語で記述する（Issue #122。同期時も英語表現のまま揃える）。Opus 役のプロンプト末尾には共通の英語抑制ノート `RESTRAINT_NOTE`（サブエージェント起動禁止・手順外の追加検証禁止・スコープ維持・出力簡潔化。Opus 5 プロンプトガイド準拠）を `TAIL_NOTE` の直前に付す（同期対象 4 スキルで共通）。
 
 ## 観点
 - **仕様整合**: 要件・設計ドキュメントとの一致
