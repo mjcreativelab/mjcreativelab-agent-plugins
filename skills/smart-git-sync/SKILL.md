@@ -26,15 +26,16 @@ zsh ではインライン実行しないこと（正規表現がグロブ展開�
 ### 正常完了ケース
 
 3. **`DELETE_CANDIDATES=none`** → 「削除対象のマージ済みブランチはありません」と報告
-4. **`DELETE_CANDIDATES`** にブランチ一覧がある場合 → 一覧を表示しユーザーに確認。承認後 `git branch -d <branch>` で各ブランチを削除
-5. **`GONE_CANDIDATES`** にブランチ一覧がある場合 → 「リモートで削除済み」として一覧を表示しユーザーに確認。承認後 `git branch -D <branch>` で削除
-6. **`SQUASH_CANDIDATES`** にブランチ一覧がある場合 → 「squash マージ済み（未マージ扱い）」として一覧を表示しユーザーに確認。承認後 `git branch -D <branch>` で削除
+4. **`DELETE_CANDIDATES`** にブランチ一覧がある場合 → 一覧を表示しユーザーに確認。`WORKTREE_CANDIDATES` に同じブランチ名の `merged|<branch>|<path>` エントリがあれば worktree パスを併記する。承認後、worktree が紐づくブランチは `git worktree remove <path>` → `git branch -d <branch>` の順で、紐づかないブランチは従来どおり `git branch -d <branch>` のみで削除する
+5. **`GONE_CANDIDATES`** にブランチ一覧がある場合 → 「リモートで削除済み」として一覧を表示しユーザーに確認。`WORKTREE_CANDIDATES` に同じブランチ名の `gone|<branch>|<path>` エントリがあれば worktree パスを併記する。承認後、worktree が紐づくブランチは `git worktree remove <path>` → `git branch -D <branch>` の順で、紐づかないブランチは従来どおり `git branch -D <branch>` のみで削除する
+6. **`SQUASH_CANDIDATES`** にブランチ一覧がある場合 → 「squash マージ済み（未マージ扱い）」として一覧を表示しユーザーに確認。`WORKTREE_CANDIDATES` に同じブランチ名の `squash|<branch>|<path>` エントリがあれば worktree パスを併記する。承認後、worktree が紐づくブランチは `git worktree remove <path>` → `git branch -D <branch>` の順で、紐づかないブランチは従来どおり `git branch -D <branch>` のみで削除する
 7. 最後に `BRANCH`, `RECENT_COMMITS`, `REMAINING_BRANCHES` を使って結果を報告する
 
 ### 補助情報
 
 - **`SWITCHING_FROM=<branch>`** → 元のブランチ名。報告に含めると親切
 - **`ALREADY_ON_DEFAULT=true`** → すでにデフォルトブランチにいた旨を報告
+- **`WORKTREE_SKIPPED`** にブランチ一覧がある場合 → 「未コミット変更が残っているため worktree 削除をスキップしたブランチ」として報告に含める（削除はしない）
 
 ## 削除時の注意
 
@@ -42,3 +43,6 @@ zsh ではインライン実行しないこと（正規表現がグロブ展開�
 - リモート削除済み・squash マージ済みブランチ (`GONE_CANDIDATES`, `SQUASH_CANDIDATES`) → `git branch -D`（強制削除）
 - 3種類を分けて表示し、それぞれ個別にユーザー確認を取ること
 - 一括削除ではなく種類ごとに確認・削除を行う
+- worktree が紐づく削除候補は、**先に `git worktree remove <path>` を実行してから** ブランチを削除する（逆順だと worktree で使用中のためブランチ削除が失敗する）
+- worktree 内に未コミット変更が残っている場合は `WORKTREE_SKIPPED` として自動的に削除候補から除外されている（`git worktree remove` 自体も未コミット変更があれば失敗するため二重に安全）
+- main worktree・現在の worktree は候補に含まれない
