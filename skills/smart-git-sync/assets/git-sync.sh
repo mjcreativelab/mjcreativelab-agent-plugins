@@ -188,5 +188,5 @@ echo "RECENT_COMMITS<<EOF"
 git log --oneline -5
 echo "EOF"
 echo "REMAINING_BRANCHES<<EOF"
-git branch | grep -v '^[[:space:]]*+'
+git branch
 echo "EOF"
