@@ -51,9 +51,26 @@ if ! git pull 2>/tmp/git-sync-pull-err; then
   exit 0
 fi
 
+# --- 3.5. Worktree 検出 ---
+git worktree prune
+
+MAIN_WORKTREE="$(git worktree list --porcelain | awk '/^worktree /{print substr($0,10); exit}')"
+CURRENT_WORKTREE="$(git rev-parse --show-toplevel)"
+
+WORKTREE_TABLE="$(git worktree list --porcelain | awk '
+  /^worktree / { path = substr($0, 10) }
+  /^branch refs\/heads\// { branch = substr($0, 19); print branch "|" path }
+' | awk -F'|' -v main="$MAIN_WORKTREE" -v cur="$CURRENT_WORKTREE" '$2 != main && $2 != cur')"
+
+find_worktree_path() {
+  local branch="$1"
+  [ -z "$WORKTREE_TABLE" ] && return 0
+  echo "$WORKTREE_TABLE" | awk -F'|' -v b="$branch" '$1 == b { print $2; exit }'
+}
+
 # --- 4. マージ済みブランチ一覧 ---
 PROTECTED_PATTERN='^\*|^[[:space:]]*(main|master|develop)$|^[[:space:]]*release/|^[[:space:]]*hotfix/'
-MERGED_BRANCHES=$(git branch --merged | grep -vE "$PROTECTED_PATTERN" || true)
+MERGED_BRANCHES=$(git branch --merged | grep -vE "$PROTECTED_PATTERN" | sed 's/^[* +]*//' || true)
 
 if [ -z "$MERGED_BRANCHES" ]; then
   echo "DELETE_CANDIDATES=none"
@@ -67,7 +84,7 @@ fi
 GONE_BRANCHES=""
 while IFS= read -r line; do
   if echo "$line" | grep -q '\[.*: gone\]'; then
-    branch=$(echo "$line" | sed 's/^[* ]*//' | awk '{print $1}')
+    branch=$(echo "$line" | sed 's/^[* +]*//' | awk '{print $1}')
     if echo "$branch" | grep -qE '^(main|master|develop)$|^release/|^hotfix/'; then
       continue
     fi
@@ -90,7 +107,7 @@ fi
 # --- 6. Squash マージ済みブランチ検出 ---
 SQUASH_BRANCHES=""
 while IFS= read -r branch; do
-  branch=$(echo "$branch" | sed 's/^[* ]*//')
+  branch=$(echo "$branch" | sed 's/^[* +]*//')
   [ -z "$branch" ] && continue
   if echo "$branch" | grep -qE '^(main|master|develop)$|^release/|^hotfix/'; then
     continue
@@ -121,6 +138,49 @@ else
   echo "EOF"
 fi
 
+# --- 6.5. Worktree 削除候補のクロスリファレンス ---
+WORKTREE_CANDIDATES=""
+WORKTREE_SKIPPED=""
+
+classify_worktree_branches() {
+  local category="$1"
+  local branches="$2"
+  [ -z "$branches" ] && return 0
+  while IFS= read -r branch; do
+    [ -z "$branch" ] && continue
+    local path
+    path="$(find_worktree_path "$branch")"
+    [ -z "$path" ] && continue
+    if [ -n "$(git -C "$path" status --porcelain)" ]; then
+      WORKTREE_SKIPPED="${WORKTREE_SKIPPED:+$WORKTREE_SKIPPED
+}$branch|$path"
+    else
+      WORKTREE_CANDIDATES="${WORKTREE_CANDIDATES:+$WORKTREE_CANDIDATES
+}$category|$branch|$path"
+    fi
+  done <<< "$branches"
+}
+
+classify_worktree_branches "merged" "$MERGED_BRANCHES"
+classify_worktree_branches "gone" "$GONE_BRANCHES"
+classify_worktree_branches "squash" "$SQUASH_BRANCHES"
+
+if [ -z "$WORKTREE_CANDIDATES" ]; then
+  echo "WORKTREE_CANDIDATES=none"
+else
+  echo "WORKTREE_CANDIDATES<<EOF"
+  echo "$WORKTREE_CANDIDATES"
+  echo "EOF"
+fi
+
+if [ -z "$WORKTREE_SKIPPED" ]; then
+  echo "WORKTREE_SKIPPED=none"
+else
+  echo "WORKTREE_SKIPPED<<EOF"
+  echo "$WORKTREE_SKIPPED"
+  echo "EOF"
+fi
+
 # --- 7. 現在の状態 ---
 echo ""
 echo "BRANCH=$DEFAULT_BRANCH"
@@ -128,5 +188,5 @@ echo "RECENT_COMMITS<<EOF"
 git log --oneline -5
 echo "EOF"
 echo "REMAINING_BRANCHES<<EOF"
-git branch
+git branch | grep -v '^[[:space:]]*+'
 echo "EOF"
