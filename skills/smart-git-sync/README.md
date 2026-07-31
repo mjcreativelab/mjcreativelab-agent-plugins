@@ -34,6 +34,7 @@
 - worktree 内に未コミット変更が残っている場合は自動的に削除候補から除外し、削除しない
 - main worktree・現在作業中の worktree は削除候補に含めない
 - worktree の削除は対応ブランチの削除より必ず先に行う
+- 未コミット変更の検出は `git status --porcelain` ベースのため `.gitignore` されたファイル（`.env` や `node_modules` 等）は検出できない。worktree 削除はディレクトリごと行われるため、そうしたファイルは「クリーン」と判定された worktree でも削除される点に注意
 
 ## 前提条件
 

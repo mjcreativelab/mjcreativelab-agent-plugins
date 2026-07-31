@@ -70,7 +70,8 @@ find_worktree_path() {
 
 # --- 4. マージ済みブランチ一覧 ---
 PROTECTED_PATTERN='^\*|^[[:space:]]*(main|master|develop)$|^[[:space:]]*release/|^[[:space:]]*hotfix/'
-MERGED_BRANCHES=$(git branch --merged | grep -vE "$PROTECTED_PATTERN" | sed 's/^[* +]*//' || true)
+MERGED_BRANCHES=$(git branch --merged | grep -vE "$PROTECTED_PATTERN" | sed 's/^[* +]*//' \
+  | grep -vE '^(main|master|develop)$|^release/|^hotfix/' || true)
 
 if [ -z "$MERGED_BRANCHES" ]; then
   echo "DELETE_CANDIDATES=none"
@@ -145,6 +146,7 @@ WORKTREE_SKIPPED=""
 classify_worktree_branches() {
   local category="$1"
   local branches="$2"
+  local branch
   [ -z "$branches" ] && return 0
   while IFS= read -r branch; do
     [ -z "$branch" ] && continue
