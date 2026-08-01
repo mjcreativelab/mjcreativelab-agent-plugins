@@ -14,25 +14,12 @@
       "mcp__plugin_github_github__search_issues",
       "mcp__plugin_github_github__get_file_contents",
       "mcp__plugin_github_github__list_issues",
-      "mcp__plugin_github_github__list_pull_requests",
-      "mcp__claude_ai_Atlassian__getConfluencePage",
-      "mcp__claude_ai_Atlassian__searchConfluenceUsingCql",
-      "mcp__claude_ai_Atlassian__getJiraIssue",
-      "mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql"
+      "mcp__plugin_github_github__list_pull_requests"
     ],
     "additionalDirectories": ["/tmp"]
   },
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "mcp__claude_ai_Slack__slack_read_channel|mcp__claude_ai_Slack__slack_read_thread",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "channel=$(jq -r '.tool_input.channel_id // .tool_input.channel // empty' 2>/dev/null); if [[ \"$channel\" =~ ^[DG] ]]; then echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Slack DM の読み取りは禁止されています\"}}'; fi"
-          }
-        ]
-      },
       {
         "matcher": "Write|Edit",
         "hooks": [
@@ -165,10 +152,12 @@
       }
     }
   },
-  "effortLevel": "max",
+  "effortLevel": "medium",
+  "advisorModel": "opus",
   "tui": "fullscreen",
   "showThinkingSummaries": true,
   "skipWorkflowUsageWarning": true,
   "switchModelsOnFlag": true,
-  "autoUpdates": false
+  "autoUpdates": false,
+  "model": "sonnet"
 }
