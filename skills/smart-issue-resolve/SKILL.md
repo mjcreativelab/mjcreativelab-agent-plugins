@@ -8,14 +8,15 @@ description: >
   作業完了後に smart-commit の使用を提案する（勝手にコミット・push はしない）。
   ユーザーが「Issue やって」「#123 に取り掛かる」「/smart-issue-resolve #123」と言ったら起動する。
   smart-issue-plan（計画のみ作成）とは別物。実装まで踏み込むときに使う。
+  --worktree（-wt）を付けると、現在の作業ツリーを変更せず git worktree（EnterWorktree）に分離した作業ディレクトリでブランチ作成から実装まで行う。
   --codex-review-loop（-cdxrl）を付けると実装後に Codex レビューループを実施し、収束後にコミット・PR 作成まで自動で行う。
   --codex-advs-review-loop（-cdxarl）は Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループを回す。
   --claude-review-loop（-cldrl）は Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ、
   --claude-adv-review-loop（-cldarl）は独立 Opus の Breaker × Judge による敵対的レビューループを回す（Codex 不要）。
   認証・個人情報・決済などセキュリティ影響を検出した場合は、フラグ未指定でも敵対的レビューを自動発動する（Codex 不在環境では claude 系で代替）。
 disable-model-invocation: true
-argument-hint: "#issue-number [-p 追加指示] [--codex-review-loop|-cdxrl] [--codex-advs-review-loop|-cdxarl] [--claude-review-loop|-cldrl] [--claude-adv-review-loop|-cldarl]"
-allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion, Skill, Workflow
+argument-hint: "#issue-number [-p 追加指示] [-wt|--worktree] [--codex-review-loop|-cdxrl] [--codex-advs-review-loop|-cdxarl] [--claude-review-loop|-cldrl] [--claude-adv-review-loop|-cldarl]"
+allowed-tools: Read, Bash, Glob, Grep, Edit, Write, AskUserQuestion, Skill, Workflow, EnterWorktree
 ---
 
 # Smart Issue Resolve
@@ -53,6 +54,9 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
   - どれも無ければ `{レビューモード}` は `off`
   - いずれかのフラグが明示指定された場合は `{ループ明示}` = true を立てる（収束後のコミット・PR 自動実行の可否に使う）
   - 旧 `-codex-loop`（ハイフン 1 つ）を検出した場合は、`--codex-review-loop`（`-cdxrl`）／敵対的レビューなら `--codex-advs-review-loop`（`-cdxarl`）にリネームされた旨を案内して処理を止め、再指定を促す（旧フラグを Issue 番号の一部として解釈しない）
+- worktree フラグ（位置は問わない。レビューループのフラグと同じパスで該当トークンを除去する。`-p` の前後分割より前に処理する — 後回しにすると `-p` の追加指示に紛れ込む）:
+  - `--worktree` または `-wt` → `{worktree}` = true（現在の作業ツリーを変更せず、git worktree に分離した作業ディレクトリでブランチ作成から実装まで行う。詳細は手順 3・5）
+  - 無ければ `{worktree}` = false（既定。従来どおり現在の作業ツリーで直接ブランチを作成する）
 - `-p` より前の部分 → Issue 番号（`#` は除去）
 - `-p` より後の部分 → `{プロンプト}`（実装方針・制約に関する追加指示）
 - `-p` がない場合 → 残り全体を Issue 番号として扱い、`{プロンプト}` は空
@@ -62,6 +66,7 @@ GitHub Issue を起点に、ブランチ作成 → 役割別エージェント�
 例: `/smart-issue-resolve #42 --codex-review-loop` → レビューモード: standard、系統: codex
 例: `/smart-issue-resolve #42 -cdxarl` → レビューモード: adversarial、系統: codex
 例: `/smart-issue-resolve #42 -cldarl` → レビューモード: adversarial、系統: claude
+例: `/smart-issue-resolve #42 -wt -cldrl` → worktree モードで着手し、claude 標準レビューループも実施
 
 `{レビューモード}` が `off` でも、手順 6 の後にセキュリティ影響を検出した場合は `adversarial` に自動昇格する（「レビューモードの確定」参照）。
 
@@ -111,6 +116,10 @@ smart-issue-plan が作成した計画があれば、実装前に参照する。
 
 現在のブランチ・未コミット変更・ローカルブランチ一覧を取得。
 
+**`{worktree}` = true の場合** — 手順 5 で新規作成する worktree に新しいブランチを切るため、現在の作業ツリーには一切手を加えない。未コミット変更があってもそのまま現在の作業ツリーに残ればよく、stash は不要（本手順の stash 判定・退避フローは `{worktree}` = false のときのみ適用する）。現在どのブランチにいるかも worktree 作成には影響しないため確認を省略してよい。
+
+**`{worktree}` = false の場合（既定）**:
+
 - **未コミット変更あり** → ユーザーに通知、続行なら `git stash push -m "smart-issue-resolve: <元ブランチ名> の退避"` で **メッセージ付き** stash する（手順 5 の分岐判定に使う）
 - **デフォルトブランチ以外にいる** → 別作業中の可能性をユーザーに確認
 
@@ -141,14 +150,28 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 - 同じ Issue 番号のブランチがローカル・リモートに **1 件** 既存 → チェックアウトか新規作成かユーザーに確認する
 - **複数件** 既存（マイルストーン分割等で `-m1` `-m2` に分かれている場合） → 一覧をユーザーに提示し、対象ブランチをチェックアウトするか新規作成するか選択させる
 
-### 5. ブランチ作成・チェックアウト
+### 5. ブランチ作成・チェックアウト（または worktree 作成）
 
-ユーザー承認後、デフォルトブランチを最新にしてから新規ブランチを作成する。デフォルトブランチは `git symbolic-ref refs/remotes/origin/HEAD` で取得する（`origin/main` / `origin/master` / `origin/develop` 等を自動判別）。取得できない場合はユーザーに確認する。
+ユーザー承認後、デフォルトブランチを最新にする（`git fetch` でリモート参照を更新する — worktree モードで `origin/<デフォルトブランチ>` から直接分岐する場合、これを省くと古い参照のままブランチを作成してしまう）。デフォルトブランチは `git symbolic-ref refs/remotes/origin/HEAD` で取得する（`origin/main` / `origin/master` / `origin/develop` 等を自動判別）。取得できない場合はユーザーに確認する。
 
-stash の復元は手順 3 で記録したフラグに基づいて分岐する:
+**`{worktree}` = false の場合（既定）** — 現在の作業ツリーでブランチを作成・チェックアウトする:
+
+デフォルトブランチを最新にしてから新規ブランチを作成する。stash の復元は手順 3 で記録したフラグに基づいて分岐する:
 
 - **現 Issue の作業の続き** → 新ブランチ上で `git stash pop`
 - **無関係な作業の退避** → 新ブランチ上では pop せず stash に残す。「元のブランチに戻ってから `git stash list` / `git stash pop` で復元してください」と案内する
+
+**`{worktree}` = true の場合** — 現在の作業ツリーには触れず、別ディレクトリの git worktree にブランチを作成する。セッションが既に別の worktree にいる場合、カレントディレクトリからの相対パスで作業すると worktree の中に入れ子で worktree を作ってしまう（そのうえ `EnterWorktree` の「切り替え先は同一リポジトリの `.claude/worktrees/` 配下」という制約も満たせなくなる）。そのため必ず**メイン worktree の絶対パスを起点**にする:
+
+1. **メインルートの特定** — `git worktree list --porcelain | head -1 | cut -d' ' -f2-` でメイン worktree の絶対パス（`{メインルート}`）を取得する（porcelain 出力の先頭エントリは常にメイン worktree）
+2. **除外設定の確認** — `git -C "{メインルート}" check-ignore -q .claude/worktrees/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.claude/worktrees/` を追記する（`git rev-parse --git-common-dir` は main tree・linked worktree のどちらから実行しても常に共有 `.git` を指す絶対パス〔または main tree からの相対 `.git`〕を返す。linked worktree では `.git` はファイルであり直接パスを組み立てると失敗するため必須。リポジトリの追跡対象 `.gitignore` は変更しない・ローカル限定の除外）
+3. **worktree パスの決定** — `{メインルート}/.claude/worktrees/<ブランチ名>` を使う。既に存在する場合（前回の中断等）は再利用するか削除して作り直すかユーザーに確認する
+4. **worktree の作成**:
+   - **新規ブランチの場合** → `git worktree add -b <ブランチ名> "{メインルート}/.claude/worktrees/<ブランチ名>" origin/<デフォルトブランチ>` を実行する
+   - **既存ブランチをチェックアウトする場合** → `git worktree add "{メインルート}/.claude/worktrees/<ブランチ名>" <ブランチ名>` を実行する。そのブランチが既に現在の作業ツリー（または他の worktree）でチェックアウト中だと git がエラーを返す（`fatal: '<ブランチ名>' is already used by worktree at '<パス>'`）— その場合は「既に別の作業ツリーでチェックアウト中のため worktree 化できません。`-wt` を外すか、そちらの作業ツリー側で作業してください」とユーザーに伝えて終了する
+5. **セッションの切り替え** — `EnterWorktree({ path: "{メインルート}/.claude/worktrees/<ブランチ名>" })` を呼ぶ（`name` ではなく `path` を使う — 常に既存パスへの切り替えとして扱うことで、セッションが既に別の worktree にいる場合でも一様に動作する）。以降の手順（context.md 作成・Workflow 起動・レビューループ・コミット・PR）はすべてこの worktree 内で実行される
+6. 手順 3 で未コミット変更を検出していても、stash・pop は行わない（元の作業ツリーにそのまま残る）
+7. **EnterWorktree ツールが利用できない環境**（Claude Code 以外のホスト）では `{worktree}` を無視し、`{worktree}` = false と同じ手順にフォールグレードする。フォールグレードした旨をユーザーに伝える
 
 ### 6. 作業の実行（オーケストレーション）
 
@@ -159,7 +182,7 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
    - リポジトリ内のコーディングルール集を Glob で探索する（`**/rules/*.md`・`**/guidelines/*.md`・`docs/` 配下の規約など）。Issue・変更予定ファイルのドメインに関連するものだけを Read する（例: `ddd-*` / `*architecture*` / `db-*` / `api-*` / `performance*` / `test-coverage*` / `security*`）
    - 参照した実装計画（手順 2）の「依拠した前提」が指す基準
    - 見つからなければ「なし」として進める（degradation）
-2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない）。あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
+2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない。`{worktree}` = true でもコードの worktree〔`.claude/worktrees/<ブランチ名>`〕とは別物で、混同しない）。あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
 3. **context.md の書き出し** — 雛形の書式で `{作業Dir}/context.md` を書く（Issue 要件・実装計画要約・`-p` 指示・ブランチ / diff 基準・テスト方針・プロジェクト固有基準）。テスト方針には関連スコープの実行コマンドを具体化して書く。テストが特定できない / フレームワークが不明な場合は、手動確認方針（再現手順・確認すべき画面や API レスポンス等）をユーザーに提示・合意してから書く
 4. **ゲート** — `{作業Dir}/context.md` が存在しない場合は Workflow を起動しない（作成に戻る）
 5. **実装 Workflow の起動** — 雛形 A（sir-implement）を起動する。Workflow の起動（雛形 A〜E 共通）では、起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測した開始日時を `startedAt` として `args` に含める（開始ログ表示用。グローバルルールの開始日時表示と同じ実測値を使い回してよい）。`needDesign` は「計画が無い、または計画の実装手順が具体ファイルに落ちていない」場合に true。内部フロー: 設計役（条件付き）→ 開発者 → 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 開発者の採用判定・反映 → QA 再確認
@@ -196,6 +219,7 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
 - 実装した要件: <Issue の受け入れ基準に対する対応内容を箇条書きで>
 - 動作確認: <開発者エージェントのテスト結果と、独立 QA が実行した検証（コマンドと結果）>
 - 設計整合レビュー: <設計役の指摘数と採用 / 不採用（不採用理由）。指摘 0 件ならその旨>
+- 作業ディレクトリ: <worktree のパス>
 
 次のステップ:
 1. コミット → `/smart-commit`
@@ -203,6 +227,8 @@ stash の復元は手順 3 で記録したフラグに基づいて分岐する:
 ```
 
 `{作業Dir}/impl-notes.md` に開発者エージェントが記録した「自分で判断した事項」があれば、ユーザーが把握すべき決定事項として言及する。
+
+「作業ディレクトリ」の行は `{worktree}` = true のときだけテンプレートに含める（false のときは行ごと省く）。`{worktree}` = true の場合、セッションは worktree 内に留まったまま完了する（`ExitWorktree` はユーザーから明示的な指示があるまで本スキルからは呼び出さない）。完了案内には worktree のパスに加えて、元の作業ツリーへ戻るには `ExitWorktree({ action: "keep" })` を使うか新規セッションを開始する旨を明記する。worktree・ブランチの削除（マージ後のクリーンアップ）は `/smart-git-sync` に任せる。
 
 degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レビューは未実施（Workflow 不能）」とサマリに明記し、動作確認欄にはメインセッションが実行したテスト / 手動確認の結果を書く（実行していない検証を記載しない）。
 
@@ -298,7 +324,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
    - claude 敵対・収束時: `🤖 Claude 敵対的レビュー済み（Breaker×Judge=独立 Opus, N ラウンド, 最終ラウンド採用指摘 0 件）`
    - 打ち切り時: `🤖 <Codex|Claude> レビュー実施（<standard|adversarial>, N ラウンド, 未収束で打ち切り）`
    - 記載先: 標準構成なら `## 備考`、簡易構成なら `## レビュアー向け補足`
-4. **完了報告** — PR URL・変更サマリ・ループ記録（系統, モード, ラウンド数, 各ラウンドの指摘数 / 採用数 / 不採用理由）・最終 QA 結果を提示して終了
+4. **完了報告** — PR URL・変更サマリ・ループ記録（系統, モード, ラウンド数, 各ラウンドの指摘数 / 採用数 / 不採用理由）・最終 QA 結果を提示して終了。`{worktree}` = true の場合は worktree のパスも併記し、元の作業ツリーへ戻るには `ExitWorktree({ action: "keep" })` か新規セッション開始が必要な旨を伝える（PR マージ後の worktree・ブランチ削除は `/smart-git-sync` に任せる）
 
 behind 時のマージ確認・競合対応は履歴に影響するため、自動オプトインの対象外とし通常どおりユーザーに確認する。ユーザーが手動で `/smart-commit` `/smart-pr` を使う経路は従来どおり有効（自動実行時のみ git/gh 直呼びに切り替える）。
 
@@ -350,3 +376,4 @@ behind 時のマージ確認・競合対応は履歴に影響するため、自�
 - コミット・push を行うのはオーケストレーターの「収束後のコミット・PR 作成」経路のみ。各エージェント（設計役・開発者・QA・レビュワー・Breaker・Judge・監査役）にはコミット・push をさせない（プロンプトに内蔵済み）
 - Issue と関係のない変更を混ぜない（混ざった場合は smart-commit 側で分割する旨を案内する）
 - 反例テスト（`.breaker-probe.` 命名）を最終的な変更セットに残さない（採用した欠陥の回帰テストは正規の命名・配置に変換する）
+- `{worktree}` = true の場合、実装は元の作業ツリーとは別の git worktree（`.claude/worktrees/<ブランチ名>`）で完結する。`ExitWorktree` は本スキルからは呼び出さない（ユーザーが明示的に指示したときのみ実行するツールのため — 完了後もセッションは worktree に留まる）。worktree・ブランチの削除（マージ後のクリーンアップ）は `/smart-git-sync` に任せる

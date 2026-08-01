@@ -7,6 +7,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 ```
 /smart-issue-resolve #134
 /smart-issue-resolve #134 -p テストも書いて
+/smart-issue-resolve #134 --worktree              # または -wt（現在の作業ツリーを変更せず git worktree で作業）
 /smart-issue-resolve #134 --codex-review-loop     # または -cdxrl
 /smart-issue-resolve #134 --codex-advs-review-loop # または -cdxarl（敵対的レビュー・Judge=Codex）
 /smart-issue-resolve #134 --claude-review-loop     # または -cldrl（Opus レビュワー・包括ラウンドは観点3グループ並列）
@@ -20,6 +21,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | オプション        | 説明                                     |
 | ----------------- | ---------------------------------------- |
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
+| `--worktree`（`-wt`） | 現在の作業ツリーを変更せず、git worktree（`.claude/worktrees/<ブランチ名>`。Claude Code の EnterWorktree ツールで切り替え）に分離した作業ディレクトリでブランチ作成から実装まで行う。未コミット変更があっても stash せず現在の作業ツリーに残したまま着手できる。完了後もセッションは worktree に留まる（`ExitWorktree` は本スキルからは呼ばない）。worktree・ブランチの削除は `/smart-git-sync` に任せる |
 | `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Claude Code + Codex プラグイン環境、または Codex CLI ホスト〔本 skill 自体を Codex CLI が実行している場合〕で `codex exec` が使える環境が前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループ。収束後の自動コミット・PR は標準と同じ |
 | `--claude-review-loop`（`-cldrl`） | Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
@@ -45,8 +47,8 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 
 1. Issue を読み取り、内容を把握する
 2. 既存の実装計画（`/smart-issue-plan` が作成したコメント or `[実装計画]` Issue）があれば参照し、計画記録の分析時点 SHA と最新デフォルトブランチの差分から陳腐化を検出する（古ければ計画更新を提案）
-3. 作業ツリーの状態を確認する（未コミット変更は識別可能なメッセージ付きで stash）
-4. Issue に基づいたブランチを作成・チェックアウトする
+3. 作業ツリーの状態を確認する（未コミット変更は識別可能なメッセージ付きで stash。`--worktree`/`-wt` 指定時は現在の作業ツリーに触れないため stash 不要）
+4. Issue に基づいたブランチを作成・チェックアウトする（`--worktree`/`-wt` 指定時は `.claude/worktrees/<ブランチ名>` に分離した worktree でブランチを作成し、EnterWorktree でセッションをそこへ切り替える）
 5. プロジェクト固有基準を収集し、一時作業ディレクトリに context.md（要件・計画・テスト方針・基準）を書き出す
 6. 実装 Workflow を起動する: 設計役（計画が無い/粗い場合）→ 開発者（ベースライン→実装→動作確認）→ 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 反映 → QA 再確認
 7. レビューループ指定時（またはセキュリティ自動発動時）はレビューループへ。それ以外は変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
@@ -77,6 +79,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - `/smart-pr` — PR の作成・更新（同上）
 - `/code-reviewer-adversarial` — 実装から独立して敵対的レビューだけ回したいときに直接使う
 - `/codex:adversarial-review` — Codex 単独の敵対レビューをコード diff に単発でかけたいときに直接使う（Codex プラグイン付属。対象は git diff のみで計画テキストは対象外。本スキルのループには `disable-model-invocation` のため組み込めない）
+- `/smart-git-sync` — `--worktree`/`-wt` で作った worktree がマージ済みになったあと、ブランチと紐づく worktree をまとめて削除するときに使う
 
 ## 推奨: 新規セッションで実行する
 
@@ -89,6 +92,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
+- **EnterWorktree ツール（Claude Code 本体機能）** — `--worktree`/`-wt` 使用時に必須。利用できない環境（他エージェント）では通常のブランチ作成にフォールグレードする
 - **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、claude 系レビュワー = opus/max、独立 QA = sonnet/high 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
 - **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること。後者はホストのコマンドサンドボックス内では起動できないため、サンドボックス外での昇格実行の承認が必要）。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
 - **git + GitHub MCP（または gh）** — レビューループ収束後の自動コミット・PR 作成に使用（コミット・push は git、PR 作成は GitHub MCP を優先。`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
