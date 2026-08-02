@@ -51,7 +51,7 @@ smart-issue-plan の **claude 系計画レビューループ**を担う役割別
 
 ## 雛形: 計画レビューセット（sip-plan-review-set）
 
-1 セット = 最大 3 ラウンド。「レビュー（標準: レビュワー / 敵対: Breaker→Judge）→ plan-editor の採用判定・計画修正」を収束（採用 0 件）まで回して返る。収束時は最終 QA を回さず、オーケストレーターがそのまま `plan.md` を投稿する（計画にはテスト対象コードが無いため）。3 ラウンドごとの続行確認はオーケストレーターがセット間に行う。
+1 セット = 最大 3 ラウンド。「レビュー（標準: レビュワー / 敵対: Breaker→Judge）→ plan-editor の採用判定・計画修正」を収束（High/Medium 採用 0 のクリーンが連続 2 回）まで回して返る。収束時は最終 QA を回さず、オーケストレーターがそのまま `plan.md` を投稿する（計画にはテスト対象コードが無いため）。3 ラウンドごとの続行確認はオーケストレーターがセット間に行う。
 
 `args`: `{ workDir, issueNumber, mode, startRound, priorSummary, cleanStreak, securityAudit, securityReason, startedAt }`
 （`mode`: `'standard' | 'adversarial'`。`startRound`: 通算ラウンドの開始値（1, 4, 7, …）。`priorSummary`: 前セットまでの経緯要約（初回は空文字）。`cleanStreak`: 連続クリーンラウンド数の引き継ぎ値（初回は 0 / 省略可。前セットが `cleanStreak: 1` で 3 ラウンド上限に達した場合、続行セットへ渡すと round 1 が差分スコープ解除の確認ラウンドになり dry-twice 収束がセット境界を跨いで機能する）。`securityAudit`: セキュリティ自動発動時の初回セットのみ true。`securityReason`: 自動発動の理由〔検出したシグナル〕。監査役プロンプトに埋め込まれるため `securityAudit: true` のときは必ず渡す。`startedAt`: 起動直前にオーケストレーターが `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` で実測した開始日時〔開始ログ表示専用・省略可。継続セットの再起動でも再実測して渡す。`agent()` プロンプトへは埋め込まれないため resume のキャッシュ一致に影響しない〕）
@@ -112,7 +112,7 @@ const FIX_SCHEMA = {
   properties: {
     adopted: {
       type: 'array',
-      items: { type: 'object', required: ['title', 'action'], properties: { title: { type: 'string' }, action: { type: 'string' } } },
+      items: { type: 'object', required: ['title', 'action', 'severity'], properties: { title: { type: 'string' }, action: { type: 'string' }, severity: { type: 'string', enum: ['High', 'Medium', 'Low'], description: 'Copy the severity of the original finding being adopted (used for the convergence severity floor)' } } },
     },
     rejected: {
       type: 'array',
@@ -186,7 +186,7 @@ const fixDelta = (i) => {
   const deltaList = adoptedItems.length
     ? adoptedItems.map((a) => `- ${a.title}: ${a.action}`).join('\n')
     : '(Plan fixes adopted in earlier sets — see "Prior rounds" above.)'
-  return `\n## Delta scope (focus of this round)\nIn the previous round, the plan-editor adopted and applied the plan fixes below. Focus on the plan sections / assumptions they touched and their affected areas (dependent later steps, related plan sections), and hunt first for inconsistencies or broken steps newly introduced by these fixes:\n${deltaList}\nThis is prioritization, not restriction: still report obvious critical defects outside this scope. However, limit exhaustive re-scanning of the whole plan to this focus area; avoid wasteful wide-area exploration.\n`
+  return `\n## Delta scope (focus of this round)\nIn the previous round, the plan-editor adopted and applied the plan fixes below. Focus on the plan sections / assumptions they touched and their affected areas (dependent later steps, related plan sections), and hunt first for inconsistencies or broken steps newly introduced by these fixes:\n${deltaList}\nThis is prioritization, not restriction: still report obvious critical defects outside this scope. However, limit exhaustive re-scanning of the whole plan to this focus area; avoid wasteful wide-area exploration.\nDo not demand further elaboration of the text these fixes added (more detail, more caveats, or longer enumerations); raise a finding against newly added text only when it is factually wrong, contradicts another part of the plan, or breaks a step.\n`
 }
 
 // 標準レビュワーの観点グループ分割（G1/G2/G3）。union = 現行の全 9 観点（内容の追加・削除・改変なし）。Breaker のレンズ分割（S/C/O）と同型で、標準モードのレビュワーを 3 グループの並列エージェントにする。グループの意味的対応は計画レビュー用（sir とは観点内容が異なる）
@@ -217,6 +217,7 @@ ${prior()}${delta}
 ${group.aspects}
 ## Constraints
 - Limit findings to defects of the plan (style, formatting, and taste are out of scope).
+- Report only defects that would change what the implementer builds (behavior, design decisions, step ordering, scope). Details an implementer can settle with ordinary judgment — test function naming, renaming instructions, docstring / comment wording, completeness of file or line-number enumerations — go to dismissed as 低優先度, not items. Exception: treat such completeness as in scope when it is itself the Issue's deliverable (e.g. documentation-revision Issues whose acceptance criteria enumerate update targets).
 - Attach evidence (primary sources such as file path and line numbers, or the relevant part of the plan) and severity to each finding.
 - Do not modify the plan or the code (review only). Do not commit.
 - If there are no findings, return an empty items array.
@@ -233,7 +234,7 @@ ${lens.aspects}
 ## Output
 - Write the attack-scenario list (scenario, the plan step / assumption that fails to address it, evidence) to ${args.workDir}/breaker-round-${round}-${lens.token}.md (one file per lens, to avoid concurrent overwrite between parallel lenses).
 - Return the same content in the structured output scenarios. Always attach unaddressed (which step / assumption of the plan fails to address it) to each scenario${isAuditRound ? ', and whether you wrote security-audit.md in auditWritten' : ''}.
-Constraints: do not modify the plan or the code (writing security-audit.md is allowed). Do not commit. ${RESTRAINT_NOTE} ${TAIL_NOTE}`
+Constraints: attack only weaknesses that would change what the implementer builds (behavior, design decisions, step ordering, scope) — do not raise wording precision, naming, or enumeration-completeness nitpicks as scenarios (unless such completeness is itself the Issue's deliverable). Do not modify the plan or the code (writing security-audit.md is allowed). Do not commit. ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 
 const judgeBatchPrompt = (round, batch, batchNum, batchTotal) => `You are the Judge (adjudicator). Another agent (the Breaker) generated attack scenarios against the design; adjudicate them by checking them against the real code in the repository and the plan body. Do not defer to the Breaker — judge independently. You were involved in neither the plan's creation nor the scenario generation. This is batch ${batchNum}/${batchTotal} of the round-${round} attack scenarios.
 ## Input
@@ -257,6 +258,7 @@ Check each scenario against the real code and the plan body, and classify it int
 - Limit findings to defects of the plan (style, formatting, and taste are out of scope).
 - Classify as 真の欠陥 only scenarios that can answer all 4 of: (1) what happens at implementation time, (2) why that plan step / assumption is vulnerable, (3) the expected impact, (4) how to fix the plan to reduce the risk. Concerns that cannot answer them go to 低優先度 or ノイズ.
 - Prefer a few strong, defensible findings over many weak ones.
+- Findings that would not change what the implementer builds (naming, wording, docstring content, enumeration completeness) are at most 低優先度 even if technically valid — unless that completeness is itself the Issue's deliverable.
 - Do not modify the plan or the code (adjudication only). Do not commit.
 - Put only 真の欠陥 and 仕様未定 into items (set category); leave 低優先度 / ノイズ in dismissed with count and title only.
 ${RESTRAINT_NOTE} ${TAIL_NOTE}`
@@ -264,9 +266,10 @@ ${RESTRAINT_NOTE} ${TAIL_NOTE}`
 const editPrompt = (round, items) => `You are the author (reviewee) of the implementation plan for GitHub Issue #${args.issueNumber}. Judge the round-${round} review findings and apply them to the plan ${plan}:
 ${JSON.stringify(items, null, 2)}
 1. Read ${ctx} and ${plan} to restore the plan's context.
-2. Classify each finding as 採用 (adopt) or 不採用 (reject):
+2. Classify each finding as 採用 (adopt) or 不採用 (reject), copying each adopted finding's severity into the structured output:
    - Adopt: findings that correctly identify, with evidence, an error, gap, or risk in the plan.
    - Reject: invalid, would cause over-engineering, or out of the Issue scope (record the reason in one line). Even findings the Judge classified as 真の欠陥 may be rejected if addressing them would be overcorrection.
+   - Low-severity findings: reject by default (the plan is guidance for an implementer with judgment, not a contract). Adopt one only when leaving it would actively mislead the implementer, and apply it as a minimal edit — do not add new sections or grow the plan's structure for it.
 3. Apply the adopted findings to ${plan} (edit the plan body; do not modify implementation code).
 4. Keep the plan structure (per [assets/plan-template.md](../assets/plan-template.md)) after the edits.
 Constraints: do not modify implementation code. Do not commit or push. Do not water down findings by reinterpreting or summarizing them (your decision is only the adopt / reject classification with explicit reasons). ${RESTRAINT_NOTE} ${TAIL_NOTE}`
@@ -302,7 +305,7 @@ for (let i = 0; i < 3; i++) {
     const lenses = comprehensive ? LENSES : [LENS_ALL]
     const lensResults = await parallel(lenses.map((lens) => () =>
       agent(breakerLensPrompt(round, lens, delta, isAuditRound && lens.id === 'S'),
-        { label: `breaker:r${round}-${lens.token}`, phase: 'Review', model: 'opus', effort: 'max',
+        { label: `breaker:r${round}-${lens.token}`, phase: 'Review', model: 'opus', effort: 'high',
           schema: (isAuditRound && lens.id === 'S') ? BREAK_S_SCHEMA : BREAK_SCHEMA })))
     const okLenses = lensResults.filter(Boolean)
     if (okLenses.length === 0) { status = 'agent-failed'; break }
@@ -333,7 +336,7 @@ for (let i = 0; i < 3; i++) {
     const groups = comprehensive ? REVIEWER_GROUPS : [REVIEWER_ALL]
     const groupResults = await parallel(groups.map((group) => () =>
       agent(reviewerGroupPrompt(round, group, delta),
-        { label: `reviewer:r${round}-${group.id}`, phase: 'Review', model: 'opus', effort: 'max', schema: FINDINGS_SCHEMA })))
+        { label: `reviewer:r${round}-${group.id}`, phase: 'Review', model: 'opus', effort: 'high', schema: FINDINGS_SCHEMA })))
     const okGroups = groupResults.filter(Boolean)
     if (okGroups.length === 0) { status = 'agent-failed'; break }
     if (okGroups.length < groups.length) { reviewerDegraded = true; log(`reviewer r${round}: ${groups.length - okGroups.length}/${groups.length} グループ失敗（部分レビューで続行・未探索の観点あり）`) }
@@ -342,7 +345,7 @@ for (let i = 0; i < 3; i++) {
     findings = { items: okGroups.flatMap((r) => r.items || []), dismissed: okGroups.flatMap((r) => r.dismissed || []) }
   }
   if (findings === null) { status = 'agent-failed'; break }
-  // クリーン判定: 「指摘0件」「真の欠陥0件（仕様未定のみ）」「採用0件」を統一的に「クリーン」とし、連続 2 回（cleanStreak >= 2）で収束する。1 回目クリーンでは即 break せず確認ラウンドへ進む
+  // クリーン判定（重大度フロア）: 「指摘0件」「真の欠陥0件（仕様未定のみ）」「High/Medium の採用0件」を統一的に「クリーン」とし、連続 2 回（cleanStreak >= 2）で収束する。Low のみの採用はクリーンを保つ（軽微修正で収束をリセットしない）。1 回目クリーンでは即 break せず確認ラウンドへ進む
   const specItems = findings.items.filter((it) => it.category === '仕様未定')
   specQuestions.push(...specItems)
   const trueDefects = findings.items.filter((it) => it.category !== '仕様未定')
@@ -358,13 +361,15 @@ for (let i = 0; i < 3; i++) {
     const fix = await agent(editPrompt(round, trueDefects), { label: `plan-editor:r${round}`, phase: 'Edit', model: 'opus', effort: 'max', schema: FIX_SCHEMA })
     if (fix === null) { status = 'agent-failed'; break }
     lastJst = fix.nowJst || lastJst
-    log(`[${fix.nowJst} JST] plan-editor r${round} 完了（採用${fix.adopted.length}件・不採用${fix.rejected.length}件）`)
+    const adoptedMajor = fix.adopted.filter((a) => a.severity !== 'Low').length
+    log(`[${fix.nowJst} JST] plan-editor r${round} 完了（採用${fix.adopted.length}件〔High/Medium ${adoptedMajor}・Low ${fix.adopted.length - adoptedMajor}〕・不採用${fix.rejected.length}件）`)
     for (const a of fix.adopted.slice(0, 10)) log(`- 採用: ${a.title}`)
     if (fix.adopted.length > 10) log(`- 採用: …他${fix.adopted.length - 10}件`)
     for (const rj of fix.rejected.slice(0, 5)) log(`- 不採用: ${rj.title}（${rj.reason}）`)
     if (fix.rejected.length > 5) log(`- 不採用: …他${fix.rejected.length - 5}件`)
-    records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, rejected: fix.rejected, dismissed: (findings.dismissed || []).length, adoptedItems: fix.adopted })
-    if (fix.adopted.length === 0) clean = true
+    records.push({ round, findings: findings.items.length, adopted: fix.adopted.length, adoptedMajor, rejected: fix.rejected, dismissed: (findings.dismissed || []).length, adoptedItems: fix.adopted })
+    // 重大度フロア: High/Medium の採用が 0 ならクリーン（Low のみの採用は計画へ反映済みのままクリーン扱い）
+    if (adoptedMajor === 0) clean = true
   }
   if (clean) {
     cleanStreak++
@@ -395,7 +400,7 @@ return { converged, status, records, specQuestions: uniqueSpecQuestions, auditFa
 
 オーケストレーターは Workflow の返却を集約し、完了報告に含める:
 
-- レビューループ: 各ラウンドのモード・指摘数・採用数・不採用理由（`records`）
+- レビューループ: 各ラウンドのモード・指摘数・採用数（High/Medium 内訳 = `adoptedMajor`）・不採用理由（`records`）
 - `specQuestions` でユーザーに確認した仕様と、その反映
 - `auditFailed: true` の場合はその旨
 - `breakerDegraded: true` の場合は一部の攻撃レンズ（S/C/O）が未探索である旨（失敗レンズ数はログ参照）
@@ -407,14 +412,15 @@ return { converged, status, records, specQuestions: uniqueSpecQuestions, auditFa
 本ファイルの計画レビューセット雛形（`sip-plan-review-set`）は、`smart-issue-resolve/references/agent-orchestration.md` の**雛形 B（`sir-claude-review-set`）の計画レビュー用移植**である。次の**構造**を同期する（片方を変えたら両方更新すること）:
 
 - セット制御: `startRound` / `priorSummary` / `cleanStreak` / `records`（`adoptedItems` を含む）/ `history()` / `prior()` の経緯引き継ぎ
-- **dry-twice 収束判定**: 「レビュー指摘 0 件」「`category: '仕様未定'` を除いた真の欠陥 0 件」「採用 0 件」を統一的に「クリーン」とし、連続 2 回（`cleanStreak >= 2`）で収束する（3 ラウンド 1 セット）。1 回目クリーン後の確認ラウンドは差分スコープを解除（`delta = ''`）した fresh エージェントで再検証し、`cleanStreak` を `args`／返却で引き継いでセット境界を跨いで成立させる
+- **dry-twice 収束判定（重大度フロア。Issue #134）**: 「レビュー指摘 0 件」「`category: '仕様未定'` を除いた真の欠陥 0 件」「**High/Medium の採用 0 件**（`FIX_SCHEMA.adopted[].severity` の echo で判定。Low のみの採用は反映しつつクリーン扱い＝軽微修正で収束をリセットしない）」を統一的に「クリーン」とし、連続 2 回（`cleanStreak >= 2`）で収束する（3 ラウンド 1 セット）。1 回目クリーン後の確認ラウンドは差分スコープを解除（`delta = ''`）した fresh エージェントで再検証し、`cleanStreak` を `args`／返却で引き継いでセット境界を跨いで成立させる。`records[].adoptedMajor` に High/Medium 採用数を保持する
 - null ガード（各 `agent()` 返却の null 判定と `status: 'agent-failed'`）・`auditFailed` / `breakerDegraded` / `reviewerDegraded` フラグ・`specQuestions` の返却経路・セキュリティ自動発動の注入（`securityAudit` / `securityReason`）
 - 敵対モード Judge のバッチ並列化: Breaker 出力を ≤4 件/バッチに分割し `parallel` で並列裁定する（`judgeBatchPrompt` / `effort: 'high'`〔Issue #111 で max 化 → ≤4 件/バッチの有界作業量に max は過剰として Issue #113 で high へ戻した〕 / evidence 限定照合。全バッチ失敗のみ `agent-failed`、一部失敗は部分裁定で続行し `judgeDegraded` フラグで伝播）。Breaker のフィールド名だけ意図的に異なる（resolve = `counterexamples`、plan = `scenarios`）
 - **Breaker のレンズ分割並列化（包括ラウンド限定）**: 攻撃観点を S/C/O の 3 レンズに分割し `LENSES` 定義 + フラット `parallel` で同時起動する（union = 現行 Breaker の全観点で内容は不変。一部レンズ失敗は `breakerDegraded` で伝播。レンズごとに `breaker-round-<N>-<lens>.md` を書き並列上書き競合を避ける）。分割は包括ラウンド〔初回セット round 1〕限定で、差分スコープのラウンド 2+・確認ラウンド・継続セットは単発 Breaker（`LENS_ALL` = `LENSES` の aspects 結合で union 不変を構造的に保証）1 体で実施する（Issue #113）
 - **標準レビュワーのグループ分割並列化（包括ラウンド限定）**: 標準モードのレビュワーを観点別グループ G1/G2/G3 の 3 グループに分割し `REVIEWER_GROUPS` 定義 + フラット `parallel` で同時起動する（union = 現行の全 9 観点で内容は不変。Judge 段は無く各グループの `items` を単純結合し、グループ間の重複指摘は plan-editor の採用判定で統合する。一部グループ失敗は `reviewerDegraded` で伝播。観点内容は計画用のため sir とは文言が異なる）。分割は包括ラウンド〔初回セット round 1〕限定で、以降は単発レビュワー（`REVIEWER_ALL` = `REVIEWER_GROUPS` の aspects 結合で union 不変を構造的に保証）1 体で実施する（Issue #113）
-- **レビュー役のモデル opus 化**: 標準レビュワー〔グループ・単発とも〕・Breaker〔レンズ・単発とも。S 含む〕・Judge バッチを `model: 'opus'` に（plan-editor は既に opus。Judge バッチの `effort` は `'high'`〔上記の Issue #113 戻し〕）
+- **レビュー役のモデル opus 化**: 標準レビュワー〔グループ・単発とも〕・Breaker〔レンズ・単発とも。S 含む〕・Judge バッチを `model: 'opus'` に（plan-editor は既に opus。Judge バッチの `effort` は `'high'`〔上記の Issue #113 戻し〕。発見役〔レビュワー / Breaker〕の `effort` は Issue #134 で `'max'` → `'high'` に降格 — Opus 5 プロンプトガイド「レビュー精度は低 effort でも維持され、effort が主なコスト・時間レバー」。plan-editor は編集役のため `'max'` 維持）
 - **セキュリティ監査役のレンズ S 統合**: `securityAudit` 初回セット round 1 でレンズ S が STRIDE 監査 → `security-audit.md` 書き出し → break を 1 エージェントで実施する（独立の前段監査スロットは削除。`auditWritten` フラグで「監査のみ失敗」を `auditFailed` として区別）
-- **差分スコープ化**: `records[].adoptedItems` に採用計画修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域に重点付けする `fixDelta()`。ラウンド 1 は計画全体の包括レビュー
+- **差分スコープ化**: `records[].adoptedItems` に採用計画修正の title/action を保持し、ラウンド 2+ の Breaker/レビュワーを直前ラウンドで plan-editor が反映した計画修正が触れた計画節＋影響領域に重点付けする `fixDelta()`。ラウンド 1 は計画全体の包括レビュー。差分スコープの指示には「前ラウンドの追記文への、さらなる詳細要求の禁止（事実誤り・矛盾・手順破綻のみ指摘可）」を含む（自己増殖チェーンの抑制。Issue #134）
+- **軽微指摘フィルタ + Low 採用規律（Issue #134）**: レビュワー / Breaker / Judge に「実装者が通常の判断で埋められる詳細（テスト関数名・改名指示・docstring / コメント文言・ファイル / 行番号列挙の完全性）は items / シナリオにせず 低優先度」を明示（列挙の完全性が Issue の成果物そのものであるドキュメント改訂系 Issue は除く）。plan-editor は Low を原則不採用（採用時も最小編集で計画構造を太らせない）
 - **プロンプトの英語化 + 進捗ログ規約（Issue #122）**: `agent()` プロンプト・スキーマ description は英語、出力内容・`log()`・カテゴリ enum 値は日本語。`TAIL_NOTE` による日本語出力 + `nowJst`（`%Y-%m-%d %H:%M:%S`）指示、`args.startedAt` の開始ログ、`lastJst` 導出のラウンド開始 / judge 起動ログ、ラウンド終了時の指摘・採用内訳ログ（件数上限つき）
 - **Opus 抑制ノート（`RESTRAINT_NOTE`）**: `model: 'opus'` の全 `agent()` プロンプト末尾（`TAIL_NOTE` の直前）に共通の英語抑制ノート（サブエージェント起動・委任の禁止／手順に無い追加検証パスの禁止／依頼スコープの維持／出力・書き出しファイルの簡潔化。Opus 5 プロンプトガイド準拠）を付す（本雛形は全役 opus のため全 `agent()` に付く）
 
