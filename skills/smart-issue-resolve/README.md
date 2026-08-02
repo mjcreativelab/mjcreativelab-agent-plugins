@@ -37,8 +37,8 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | 設計役 | opus / max | 計画が無い/粗い場合の設計方針確定 + 実装後の設計整合・保守性・可用性レビュー（兼任） |
 | 開発者 | opus / max | 実装（調査→ベースライン→実装→動作確認）とレビュー指摘の採用判定・修正（レビュイー） |
 | 独立 QA | sonnet / high | 自己申告に依存しないテスト・lint の独立実行、受け入れ基準検証、自動コミット前の最終ゲート |
-| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | opus / max（Judge バッチのみ high。codex 敵対 Breaker〔雛形 C〕のみ sonnet / max） | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う。包括ラウンドのみ claude 標準レビュワーは観点を G1/G2/G3 の 3 グループに、claude 敵対 Breaker は攻撃観点を S/C/O の 3 レンズに分割して並列起動し以降は単発 1 体、Judge は反例を ≤4 件/バッチに分割し並列裁定） |
-| セキュリティ監査役 | opus / max（codex 系〔雛形 C〕のみ sonnet / max） | セキュリティ自動発動時に STRIDE・認可・データフロー観点を敵対的レビューへ注入（claude 系はレンズ S の Breaker に統合・codex 系は独立エージェント） |
+| レビュワー / Judge（claude 系）・Breaker（両系統の敵対） | opus / high（codex 敵対 Breaker〔雛形 C〕のみ sonnet / max） | コンテキスト隔離での diff レビュー / 裁定 / 反例生成（Breaker は codex 敵対モードでも使う。包括ラウンドのみ claude 標準レビュワーは観点を G1/G2/G3 の 3 グループに、claude 敵対 Breaker は攻撃観点を S/C/O の 3 レンズに分割して並列起動し以降は単発 1 体、Judge は反例を ≤4 件/バッチに分割し並列裁定） |
+| セキュリティ監査役 | opus / high（codex 系〔雛形 C〕のみ sonnet / max） | セキュリティ自動発動時に STRIDE・認可・データフロー観点を敵対的レビューへ注入（claude 系はレンズ S の Breaker に統合・codex 系は独立エージェント） |
 | レビュワー / Judge（codex 系） | Codex（別系統モデル） | Claude Code ホストは `codex:rescue` 経由、Codex CLI ホストは `codex exec` の独立セッションでレビュー・裁定 |
 
 model はエイリアス指定（環境で利用可能な最新の同系統モデルに解決）。effort を指定できるのは Workflow ツールの `agent()` のみのため、エージェント起動はすべて Workflow ツールで行う。
@@ -59,8 +59,8 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 
 - **codex 標準（`-cdxrl`）**: Codex（Claude Code ホストは `codex:rescue` 経由、Codex CLI ホスト＝本 skill 自体を Codex CLI が実行している場合は `codex exec` の独立セッション）が単独で diff をレビューする
 - **codex 敵対（`-cdxarl`）**: Breaker（独立 Sonnet エージェント。実装文脈から隔離）× Codex=Judge（真の欠陥かノイズかを裁定）の二者構造。Workflow が使えない環境ではメインセッションが Breaker を代行する（従来動作）
-- **claude 標準（`-cldrl`）**: Opus（effort max）のレビュワーエージェントが diff をレビューする（観点は codex 標準と同一・union 不変）。包括ラウンド（初回セット round 1）のみ、観点を G1（仕様充足 / バグ / テストカバレッジ）/ G2（回帰 / データ整合性・性能 / 実装レベルの危険箇所）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワーとして起動し、差分スコープのラウンド 2+ と確認ラウンドは単発 1 体（全 9 観点横断）で実施する（敵対 Breaker のレンズ分割と同型。一部グループ失敗は `reviewerDegraded` フラグで伝播）
-- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Opus エージェントが担う。Breaker は包括ラウンドのみ攻撃観点を S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント（各 effort max。観点の union は従来の単一 Breaker と同一）として起動し、以降のラウンドは単発 1 体（全攻撃観点横断）で実施する。Judge は全レンズの反例を ≤4 件/バッチに分割し並列裁定（effort high。単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。収束は dry-twice（連続 2 クリーンラウンド）。ラウンド 2 以降は直前ラウンドの採用修正差分に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
+- **claude 標準（`-cldrl`）**: Opus（effort high）のレビュワーエージェントが diff をレビューする（観点は codex 標準と同一・union 不変）。包括ラウンド（初回セット round 1）のみ、観点を G1（仕様充足 / バグ / テストカバレッジ）/ G2（回帰 / データ整合性・性能 / 実装レベルの危険箇所）/ G3（運用・保守・可用性 / アーキテクチャ境界 / プロジェクト固有基準）の 3 グループに分割した並列レビュワーとして起動し、差分スコープのラウンド 2+ と確認ラウンドは単発 1 体（全 9 観点横断）で実施する（敵対 Breaker のレンズ分割と同型。一部グループ失敗は `reviewerDegraded` フラグで伝播）
+- **claude 敵対（`-cldarl`）**: Breaker × Judge を**別々の** Opus エージェントが担う。Breaker は包括ラウンドのみ攻撃観点を S（セキュリティ）/ C（正確性・データ）/ O（運用・保守）の 3 レンズに分割した並列エージェント（各 effort high。観点の union は従来の単一 Breaker と同一）として起動し、以降のラウンドは単発 1 体（全攻撃観点横断）で実施する。Judge は全レンズの反例を ≤4 件/バッチに分割し並列裁定（effort high。単一 Judge が多数シナリオの照合で無進捗ウォッチドッグにストールするのを防ぐ）。収束は dry-twice（「High/Medium 採用 0」のクリーンなラウンドが連続 2 回。Low のみの採用はクリーン扱い＝重大度フロア）。ラウンド 2 以降は直前ラウンドの採用修正差分に重点付けする（差分スコープ化）。裁定基準は codex Judge と同等。独立性はコンテキスト隔離 + 役割分離で担保（別系統モデルではないため、認証・決済・データスキーマ・外部 API などの重要変更には codex 系を推奨）
 - **セキュリティ自動発動**: 認証・個人情報・決済などセキュリティ影響を Issue や変更ファイルから検出したら、フラグ未指定でも敵対的レビューを自動で有効化する（発動理由を明示。Codex 不在なら claude 系で代替）。ただしこの自動発動のみのケースでは**コミット・PR は自動実行せず**、従来の完了案内に切り替える（外部副作用の自動化は明示オプトイン時のみ）
 - claude 系は 1 セット（最大 3 ラウンド）を 1 つの Workflow で実行し、3 ラウンドごとの続行確認はセット間にオーケストレーターが行う（サブエージェントはユーザーに質問できないため）
 - claude 系のレビュー役（レビュワー / Breaker / Judge）は diff を各自で `git diff` せず、作業ディレクトリのレビュー正本 `diff.md` を読む（生成はセット起動前がオーケストレーター、ラウンド境界が開発者エージェント）。プロンプトに埋め込んだ期待スタンプ（対象ラウンド）と一致しない・ファイルが無い場合は自前の git 取得へフォールバックする（鮮度ガード）。リポジトリ実コードとの照合は従来どおり必須で、**独立 QA は diff.md に依存せず自分で git を実行する**
@@ -93,7 +93,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
 - **EnterWorktree ツール（Claude Code 本体機能）** — `--worktree`/`-wt` 使用時に必須。利用できない環境（他エージェント）では通常のブランチ作成にフォールグレードする
-- **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、claude 系レビュワー = opus/max、独立 QA = sonnet/high 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
+- **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、claude 系レビュワー = opus/high、独立 QA = sonnet/high 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
 - **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること。後者はホストのコマンドサンドボックス内では起動できないため、サンドボックス外での昇格実行の承認が必要）。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
 - **git + GitHub MCP（または gh）** — レビューループ収束後の自動コミット・PR 作成に使用（コミット・push は git、PR 作成は GitHub MCP を優先。`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
 - **AskUserQuestion** — Issue 番号未指定時の確認、およびレビューループ 3 ラウンドごとの続行/打ち切り/中止の確認に使用（Claude Code 拡張。他エージェントではテキスト確認にフォールバック）
