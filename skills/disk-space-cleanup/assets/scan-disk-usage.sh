@@ -38,6 +38,15 @@ if has pnpm;  then emit_cache "pnpm store"  "$(pnpm store path 2>/dev/null)"    
 if has yarn;  then emit_cache "yarn cache"  "$(yarn cache dir 2>/dev/null)"                    "yarn cache clean"; else emit_skip "yarn cache" "yarn 未インストール"; fi
 if has pip;   then emit_cache "pip cache"   "$(pip cache dir 2>/dev/null)"                     "pip cache purge"; else emit_skip "pip cache" "pip 未インストール"; fi
 if has go;    then emit_cache "go cache"    "$(go env GOCACHE 2>/dev/null)"                    "go clean -cache"; else emit_skip "go cache" "go 未インストール"; fi
+# uv: サンドボックス環境によっては `uv cache dir` 自体が内部の HTTP クライアント初期化で panic することがある
+# （macOS の SCDynamicStore アクセス制約等）。失敗・空出力時はデフォルトパスにフォールバックする。
+if has uv; then
+  UV_CACHE_PATH="$(uv cache dir 2>/dev/null)"
+  [ -z "$UV_CACHE_PATH" ] && UV_CACHE_PATH="${UV_CACHE_DIR:-$HOME/.cache/uv}"
+  emit_cache "uv cache" "$UV_CACHE_PATH" "uv cache prune"
+else
+  emit_skip "uv cache" "uv 未インストール"
+fi
 # cargo は公式 clean コマンドがないため rm（SKILL.md の rm ルールで実行）
 if has cargo; then emit_cache "cargo registry" "${CARGO_HOME:-$HOME/.cargo}/registry"         "rm（公式コマンドなし: SKILL.md rm ルール）"; else emit_skip "cargo registry" "cargo 未インストール"; fi
 

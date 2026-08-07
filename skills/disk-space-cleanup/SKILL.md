@@ -23,7 +23,9 @@ allowed-tools: Read, Grep, Glob
 
 ### Step 1: before スナップショット
 
-`df -h` を実行し、現在の空き容量を記録する。
+`df -h` と `df -i` を実行し、現在の空き容量・inode 使用状況を記録する。
+
+**inode 枯渇の兆候チェック**: 見える範囲のフォルダサイズ合計が `df -h` の実使用量と大きく乖離する場合（例: 目視できるフォルダを全部足しても実使用量の一部にしかならない）、`df -i` の inode 使用率を確認する。個人開発機で inode 使用数が数百万件を大きく超える場合、`uv cache` 等のハードリンク/clonefile 系キャッシュに大量の小ファイル・隔離環境が蓄積している可能性が高い（詳細は [references/cleanup-targets.md](references/cleanup-targets.md) の「既知の注意点」）。
 
 ### Step 2: スキャン
 
@@ -48,7 +50,9 @@ allowed-tools: Read, Grep, Glob
 - `PRESENT_ONLY` 行は別セクション「提示のみ（手動実行）」としてコマンドを表示する（削除候補テーブルには載せない）
 - `SKIP` 行は末尾に要約表示する（「未対象: npm 未インストール, …」）
 
-scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash` / `Claude Code transcripts` / `Codex session transcripts`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
+scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip cache` / `go cache` / `cargo registry` / `uv cache` / `Docker build cache` / `Docker dangling images` / `Docker stopped containers` / `Homebrew cleanup` / `Xcode DerivedData` / `Xcode iOS DeviceSupport` / `unavailable simulators` / `Trash` / `Claude Code transcripts` / `Codex session transcripts`）は [references/cleanup-targets.md](references/cleanup-targets.md) の「scan カテゴリ」列と一致する。これを使ってリスク・復元可否を引く。
+
+`uv cache` 等のハードリンク/clonefile 系キャッシュは、`du` のサイズ表示が実ディスク容量を超える異常値を返すことがある（[references/cleanup-targets.md](references/cleanup-targets.md) 既知の注意点を参照）。この値は参考情報として提示するに留め、「削除して解放される容量」の根拠としては使わない（根拠は Step 6 の before/after `df` 差分）。
 
 トランスクリプトカテゴリは `TRANSCRIPT_CLAUDE_BEGIN` / `TRANSCRIPT_CODEX_BEGIN` 補助ブロックを使って詳細を表示する。ブロック内の値は `総ファイル数<TAB>総サイズ<TAB>7日以前のファイル数<TAB>7日以前のサイズ` の形式。削除候補テーブルではサイズ列に「合計 X MB（うち 7 日以前: Y ファイル / Z MB）」の形式で補足する。
 
@@ -94,16 +98,18 @@ scan の `カテゴリ` 値（`npm cache` / `pnpm store` / `yarn cache` / `pip c
 - 権限エラーが出た場合は **sudo を提案せず**、スキップして報告する
 - 実行直前に対象パスを再表示する
 - 失敗したカテゴリは再試行せず、失敗内容を Step 6 のレポートに記録する
+- **ファイル数が極端に多いカテゴリ（`uv cache` 等）は削除に数十分〜数時間かかる場合がある**: バイト数ではなくファイル数（unlink 回数）がボトルネックになるため、事前にこの可能性をユーザーに伝える。バックグラウンド実行にし、都度の進捗確認は残りサブディレクトリ数や `df -i` の inode 空き数の推移で行う（完了を待つ間、他の作業を止める必要はない旨を伝える）
 
 「提示のみ」カテゴリ（Docker volumes・sudo 必要な Linux 領域）は**コマンドを提示するだけ**で、スキルからは実行しない。
 
 ### Step 6: after レポート
 
-`df -h` を再実行し、レポートを出力する:
+`df -h` と `df -i` を再実行し、レポートを出力する:
 
-- 解放容量サマリ（before → after）
+- 解放容量サマリ（before → after、空き容量・inode 空き数の両方）— `uv cache` 等 `du` サイズが信頼できないカテゴリを削除した場合は特にこの実測差分を根拠とする
 - 実行した削除コマンド一覧
 - 失敗・スキップした項目とその理由
+- 削除処理がバックグラウンドで継続中（Step 5 の長時間カテゴリ）の場合はその旨を明記し、完了確認の方法（再度 `df -h`/`df -i` を確認する等）を伝える
 
 ## 安全設計（要約）
 
