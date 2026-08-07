@@ -25,7 +25,7 @@ metadata:
 
 **除外（同期しない）:**
 
-- 秘密情報: `.credentials.json`・`remote-settings.json`（認証情報・リモート管理設定。リポジトリに置かない）・`.config-sync-exclude`（サニタイズ対象の marketplace 名を書くローカル限定ファイル。手順 3 参照）
+- 秘密情報: `.credentials.json`・`remote-settings.json`（認証情報・リモート管理設定。リポジトリに置かない）・`.config-sync-exclude`（サニタイズ対象の marketplace 名を書くローカル限定ファイル。手順 3 参照）・`.zozo-guidelines-url`（ZOZO社の開発ガイドライン Confluence ページの実 URL。社内情報のためリポジトリに置かない。CLAUDE.md の「ZOZO社の開発ガイドライン準拠」ルールから参照される）
 - 配布物: `skills/`（npx skills / plugin marketplace の install 先。手書き設定ではなく各配布元リポジトリが正本）
 - 状態・キャッシュ: `projects/`・`plugins/`・`backups/`・`cache/`・`chrome/`（Claude in Chrome の native host wrapper。CLI が自動生成しマシン固有の絶対パスとバージョンを埋め込む）・`debug/`・`downloads/`・`file-history/`・`ide/`・`paste-cache/`・`session-env/`・`sessions/`・`shell-snapshots/`・`tasks/`・`telemetry/`・`auto-resume/`・`security/`・`.cc-writes/`・`history.jsonl`・`stats-cache.json`・`security_warnings_state_*.json`・`mcp-needs-auth-cache.json`・`.last-*`・`*.bak.*`・`.DS_Store`
 
@@ -76,7 +76,7 @@ metadata:
    ```bash
    ls -A ~/.claude | sed 's:/*$::' \
      | grep -vE '^(CLAUDE\.md|settings\.json|statusline-command\.sh|keybindings\.json|\.mcp\.json|rules|hooks|agents|commands)$' \
-     | grep -vE '^(skills|projects|plugins|backups|cache|chrome|debug|downloads|file-history|ide|paste-cache|session-env|sessions|shell-snapshots|tasks|telemetry|auto-resume|security|\.cc-writes|\.credentials\.json|remote-settings\.json|\.config-sync-exclude|history\.jsonl|stats-cache\.json|mcp-needs-auth-cache\.json|\.DS_Store)$' \
+     | grep -vE '^(skills|projects|plugins|backups|cache|chrome|debug|downloads|file-history|ide|paste-cache|session-env|sessions|shell-snapshots|tasks|telemetry|auto-resume|security|\.cc-writes|\.credentials\.json|remote-settings\.json|\.config-sync-exclude|\.zozo-guidelines-url|history\.jsonl|stats-cache\.json|mcp-needs-auth-cache\.json|\.DS_Store)$' \
      | grep -vE '^(security_warnings_state_.*|\.last-.*|.*\.bak\..*)$' \
      || echo "新しい同期候補なし"
    ```
