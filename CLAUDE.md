@@ -270,8 +270,12 @@ skill（例: `code-reviewer-adversarial` の Codex 連携）は、その旨を d
 - スキルの手順に `rm -f` 等の破壊的コマンドを含めない。一時ファイルは OS の一時領域に任せること
 - `-p` 等のオプション引数を持つスキルには「引数の解析」セクションを設ける（smart-commit の形式を参照）。同一グループ内で引数パースの書き方を統一すること
 - スキル改修時は frontmatter を確認する: 副作用のあるスキルに `disable-model-invocation: true` があるか、`allowed-tools` が設定されているか、`description` に類似スキルとの差別化文言があるか
-- **diagram-template.html の系譜**: branch-visualize と structure-visualize の `assets/diagram-template.html` は同系譜の fork（配色・グルーピングの意味論は意図的に異なるため逐語同期はしない）。レイアウトエンジン（レイヤリング・交差削減・ポート分散・ズーム/パン）の不具合を片方で修正したら、もう片方にも該当するか確認する
-- **structure-visualize テンプレートの検証**: `window.__SV_DEBUG__`（mode / nodes / boxes / size / edges）が恒久の検証ハンドル。改修時は使い捨てハーネス（DOM スタブ + 不変条件検査。再作成手順は `docs/implementation-notes/` の issue-94 / issue-98 ノート参照）で検証し、`SV_EDGE_GATE=1` の厳格モードで「エッジのノード交差 0」を維持する。現在 917 行（800 行目安の超過は Issue #98 で許容済み）
+- **diagram-template.html の系譜**: branch-visualize と structure-visualize の `assets/diagram-template.html` は同系譜の fork（配色・グルーピングの意味論は意図的に異なるため逐語同期はしない）。レイアウトエンジン（レイヤリング・交差削減・ポート分散・ズーム/パン）とインタラクション（hover ハイライト・選択パネル）は逐語で同型のため、片方を修正したらもう片方にも該当するか確認する（areas モード・エリア枠・エッジルーティングは structure-visualize のみで該当なし）
+- **structure-visualize テンプレートの検証**: `window.__SV_DEBUG__`（mode / nodes / boxes / size / edges）が恒久の検証ハンドル。改修時は使い捨てハーネス（DOM スタブ + 不変条件検査。再作成手順は `docs/implementation-notes/` の issue-94 / issue-98 ノート参照）で検証し、`SV_EDGE_GATE=1` の厳格モードで「エッジのノード交差 0」を維持する。現在 1005 行（800 行目安の超過は Issue #98 で許容済み）
+- **structure-visualize ハーネスの作り方（#94 / #98 のハーネスは未コミット）**: フィクスチャは下流の生成済み HTML から `var GRAPH = ` 以降を波括弧バランスで抽出すると実データで検証できる（古い出力は JS オブジェクトリテラルなので `new Function` で読む）。areas 限定の変更は flow フィクスチャの `__SV_DEBUG__` バイト一致が非影響の最短証明。交差判定はテンプレートの `segHitsRect` を `pad=1` のまま移植してゲートと同値にする
+- **エッジラベルも計測対象（#98 の受け入れ基準）**: レイアウトを動かすとラベルが動く。`getBBox()` の実寸で「非端点ノードへの重なり・ラベル同士の衝突・食い込み深さ」を before/after 比較する。件数だけ見ると増減を読み違える（かすり ≤3px と判読不能 >8px を分けて数える）
+- **生成済み構成図 HTML は手で改変されていることがある**: 下流プロジェクトの `docs/structure-diagrams/*.html` を参考・不具合報告として渡されたら、現行テンプレートで同じ GRAPH を描き直して挙動差を実測してから前提を置く（prettier 整形済みで textual diff はノイズだらけになるため、`__SV_DEBUG__` の比較が速い）
+- **クリック・ホバー等の挙動変更はスクリーンショットで検証できない**: テンプレートに検証用 `<script>` を注入し、`dispatchEvent` で合成イベントを発火 → DOM を assert し、結果を `<pre>` に書いて `--dump-dom` で回収する。マーカー文字列は注入したスクリプト本体にも現れるため取り出しは `head -1`
 - **レビュープロンプトの二重化と同期（マスター）**: 敵対レビューの Breaker / Judge プロンプト（攻撃観点・4 分類裁定基準）と標準レビュー観点の骨格は、スキル間ファイル参照不可・Skill 合成不可の制約から意図的に複数スキルへ二重化している。次のいずれかを変更したら対応箇所をすべて同期すること（可読性を観点に含めるか等、各スキルの identity として意図的に異なる部分は除く）:
   - `smart-issue-resolve/references/agent-orchestration.md` — 雛形 B（`sir-claude-review-set`）の reviewerGroupPrompt（標準観点は `REVIEWER_GROUPS` の G1/G2/G3 に分割・union が従来の 9 観点） / breakerLensPrompt（攻撃観点は `LENSES` の S/C/O に分割・union が従来の全観点） / judgeBatchPrompt、雛形 C（`sir-codex-breaker`）の Breaker（レンズ分割せず単発のまま = claude/codex 非対称）
   - `smart-issue-plan/references/agent-orchestration.md` — `sip-plan-review-set`（計画テキスト用に適応した変種。レンズ分割・差分スコープ化は雛形 B と構造同期）
