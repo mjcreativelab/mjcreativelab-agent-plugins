@@ -117,7 +117,9 @@ var MARGIN = 48;
 var BOX_PAD = 20;
 var BOX_LABEL_H = 28;
 var GROUP_H_GAP = 90;
-var INNER_H_GAP = 90;
+var STACK_GAP = 22;
+var STACK_LANE_PAD = 16;
+var STACK_LANE_GAP = 18;
 var SVG_NS = "http://www.w3.org/2000/svg";
 
 /* カテゴリ配色（group の並び順に割当・8 超は循環）。tint = ノード塗り / wash = エリア枠塗り */
@@ -347,6 +349,71 @@ function layoutGraph(ns, es, sizeOf, opts) {
   return res;
 }
 
+/* ---------- エリア内レイアウト（縦積み・DOM 非依存の純関数） ----------
+   areas モードのエリア内は ns を入力順で縦 1 列に積む。階層レイアウト（layoutGraph）だと
+   エリア内の依存連鎖がそのまま横方向のカラム数になり、構成要素が増えるほど横に広がるため。
+   エリア同士の配置は従来どおり layoutGraph で、こちらは横並びのまま。
+   戻り値は layoutGraph と同形（pos / epaths / w / h）。
+   エッジは積み順で真下（隣接）なら下端 → 上端の直線、跨ぎ・戻りは列の脇レーンへ逃がす
+   （直線のまま跨ぐと間のノードを貫き、ノード交差ゲートに反するため）。
+   ns の並び順がそのまま上から下の並びになる = 呼び出し側は流れの順に並べて渡すこと */
+function stackVertically(ns, es, sizeOf) {
+  var res = { pos: {}, epaths: [], w: 0, h: 0 };
+  if (!ns.length) return res;
+
+  var colW = 0;
+  ns.forEach(function (n) { var s = sizeOf(n); if (s.w > colW) colW = s.w; });
+  var order = {};
+  ns.forEach(function (n, i) { order[n.id] = i; });
+
+  /* 真下以外のエッジは列の脇レーンへ。span（積み順の距離）が小さいものを内側のレーンに置く */
+  var sideByIdx = {};
+  var sides = [];
+  es.forEach(function (e, i) {
+    var d = order[e.to] - order[e.from];
+    if (d === 1) return;
+    var s = { dir: d > 0 ? 1 : -1, span: Math.abs(d) };
+    sideByIdx[i] = s;
+    sides.push(s);
+  });
+  var laneCount = {};
+  [1, -1].forEach(function (dir) {
+    var arr = sides.filter(function (s) { return s.dir === dir; });
+    arr.sort(function (a, b) { return a.span - b.span; });
+    arr.forEach(function (s, i) { s.lane = i; });
+    laneCount[dir] = arr.length;
+  });
+  /* k 本のレーンを収めるのに必要な列端からの余白（最も外側のレーンが余白の外端に載る） */
+  function padFor(k) { return k ? STACK_LANE_PAD + (k - 1) * STACK_LANE_GAP : 0; }
+  var padL = padFor(laneCount[-1]);
+  var padR = padFor(laneCount[1]);
+
+  var y = 0;
+  ns.forEach(function (n) {
+    var s = sizeOf(n);
+    res.pos[n.id] = { x: padL + (colW - s.w) / 2, y: y, w: s.w, h: s.h };
+    y += s.h + STACK_GAP;
+  });
+  res.w = padL + colW + padR;
+  res.h = Math.max(0, y - STACK_GAP);
+
+  es.forEach(function (e, i) {
+    var a = res.pos[e.from], b = res.pos[e.to];
+    var s = sideByIdx[i];
+    if (!s) {
+      res.epaths.push({ edge: e, pts: [{ x: a.x + a.w / 2, y: a.y + a.h }, { x: b.x + b.w / 2, y: b.y }] });
+      return;
+    }
+    /* 端点は列端に揃える（ノード幅に依らず同じ膨らみにする）。中間点はレーン上の中央 1 点で、
+       水平接線のベジェが列側へ戻らないため、経路全体が列の外に留まる */
+    var edgeX = s.dir > 0 ? padL + colW : padL;
+    var laneX = edgeX + s.dir * (STACK_LANE_PAD + s.lane * STACK_LANE_GAP);
+    var ay = a.y + a.h / 2, by = b.y + b.h / 2;
+    res.epaths.push({ edge: e, pts: [{ x: edgeX, y: ay }, { x: laneX, y: (ay + by) / 2 }, { x: edgeX, y: by }] });
+  });
+  return res;
+}
+
 /* ---------- 描画ヘルパ ---------- */
 
 function pathThrough(pts) {
@@ -564,25 +631,36 @@ function drawEdge(edge, pts) {
     /* ラベルは経路中央の線分の中点に置く。点列が奇数（中央が中継頂点）の折れ線では、同一スーパー経路の
        中継点を共有する複数エッジでラベルが重ならないよう 1 つ手前の線分に寄せる。グループ間では中点が
        枠間ギャップに来ることが多いが、無関係なノードに重なる場合は当該ノードの上下に逃がす */
-    /* ラベル退避は single-pass（同一カラムの縦間隔 V_GAP=26 > 最大退避 12px が前提。定数変更時は要再検証）。drawEdge は finalPos 充填後に呼ぶ */
+    /* ラベル退避は single-pass（同一カラムの縦間隔 STACK_GAP=22 > ラベル高 + 余白が前提。定数変更時は要再検証）。
+       drawEdge は finalPos 充填後に呼ぶ。判定・退避量はアンカー点や固定許容値ではなく getBBox の実寸で行う
+       （text-anchor: middle のためアンカーが枠外でも文字列がノードへ被る＝エリア内の脇レーン経路、
+       アンカーが枠外でも数 px 食い込む＝縦積みの隙間に置いたラベル、の 2 系統をまとめて解消する） */
     var mi = (pts.length - 1) / 2;
     var i0 = Math.floor(mi), i1 = Math.ceil(mi);
     if (i0 === i1) i0 = Math.max(0, i0 - 1);
     var pa = pts[i0], pb = pts[i1];
+    /* 横向きの線分は線の上へ 5px 逃がす。縦向き（エリア内の縦積み）は線の上下が詰まっているため
+       逃がさず、実測後に文字列の高さの中央を中点へ合わせる */
+    var vert = Math.abs(pb.x - pa.x) < Math.abs(pb.y - pa.y);
     var lx = (pa.x + pb.x) / 2;
-    var ly = (pa.y + pb.y) / 2 - 5;
-    Object.keys(finalPos).forEach(function (id) {
-      if (id === edge.from || id === edge.to) return;
-      var b = finalPos[id];
-      if (lx < b.x || lx > b.x + b.w || ly < b.y - 10 || ly > b.y + b.h + 4) return;
-      ly = ly < b.y + b.h / 2 ? b.y - 6 : b.y + b.h + 12;
-    });
+    var ly = (pa.y + pb.y) / 2 - (vert ? 0 : 5);
     var lbl = document.createElementNS(SVG_NS, "text");
     lbl.setAttribute("x", lx);
     lbl.setAttribute("y", ly);
     lbl.setAttribute("class", "edge-label");
     lbl.textContent = edge.label;
     viewport.appendChild(lbl);
+    var bb = lbl.getBBox();
+    var up = ly - bb.y, down = bb.y + bb.height - ly;
+    if (vert) ly += (up - down) / 2;
+    Object.keys(finalPos).forEach(function (id) {
+      if (id === edge.from || id === edge.to) return;
+      var b = finalPos[id];
+      if (bb.x + bb.width <= b.x || bb.x >= b.x + b.w) return;
+      if (ly + down <= b.y || ly - up >= b.y + b.h) return;
+      ly = ly < b.y + b.h / 2 ? b.y - down - 2 : b.y + b.h + up + 2;
+    });
+    lbl.setAttribute("y", ly);
     edgeEls[edge.from].push(lbl);
     edgeEls[edge.to].push(lbl);
   }
@@ -678,7 +756,7 @@ if (layoutMode === "flow") {
     var subEdges = edges.filter(function (e) {
       return containerOf[e.from] === "g:" + g.id && containerOf[e.to] === "g:" + g.id;
     });
-    groupLayouts[g.id] = layoutGraph(sub, subEdges, sizeOfStd, { margin: 0, hGap: INNER_H_GAP });
+    groupLayouts[g.id] = stackVertically(sub, subEdges, sizeOfStd);
   });
 
   var superNodes = groupOrder.map(function (g) { return { id: "g:" + g.id, gid: g.id }; })
@@ -801,21 +879,29 @@ window.__SV_DEBUG__ = { mode: layoutMode, nodes: finalPos, boxes: boxRects, size
 
 /* ---------- インタラクション ---------- */
 
-function setFocus(id, on) {
-  svg.classList.toggle("focus", on);
-  var mark = function (el) { el.classList.toggle("hi", on); };
+function clearFocus() {
+  svg.classList.remove("focus");
+  viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
+}
+function applyFocus(id) {
+  clearFocus();
+  svg.classList.add("focus");
+  var mark = function (el) { el.classList.add("hi"); };
   mark(nodeGs[id]);
   nbrIds[id].forEach(function (nid) { mark(nodeGs[nid]); });
   edgeEls[id].forEach(mark);
-  if (!on) {
-    viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
-  }
+}
+/* hover 解除時、パネル表示中は選択ノードのハイライトへ戻す（他ノードの hover は一時的に上書き） */
+function setFocus(id, on) {
+  if (on) applyFocus(id);
+  else if (selectedId) applyFocus(selectedId);
+  else clearFocus();
 }
 
-var selectedG = null;
+var selectedId = null;
 function selectNode(n, g) {
-  if (selectedG) selectedG.classList.remove("selected");
-  selectedG = g;
+  if (selectedId) nodeGs[selectedId].classList.remove("selected");
+  selectedId = n.id;
   g.classList.add("selected");
   var detail = n.detail || {};
   panel.innerHTML = "";
@@ -854,10 +940,12 @@ function selectNode(n, g) {
     panel.appendChild(ul);
   }
   panel.style.display = "block";
+  applyFocus(n.id);
 }
 function closePanel() {
   panel.style.display = "none";
-  if (selectedG) { selectedG.classList.remove("selected"); selectedG = null; }
+  if (selectedId) { nodeGs[selectedId].classList.remove("selected"); selectedId = null; }
+  clearFocus();
 }
 
 /* ---------- ズーム・パン ---------- */

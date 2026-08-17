@@ -401,21 +401,29 @@ GRAPH.nodes.forEach(function (n) {
   nodeGs[n.id] = g;
 });
 
-function setFocus(id, on) {
-  svg.classList.toggle("focus", on);
-  var mark = function (el) { el.classList.toggle("hi", on); };
+function clearFocus() {
+  svg.classList.remove("focus");
+  viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
+}
+function applyFocus(id) {
+  clearFocus();
+  svg.classList.add("focus");
+  var mark = function (el) { el.classList.add("hi"); };
   mark(nodeGs[id]);
   nbrIds[id].forEach(function (nid) { mark(nodeGs[nid]); });
   edgeEls[id].forEach(mark);
-  if (!on) {
-    viewport.querySelectorAll(".hi").forEach(function (el) { el.classList.remove("hi"); });
-  }
+}
+/* hover 解除時、パネル表示中は選択ノードのハイライトへ戻す（他ノードの hover は一時的に上書き） */
+function setFocus(id, on) {
+  if (on) applyFocus(id);
+  else if (selectedId) applyFocus(selectedId);
+  else clearFocus();
 }
 
-var selectedG = null;
+var selectedId = null;
 function selectNode(n, g) {
-  if (selectedG) selectedG.classList.remove("selected");
-  selectedG = g;
+  if (selectedId) nodeGs[selectedId].classList.remove("selected");
+  selectedId = n.id;
   g.classList.add("selected");
   var detail = n.detail || {};
   panel.innerHTML = "";
@@ -456,10 +464,12 @@ function selectNode(n, g) {
     panel.appendChild(ul);
   }
   panel.style.display = "block";
+  applyFocus(n.id);
 }
 function closePanel() {
   panel.style.display = "none";
-  if (selectedG) { selectedG.classList.remove("selected"); selectedG = null; }
+  if (selectedId) { nodeGs[selectedId].classList.remove("selected"); selectedId = null; }
+  clearFocus();
 }
 
 /* ---------- ズーム・パン ---------- */
