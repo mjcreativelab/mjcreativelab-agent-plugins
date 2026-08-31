@@ -182,7 +182,12 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
    - リポジトリ内のコーディングルール集を Glob で探索する（`**/rules/*.md`・`**/guidelines/*.md`・`docs/` 配下の規約など）。Issue・変更予定ファイルのドメインに関連するものだけを Read する（例: `ddd-*` / `*architecture*` / `db-*` / `api-*` / `performance*` / `test-coverage*` / `security*`）
    - 参照した実装計画（手順 2）の「依拠した前提」が指す基準
    - 見つからなければ「なし」として進める（degradation）
-2. **作業ディレクトリの作成** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で `{作業Dir}` を作成する（OS の一時領域。スキル側で削除手順は持たない。`{worktree}` = true でもコードの worktree〔`.claude/worktrees/<ブランチ名>`〕とは別物で、混同しない）。あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
+2. **作業ディレクトリの作成** — `{作業Dir}` を作成する。配置は**いま操作している作業ツリー**で分岐する（判定: `git rev-parse --show-toplevel` が `git worktree list --porcelain | head -1 | cut -d' ' -f2-`〔メインルート〕と一致しなければ linked worktree にいる）:
+   - **linked worktree の中にいる場合**（`-wt` で作った / 既にその中にいるセッション） → `{worktreeパス}/.smart-issue-work/resolve-issue-<番号>/` を使う。`/tmp` と違い端末の再起動で作業ファイルが失われない。作成前に `git check-ignore -q .smart-issue-work/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.smart-issue-work/` を追記する（追跡対象の `.gitignore` は変更しない・ローカル限定の除外）。exclude 済みなら `git status` にも `gen-diff.sh` の未追跡ファイル一覧にも出ないためレビュー対象 diff を汚さず、`git worktree remove`（`--force` なし）も阻害せず worktree 削除時に中身ごと消える。既に同名ディレクトリが存在する場合（前回の中断・再起動等）は黙って再利用せず、再利用するか作り直すかユーザーに確認する（前セッションの `diff.md` が残るとラウンドスタンプの鮮度ガードが誤作動する）
+   - **メイン作業ツリーの場合（既定）** → 従来どおり `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で作成する（OS の一時領域。メイン作業ツリーに置くと誰も掃除しないため、揮発領域のままにする）
+   - いずれの場合もスキル側で削除手順は持たない（worktree 内は `/smart-git-sync` の worktree 削除に、`/tmp` は OS に任せる）。`{作業Dir}` はコードの worktree（`.claude/worktrees/<ブランチ名>`）そのものとは別物で、混同しない
+
+   あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
 3. **context.md の書き出し** — 雛形の書式で `{作業Dir}/context.md` を書く（Issue 要件・実装計画要約・`-p` 指示・ブランチ / diff 基準・テスト方針・プロジェクト固有基準）。テスト方針には関連スコープの実行コマンドを具体化して書く。テストが特定できない / フレームワークが不明な場合は、手動確認方針（再現手順・確認すべき画面や API レスポンス等）をユーザーに提示・合意してから書く
 4. **ゲート** — `{作業Dir}/context.md` が存在しない場合は Workflow を起動しない（作成に戻る）
 5. **実装 Workflow の起動** — 雛形 A（sir-implement）を起動する。Workflow の起動（雛形 A〜E 共通）では、起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測した開始日時を `startedAt` として `args` に含める（開始ログ表示用。グローバルルールの開始日時表示と同じ実測値を使い回してよい）。`needDesign` は「計画が無い、または計画の実装手順が具体ファイルに落ちていない」場合に true。内部フロー: 設計役（条件付き）→ 開発者 → 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 開発者の採用判定・反映 → QA 再確認
@@ -219,7 +224,7 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 - 実装した要件: <Issue の受け入れ基準に対する対応内容を箇条書きで>
 - 動作確認: <開発者エージェントのテスト結果と、独立 QA が実行した検証（コマンドと結果）>
 - 設計整合レビュー: <設計役の指摘数と採用 / 不採用（不採用理由）。指摘 0 件ならその旨>
-- 作業ディレクトリ: <worktree のパス>
+- 作業ディレクトリ: <worktree のパス>（作業ファイル: <worktree のパス>/.smart-issue-work/resolve-issue-<番号>/ — worktree 削除時に一緒に消える）
 
 次のステップ:
 1. コミット → `/smart-commit`

@@ -44,6 +44,6 @@ zsh ではインライン実行しないこと（正規表現がグロブ展開�
 - 3種類を分けて表示し、それぞれ個別にユーザー確認を取ること
 - 一括削除ではなく種類ごとに確認・削除を行う
 - worktree が紐づく削除候補は、**先に `git worktree remove <path>` を実行してから** ブランチを削除する（逆順だと worktree で使用中のためブランチ削除が失敗する）
-- worktree 内に未コミット変更が残っている場合は `WORKTREE_SKIPPED` として自動的に削除候補から除外されている（`git worktree remove` 自体も未コミット変更があれば失敗するため、tracked/staged な変更に対しては二重に安全）。ただしこの検出は `git status --porcelain` ベースで `.gitignore` されたファイル（`.env` や `node_modules` 等）までは見ていない — そうしたファイルしか無い worktree は「クリーン」と判定され、`git worktree remove` はディレクトリごと削除するためこれらのファイルも失われる（どちらの安全層でもカバーされない）
+- worktree 内に未コミット変更が残っている場合は `WORKTREE_SKIPPED` として自動的に削除候補から除外されている（`git worktree remove` 自体も未コミット変更があれば失敗するため、tracked/staged な変更に対しては二重に安全）。ただしこの検出は `git status --porcelain` ベースで `.gitignore` されたファイル（`.env` や `node_modules` 等）までは見ていない — そうしたファイルしか無い worktree は「クリーン」と判定され、`git worktree remove` はディレクトリごと削除するためこれらのファイルも失われる（どちらの安全層でもカバーされない）。なお `/smart-issue-resolve --worktree` 等が worktree 内に置く作業ディレクトリ `.smart-issue-work/`（context.md / impl-notes.md / diff.md 等）も同じ扱いだが、これは worktree と寿命を共にする設計で意図どおり
 - main worktree・現在の worktree は候補に含まれない
 - `WORKTREE_SKIPPED` に挙がっているブランチ、または `git branch -d`/`-D` が「used by worktree」等のエラーで失敗したブランチは、リトライせずそのブランチの削除だけをスキップする。どのブランチをなぜスキップしたか（worktree の未コミット変更 / 未検出の別 worktree で使用中）をユーザーに報告する
