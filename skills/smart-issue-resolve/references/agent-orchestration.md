@@ -18,7 +18,7 @@ smart-issue-resolve の実装・レビューを担う役割別エージェント
 
 ## 作業ディレクトリと context.md
 
-作業ディレクトリはオーケストレーターが `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で作成する（OS の一時領域に任せ、スキル側で削除手順は持たない）。`context.md` は以下の書式で書き出す:
+作業ディレクトリはオーケストレーターが作成する（配置ルールの詳細は SKILL.md 手順 6-2）。linked worktree の中にいる場合は `{worktreeパス}/.smart-issue-work/resolve-issue-<番号>/`（端末の再起動でも失われず、worktree 削除時に中身ごと消える。`.smart-issue-work/` は `info/exclude` に登録してレビュー対象 diff を汚さない）、メイン作業ツリーの場合は `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"`。いずれもスキル側で削除手順は持たない。`context.md` は以下の書式で書き出す:
 
 ```markdown
 # smart-issue-resolve コンテキスト（Issue #<番号>）

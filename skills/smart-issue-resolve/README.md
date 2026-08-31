@@ -21,7 +21,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | オプション        | 説明                                     |
 | ----------------- | ---------------------------------------- |
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
-| `--worktree`（`-wt`） | 現在の作業ツリーを変更せず、git worktree（`.claude/worktrees/<ブランチ名>`。Claude Code の EnterWorktree ツールで切り替え）に分離した作業ディレクトリでブランチ作成から実装まで行う。未コミット変更があっても stash せず現在の作業ツリーに残したまま着手できる。完了後もセッションは worktree に留まる（`ExitWorktree` は本スキルからは呼ばない）。worktree・ブランチの削除は `/smart-git-sync` に任せる |
+| `--worktree`（`-wt`） | 現在の作業ツリーを変更せず、git worktree（`.claude/worktrees/<ブランチ名>`。Claude Code の EnterWorktree ツールで切り替え）に分離した作業ディレクトリでブランチ作成から実装まで行う。未コミット変更があっても stash せず現在の作業ツリーに残したまま着手できる。完了後もセッションは worktree に留まる（`ExitWorktree` は本スキルからは呼ばない）。worktree・ブランチの削除は `/smart-git-sync` に任せる。作業ファイル（context.md / impl-notes.md / diff.md 等）は `/tmp` ではなく worktree 内の `.smart-issue-work/resolve-issue-<番号>/` に置かれ、端末の再起動でも失われない（`info/exclude` 登録済みでレビュー対象 diff を汚さず、worktree 削除時に中身ごと消える） |
 | `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Claude Code + Codex プラグイン環境、または Codex CLI ホスト〔本 skill 自体を Codex CLI が実行している場合〕で `codex exec` が使える環境が前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループ。収束後の自動コミット・PR は標準と同じ |
 | `--claude-review-loop`（`-cldrl`） | Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
@@ -49,7 +49,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 2. 既存の実装計画（`/smart-issue-plan` が作成したコメント or `[実装計画]` Issue）があれば参照し、計画記録の分析時点 SHA と最新デフォルトブランチの差分から陳腐化を検出する（古ければ計画更新を提案）
 3. 作業ツリーの状態を確認する（未コミット変更は識別可能なメッセージ付きで stash。`--worktree`/`-wt` 指定時は現在の作業ツリーに触れないため stash 不要）
 4. Issue に基づいたブランチを作成・チェックアウトする（`--worktree`/`-wt` 指定時は `.claude/worktrees/<ブランチ名>` に分離した worktree でブランチを作成し、EnterWorktree でセッションをそこへ切り替える）
-5. プロジェクト固有基準を収集し、一時作業ディレクトリに context.md（要件・計画・テスト方針・基準）を書き出す
+5. プロジェクト固有基準を収集し、作業ディレクトリに context.md（要件・計画・テスト方針・基準）を書き出す（worktree 内で作業している場合は worktree 内の `.smart-issue-work/resolve-issue-<番号>/`、メイン作業ツリーでは OS の一時領域）
 6. 実装 Workflow を起動する: 設計役（計画が無い/粗い場合）→ 開発者（ベースライン→実装→動作確認）→ 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 反映 → QA 再確認
 7. レビューループ指定時（またはセキュリティ自動発動時）はレビューループへ。それ以外は変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
 

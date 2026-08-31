@@ -65,5 +65,11 @@ HEAD_SHA=$(git rev-parse HEAD)
   echo "===== END UNCOMMITTED DIFF ====="
 } >"${TMP}"
 
-mv "${TMP}" "${OUT}"
+# 置き換えは rename を優先し、失敗したら切り詰め書き込みへ退避する。
+# 作業ディレクトリが worktree 内にある環境では、sandbox が既存ファイルの unlink を拒否して
+# rename が Operation not permitted になることがある（書き込み自体は許可されている）。
+# 退避した場合 .diff.md.tmp が残るが、次回実行時に切り詰め再利用されるため放置してよい。
+if ! mv "${TMP}" "${OUT}" 2>/dev/null; then
+  cat "${TMP}" >"${OUT}"
+fi
 echo "gen-diff.sh: ${OUT} を生成した（対象ラウンド: ${ROUND}）"
