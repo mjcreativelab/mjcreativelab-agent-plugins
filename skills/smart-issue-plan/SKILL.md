@@ -272,6 +272,8 @@ Claude=Breaker × Codex=Judge の二者構造でレビューする。計画に�
    - **linked worktree の中にいる場合**（`/smart-issue-resolve --worktree` が作った worktree 内で計画を回す等） → `{worktreeパス}/.smart-issue-work/plan-issue-<番号>/` を使う。`/tmp` と違い端末の再起動で作業ファイル（`plan.md` 等）が失われない。作成前に `git -C "{worktreeパス}" check-ignore -q .smart-issue-work/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.smart-issue-work/` を追記する（追跡対象の `.gitignore` は変更しない・ローカル限定の除外）。exclude 済みなら `git status` に出ずレビュー対象を汚さず、`git worktree remove`（`--force` なし）も阻害せず worktree 削除時に中身ごと消える。既に同名ディレクトリが存在する場合（前回の中断・再起動等）は黙って再利用せず、再利用するか作り直すかユーザーに確認する
    - **メイン作業ツリーの場合（既定）** → 従来どおり `mktemp -d "${TMPDIR:-/tmp}/sip-issue-<番号>.XXXXXX"` で作成する（OS の一時領域。メイン作業ツリーに置くと誰も掃除しないため、揮発領域のままにする）
    - いずれの場合もスキル側で削除手順は持たない（worktree 内は `/smart-git-sync` の worktree 削除に、`/tmp` は OS に任せる）
+   - **置き場所を `.claude/` 配下にしない**（sandbox 有効なプロジェクトは `.claude` を `denyWrite` にしているのが通例で、作成・更新が `Operation not permitted` で落ちる）。sandbox で作成・書き込みが拒否された場合は `mktemp -d`（それも拒否される隔離セッションではセッション scratchpad 配下）へフォールバックし、作業ファイルが揮発する旨をユーザーに伝える
+   - **永続するのは「端末の再起動・セッション切替」に対してであって、worktree の削除に対してではない**（`ExitWorktree({ action: "remove" })` やセッション teardown で `{作業Dir}` も消える。これは掃除不要とのトレードオフ）
 2. **context.md / plan.md の書き出し** — 雛形の書式で `{作業Dir}/context.md`（Issue 要件・`-p` 指示・プロジェクト固有基準）と `{作業Dir}/plan.md`（確定した初期計画の全文）を書く
 3. **ゲート** — `{作業Dir}/context.md` と `{作業Dir}/plan.md` のどちらか一方でも存在しない場合は Workflow を起動しない（作成に戻る）
 4. **開始日時の実測** — 起動直前に `TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S'` を実測し、`startedAt` として Workflow の `args` に含める（開始ログ表示用。継続セットの再起動でも再実測する）
