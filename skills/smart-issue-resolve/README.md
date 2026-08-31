@@ -21,7 +21,7 @@ GitHub Issue ID を受け取り、Issue を読み込んでブランチを作成�
 | オプション        | 説明                                     |
 | ----------------- | ---------------------------------------- |
 | `-p <プロンプト>` | 作業に関する追加指示（実装方針・制約等） |
-| `--worktree`（`-wt`） | 現在の作業ツリーを変更せず、git worktree（`.claude/worktrees/<ブランチ名>`。Claude Code の EnterWorktree ツールで切り替え）に分離した作業ディレクトリでブランチ作成から実装まで行う。未コミット変更があっても stash せず現在の作業ツリーに残したまま着手できる。完了後もセッションは worktree に留まる（`ExitWorktree` は本スキルからは呼ばない）。worktree・ブランチの削除は `/smart-git-sync` に任せる。作業ファイル（context.md / impl-notes.md / diff.md 等）は `/tmp` ではなく worktree 内の `.smart-issue-work/resolve-issue-<番号>/` に置かれ、端末の再起動でも失われない（`info/exclude` 登録済みでレビュー対象 diff を汚さず、worktree 削除時に中身ごと消える） |
+| `--worktree`（`-wt`） | 現在の作業ツリーを変更せず、git worktree に分離した作業ディレクトリでブランチ作成から実装まで行う。worktree の作成とセッション切り替えは Claude Code の EnterWorktree ツールに任せる（`git worktree add` は使わない）。ディレクトリは `.claude/worktrees/<ブランチ名の "/" を "+" に置換した値>`、ブランチはツールが付ける自動生成名を規約どおりの名前へリネームする。未コミット変更があっても stash せず現在の作業ツリーに残したまま着手できる。完了後もセッションは worktree に留まる（`ExitWorktree` は本スキルからは呼ばない。ただしセッション終了時に keep / remove を尋ねられ、remove を選ぶと worktree ディレクトリ**とそのブランチ**が削除される — 作業を残すなら keep）。マージ後のクリーンアップとしての worktree・ブランチ削除は `/smart-git-sync` に任せる。作業ファイル（context.md / impl-notes.md / diff.md 等）は `/tmp` ではなく worktree 内の `.smart-issue-work/resolve-issue-<番号>/` に置かれ、端末の再起動でも失われない（`info/exclude` 登録済みでレビュー対象 diff を汚さず、worktree 削除時に中身ごと消える） |
 | `--codex-review-loop`（`-cdxrl`） | 実装後に Codex 標準レビューループを実施し、収束後にコミット・PR 作成まで自動で行う（Claude Code + Codex プラグイン環境、または Codex CLI ホスト〔本 skill 自体を Codex CLI が実行している場合〕で `codex exec` が使える環境が前提） |
 | `--codex-advs-review-loop`（`-cdxarl`） | Breaker（独立 Sonnet）× Codex=Judge の敵対的レビューループ。収束後の自動コミット・PR は標準と同じ |
 | `--claude-review-loop`（`-cldrl`） | Opus レビュワーエージェント（包括ラウンドのみ観点を G1/G2/G3 の 3 グループに分割し並列起動）による標準レビューループ（Codex 不要）。収束後の自動コミット・PR は codex 系と同じ |
@@ -48,7 +48,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 1. Issue を読み取り、内容を把握する
 2. 既存の実装計画（`/smart-issue-plan` が作成したコメント or `[実装計画]` Issue）があれば参照し、計画記録の分析時点 SHA と最新デフォルトブランチの差分から陳腐化を検出する（古ければ計画更新を提案）
 3. 作業ツリーの状態を確認する（未コミット変更は識別可能なメッセージ付きで stash。`--worktree`/`-wt` 指定時は現在の作業ツリーに触れないため stash 不要）
-4. Issue に基づいたブランチを作成・チェックアウトする（`--worktree`/`-wt` 指定時は `.claude/worktrees/<ブランチ名>` に分離した worktree でブランチを作成し、EnterWorktree でセッションをそこへ切り替える）
+4. Issue に基づいたブランチを作成・チェックアウトする（`--worktree`/`-wt` 指定時は EnterWorktree で worktree の作成とセッション切り替えを一括して行い、自動生成されたブランチ名を規約どおりの名前にリネームする。既存ブランチを使う場合は worktree 内で checkout し、不要になった自動生成ブランチを削除する）
 5. プロジェクト固有基準を収集し、作業ディレクトリに context.md（要件・計画・テスト方針・基準）を書き出す（worktree 内で作業している場合は worktree 内の `.smart-issue-work/resolve-issue-<番号>/`、メイン作業ツリーでは OS の一時領域）
 6. 実装 Workflow を起動する: 設計役（計画が無い/粗い場合）→ 開発者（ベースライン→実装→動作確認）→ 独立 QA（不合格なら開発者が修正、最大 2 回）→ 設計役の事後レビュー（設計整合・保守性・可用性）→ 反映 → QA 再確認
 7. レビューループ指定時（またはセキュリティ自動発動時）はレビューループへ。それ以外は変更サマリを提示して `/smart-commit` の使用を提案する（勝手にコミット・push しない）
@@ -92,7 +92,7 @@ model はエイリアス指定（環境で利用可能な最新の同系統モ�
 
 - **git** — ブランチ作成・チェックアウトに使用
 - **GitHub MCP サーバー** — Issue の読み取りに必須（[GitHub MCP plugin](https://github.com/anthropics/claude-code-plugins/tree/main/github)）
-- **EnterWorktree ツール（Claude Code 本体機能）** — `--worktree`/`-wt` 使用時に必須。利用できない環境（他エージェント）では通常のブランチ作成にフォールグレードする
+- **EnterWorktree ツール（Claude Code 本体機能）** — `--worktree`/`-wt` 使用時に必須。worktree の作成もこのツールに任せる（手動 `git worktree add` は upstream tracking の設定で共有 `.git/config` へ書き込み、sandbox を有効にしたプロジェクトで失敗するという報告があるため使わない。ただし worktree 作成時の checkout が `Operation not permitted` で拒否される症状はこの経路変更では解消しない）。利用できない環境（他エージェント）・`EnterWorktree` が失敗した場合は通常のブランチ作成にフォールグレードする。既に linked worktree 内にいるセッションではフォールグレードせず、メイン作業ツリーへ戻ってからの再実行を促して停止する（他 Issue の作業ツリーを変更しないため）
 - **Workflow ツール（Claude Code 本体機能）** — 役割別エージェントのオーケストレーションと claude 系レビューループに必須。model / effort の明示指定（開発者 = opus/max、claude 系レビュワー = opus/high、独立 QA = sonnet/high 等）は Workflow の `agent()` でのみ可能。利用できない環境ではメインセッションの単一セッション実装に degrade する（claude 系レビューループは利用不可）
 - **Codex プラグイン（`codex:rescue` スキル）または Codex CLI（`codex exec`）** — `--codex-review-loop` / `--codex-advs-review-loop` 使用時に必須（Claude Code ホストは `codex:rescue` スキル、本 skill 自体を Codex CLI が実行している場合は `codex exec` が使えること。後者はホストのコマンドサンドボックス内では起動できないため、サンドボックス外での昇格実行の承認が必要）。セキュリティ自動発動時は第一候補（不在なら claude 系で代替）
 - **git + GitHub MCP（または gh）** — レビューループ収束後の自動コミット・PR 作成に使用（コミット・push は git、PR 作成は GitHub MCP を優先。`smart-commit` / `smart-pr` は `disable-model-invocation` のため自動呼び出し不可。手動起動は従来どおり可能）
