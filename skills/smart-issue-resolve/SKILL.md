@@ -152,7 +152,7 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 
 ### 5. ブランチ作成・チェックアウト（または worktree 作成）
 
-ユーザー承認後、デフォルトブランチを最新にする（`git fetch` でリモート参照を更新する — worktree モードで `origin/<デフォルトブランチ>` から直接分岐する場合、これを省くと古い参照のままブランチを作成してしまう）。デフォルトブランチは `git symbolic-ref refs/remotes/origin/HEAD` で取得する（`origin/main` / `origin/master` / `origin/develop` 等を自動判別）。取得できない場合はユーザーに確認する。
+ユーザー承認後、デフォルトブランチを最新にする（`git fetch` でリモート参照を更新する — worktree モードの `EnterWorktree` は既定で `origin/<デフォルトブランチ>` から分岐するため、これを省くと古い参照のままブランチを作成してしまう）。デフォルトブランチは `git symbolic-ref refs/remotes/origin/HEAD` で取得する（`origin/main` / `origin/master` / `origin/develop` 等を自動判別）。取得できない場合はユーザーに確認する。
 
 **`{worktree}` = false の場合（既定）** — 現在の作業ツリーでブランチを作成・チェックアウトする:
 
@@ -161,17 +161,21 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 - **現 Issue の作業の続き** → 新ブランチ上で `git stash pop`
 - **無関係な作業の退避** → 新ブランチ上では pop せず stash に残す。「元のブランチに戻ってから `git stash list` / `git stash pop` で復元してください」と案内する
 
-**`{worktree}` = true の場合** — 現在の作業ツリーには触れず、別ディレクトリの git worktree にブランチを作成する。セッションが既に別の worktree にいる場合、カレントディレクトリからの相対パスで作業すると worktree の中に入れ子で worktree を作ってしまう（そのうえ `EnterWorktree` の「切り替え先は同一リポジトリの `.claude/worktrees/` 配下」という制約も満たせなくなる）。そのため必ず**メイン worktree の絶対パスを起点**にする:
+**`{worktree}` = true の場合** — 現在の作業ツリーには触れず、worktree の**作成とセッション切り替えを `EnterWorktree` に任せる**（`git worktree add` を自分で実行しない）。手動作成は upstream tracking の設定で共有 `.git/config` へ書き込むため、sandbox を有効にしたプロジェクトでは `unable to write upstream branch configuration` で失敗するという報告がある。`EnterWorktree` が作るブランチには upstream tracking が設定されない（実測確認済み）ため、この書き込みを起点にした失敗モードは踏まない。一方、**worktree 作成時のファイル展開（checkout）が `Operation not permitted` で拒否されて worktree ごとロールバックする、という報告への対処にはならない** — checkout は `EnterWorktree` 経由でも同じく実行されるため、この経路変更では解消しない（sandbox 有効環境での実挙動は未実測）。その場合は項目 4 のゲートで検出して `-wt` を諦める:
 
-1. **メインルートの特定** — `git worktree list --porcelain | head -1 | cut -d' ' -f2-` でメイン worktree の絶対パス（`{メインルート}`）を取得する（porcelain 出力の先頭エントリは常にメイン worktree）
-2. **除外設定の確認** — `git -C "{メインルート}" check-ignore -q .claude/worktrees/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.claude/worktrees/` を追記する（`git rev-parse --git-common-dir` は main tree・linked worktree のどちらから実行しても常に共有 `.git` を指す絶対パス〔または main tree からの相対 `.git`〕を返す。linked worktree では `.git` はファイルであり直接パスを組み立てると失敗するため必須。リポジトリの追跡対象 `.gitignore` は変更しない・ローカル限定の除外）
-3. **worktree パスの決定** — `{メインルート}/.claude/worktrees/<ブランチ名>` を使う。既に存在する場合（前回の中断等）は再利用するか削除して作り直すかユーザーに確認する
-4. **worktree の作成**:
-   - **新規ブランチの場合** → `git worktree add -b <ブランチ名> "{メインルート}/.claude/worktrees/<ブランチ名>" origin/<デフォルトブランチ>` を実行する
-   - **既存ブランチをチェックアウトする場合** → `git worktree add "{メインルート}/.claude/worktrees/<ブランチ名>" <ブランチ名>` を実行する。そのブランチが既に現在の作業ツリー（または他の worktree）でチェックアウト中だと git がエラーを返す（`fatal: '<ブランチ名>' is already used by worktree at '<パス>'`）— その場合は「既に別の作業ツリーでチェックアウト中のため worktree 化できません。`-wt` を外すか、そちらの作業ツリー側で作業してください」とユーザーに伝えて終了する
-5. **セッションの切り替え** — `EnterWorktree({ path: "{メインルート}/.claude/worktrees/<ブランチ名>" })` を呼ぶ（`name` ではなく `path` を使う — 常に既存パスへの切り替えとして扱うことで、セッションが既に別の worktree にいる場合でも一様に動作する）。以降の手順（context.md 作成・Workflow 起動・レビューループ・コミット・PR）はすべてこの worktree 内で実行される
-6. 手順 3 で未コミット変更を検出していても、stash・pop は行わない（元の作業ツリーにそのまま残る）
-7. **EnterWorktree ツールが利用できない環境**（Claude Code 以外のホスト）では `{worktree}` を無視し、`{worktree}` = false と同じ手順にフォールグレードする。フォールグレードした旨をユーザーに伝える
+1. **入れ子の回避** — `git rev-parse --git-dir` と `git rev-parse --git-common-dir` の出力が**異なれば** linked worktree の中にいる（手順 6-2 と同じ判定）。その場合は**ここで停止する**（`{worktree}` = false へ倒さない — その worktree は別 Issue の作業ツリーでありうるため、そこでブランチを作成・stash するのは `-wt` の「現在の作業ツリーを変更しない」契約に反する）。「現在 linked worktree（`git rev-parse --show-toplevel` の値）の中にいるため worktree を作成できません。`ExitWorktree({ action: "keep" })` でメイン作業ツリーへ戻ってから再実行してください」とユーザーに伝えて終了する
+2. **除外設定の登録（worktree 作成前）** — `EnterWorktree` は `.claude/worktrees/` を無視登録しないため、作成前に登録する（未登録のまま作成すると、そのディレクトリが現在の作業ツリーの `git status` に `??` として現れる）。`git rev-parse --show-toplevel` で作業ツリーのルート（`{ツリールート}`）を取得し、`git -C "{ツリールート}" check-ignore -q .claude/worktrees/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.claude/worktrees/` を追記する（`git rev-parse --git-common-dir` は main tree・linked worktree のどちらから実行しても常に共有 `.git` を指す絶対パス〔または main tree からの相対 `.git`〕を返す。linked worktree では `.git` はファイルであり直接パスを組み立てると失敗するため必須。リポジトリの追跡対象 `.gitignore` は変更しない・ローカル限定の除外）
+3. **既存ブランチをチェックアウトする場合の事前確認** — `git worktree list --porcelain` に `branch refs/heads/<ブランチ名>` があれば、そのブランチは現在の作業ツリーか他の worktree で既にチェックアウト中で worktree 化できない。「既に別の作業ツリーでチェックアウト中のため worktree 化できません。`-wt` を外すか、そちらの作業ツリー側で作業してください」とユーザーに伝えて終了する（**worktree を作る前に判定する** — 作成後に判明すると空の worktree が残る）
+4. **worktree の作成 + セッションの切り替え** — `EnterWorktree({ name: "<ブランチ名>" })` を呼ぶ。worktree ディレクトリ（`.claude/worktrees/<ブランチ名の "/" を "+" に置換した値>`）の作成とセッションの切り替えが 1 手で完結する。以降の手順（context.md 作成・Workflow 起動・レビューループ・コミット・PR）はすべてこの worktree 内で実行される
+   - `name` に使えるのは「`/` 区切りの各セグメントが英数字・ドット・アンダースコア・ハイフンのみ、全体 64 文字以内」（手順 4 のブランチ名ルールを満たしていれば問題ない）
+   - 分岐元は `worktree.baseRef` 設定に従う（既定 `fresh` = `origin/<デフォルトブランチ>`）。`head` に設定されたプロジェクトでは現在の HEAD から分岐するため、レビュー diff の基準（`origin/<デフォルトブランチ>...HEAD`）に Issue と無関係なコミットが混ざる。作成後に `git log --oneline origin/<デフォルトブランチ>..HEAD` が空であることを確認し、空でなければユーザーに伝えて判断を仰ぐ
+   - 同名の worktree が既にある場合はエラーにならず**既存の worktree を再利用（resume）**して切り替わる（前回セッションのコミットが残っている可能性がある）。作り直したい場合はユーザーに確認する
+   - **切り替えの確認（項目 5 以降のゲート）** — 呼び出し後に `git rev-parse --git-dir` と `git rev-parse --git-common-dir` が**異なること**（= linked worktree に切り替わっている）を確認する。同じ値なら切り替えが起きていないため、**項目 5 以降（`git branch -m` / `git checkout` / `git update-ref -d`）を実行しない** — メイン作業ツリーの current branch をリネーム・削除してしまう。`EnterWorktree` の呼び出し自体が失敗した場合（sandbox での checkout 拒否等）も同様に項目 5 へ進まず、いずれの場合も項目 7 と同じフォールグレード（手順 3 の未コミット変更確認・stash 判定を行ったうえで `{worktree}` = false 経路）に倒し、その旨をユーザーに伝える
+5. **ブランチ名の調整** — `EnterWorktree` が作るブランチ名は `worktree-<name の "/" を "+" に置換した値>`（例: `fix/issue-140-x` → `worktree-fix+issue-140-x`）でプロジェクトの命名規則に合わない:
+   - **新規ブランチの場合** → worktree 内で `git branch -m <ブランチ名>` を実行し、`git branch --show-current` が `<ブランチ名>` を返すことを確認する（sandbox 環境では `.git/config` への書き込みが拒否されリネームが部分的にしか通らない可能性があるという報告があるため、反映を確認してから先へ進む。想定と違えばユーザーに伝えて判断を仰ぐ）
+   - **既存ブランチをチェックアウトする場合** → リネームせず worktree 内で `git checkout <ブランチ名>` に切り替える（`EnterWorktree` は新規ブランチしか作れないため、作成済み worktree 内の通常の checkout として扱う）。切り替え後、`git branch --show-current` が `<ブランチ名>` を返すことを確認してから、使われなくなった自動生成ブランチを `git update-ref -d refs/heads/worktree-<...>` で削除する（**確認は必須** — `update-ref` は plumbing で安全確認を持たず、checkout が失敗したまま実行すると current branch の ref を消して HEAD 不在にしてしまう〔実測確認済み〕。それでも `git branch -d` は squash merge 運用のリポジトリで "not fully merged" と拒否されることがあり、`git branch -D` は環境によって破壊的操作としてブロックされることがあるため、削除自体は plumbing コマンドで行う）
+6. `EnterWorktree` で worktree に入った場合（項目 4・5 の経路）は、手順 3 で未コミット変更を検出していても stash・pop は行わない（元の作業ツリーにそのまま残る）
+7. **フォールグレード**（`EnterWorktree` ツールが利用できない環境〔Claude Code 以外のホスト〕、または項目 4 のゲートで切り替え未成立・呼び出し失敗を検出した場合）では `{worktree}` を無視し、手順 3 の未コミット変更確認・stash 判定を行ったうえで `{worktree}` = false と同じ手順にフォールグレードする。フォールグレードした旨をユーザーに伝える（項目 1 の linked worktree 内セッションはこの経路に**含めない** — 停止する）
 
 ### 6. 作業の実行（オーケストレーション）
 
@@ -185,10 +189,10 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 2. **作業ディレクトリの作成** — `{作業Dir}` を作成する。配置は**いま操作している作業ツリー**で分岐する（判定: `git rev-parse --git-dir` と `git rev-parse --git-common-dir` の出力が**異なれば** linked worktree にいる〔linked では前者が `<共有.git>/worktrees/<名前>`、後者が `<共有.git>`〕。メイン作業ツリーでは両方とも同じ値〔通常 `.git`〕を返す。`--show-toplevel` とメインルートの文字列比較は使わない — `/tmp` と `/private/tmp` のようなパス正規化差で誤判定し、静かに `/tmp` 配置へ戻ってしまう。`{worktreeパス}` 自体は `git rev-parse --show-toplevel` で取る）:
    - **linked worktree の中にいる場合**（`-wt` で作った / 既にその中にいるセッション） → `{worktreeパス}/.smart-issue-work/resolve-issue-<番号>/` を使う。`/tmp` と違い端末の再起動で作業ファイルが失われない。作成前に `git -C "{worktreeパス}" check-ignore -q .smart-issue-work/`（**末尾のスラッシュ必須** — 無いとディレクトリ未作成の間は誤判定する）が失敗する（＝まだ無視されていない）場合、`$(git rev-parse --git-common-dir)/info/exclude` に `.smart-issue-work/` を追記する（追跡対象の `.gitignore` は変更しない・ローカル限定の除外）。exclude 済みなら `git status` にも `gen-diff.sh` の未追跡ファイル一覧にも出ないためレビュー対象 diff を汚さず、`git worktree remove`（`--force` なし）も阻害せず worktree 削除時に中身ごと消える。既に同名ディレクトリが存在する場合（前回の中断・再起動等）は黙って再利用せず、再利用するか作り直すかユーザーに確認する（前セッションの `diff.md` が残るとラウンドスタンプの鮮度ガードが誤作動する）
    - **メイン作業ツリーの場合（既定）** → 従来どおり `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"` で作成する（OS の一時領域。メイン作業ツリーに置くと誰も掃除しないため、揮発領域のままにする）
-   - いずれの場合もスキル側で削除手順は持たない（worktree 内は `/smart-git-sync` の worktree 削除に、`/tmp` は OS に任せる）。`{作業Dir}` はコードの worktree（`.claude/worktrees/<ブランチ名>`）そのものとは別物で、混同しない
+   - いずれの場合もスキル側で削除手順は持たない（worktree 内は `/smart-git-sync` の worktree 削除に、`/tmp` は OS に任せる）。`{作業Dir}` はコードの worktree（`.claude/worktrees/<ブランチ名の "/" を "+" に置換した値>`）そのものとは別物で、混同しない
    - **worktree 内に置く場所を `.claude/` 配下にしない**（`.smart-issue-work/` を worktree 直下に置く理由）。sandbox を有効にしたプロジェクトは `.claude` を `denyWrite` に入れているのが通例で、`.claude/` 配下に作ると作成・更新が `Operation not permitted` で落ちる
    - **sandbox で作成・書き込みが拒否された場合はフォールバックする** — `mktemp -d "${TMPDIR:-/tmp}/sir-issue-<番号>.XXXXXX"`（それも拒否される隔離セッションではセッション scratchpad 配下）に作り直し、「作業ファイルは揮発領域にあるため端末再起動・セッション切替で失われる」旨をユーザーに伝える。また worktree 隔離セッションの Bash は `$TMPDIR` / `$PWD` / `$(...)` のようなパスに解決される展開を拒否することがある。その場合は `git rev-parse --git-common-dir` を単独で実行して値を得てから、`info/exclude` への追記や `-C` 指定にリテラル絶対パスを書く
-   - **永続するのは「端末の再起動・セッション切替」に対してであって、worktree の削除に対してではない** — `ExitWorktree({ action: "remove" })` やセッション teardown で worktree が消えると `{作業Dir}` も一緒に消える（これは意図した設計。掃除が要らない代わりに、進行中の作業ファイルも失われる）。長時間のレビューループでは各セット終了時に WIP コミットを挟み、次ラウンド以降も必要な判断記録は `docs/implementation-notes/` などリポジトリ内の成果物に残させる
+   - **永続するのは「端末の再起動・セッション切替」に対してであって、worktree の削除に対してではない** — `-wt` で作った worktree は `EnterWorktree` が作成したものなので `ExitWorktree({ action: "remove" })` の対象になり、セッション終了時にも keep / remove を尋ねられる。remove で worktree ディレクトリ（とそのブランチ）が消えれば `{作業Dir}` も一緒に失われる（未コミットファイル・元ブランチに無いコミットが残っている場合は `discard_changes` を指定しない限りツール側が削除を拒否するが、その防御に頼らない）。これは意図した設計で、掃除が要らない代わりに進行中の作業ファイルも失われる。長時間のレビューループでは各セット終了時に WIP コミットを挟み、次ラウンド以降も必要な判断記録は `docs/implementation-notes/` などリポジトリ内の成果物に残させる
 
    あわせて本スキルの [assets/gen-diff.sh](assets/gen-diff.sh)（Claude Code では `${CLAUDE_SKILL_DIR}/assets/gen-diff.sh` が実体のパスに展開される）を `{作業Dir}/gen-diff.sh` へコピーする（claude 系レビューループのレビュー正本 `diff.md` の生成に使う。開発者エージェントは `{作業Dir}` しか知らないため、スキル本体のパスに依存させない。コピーできない環境ではレビュー役が自前の git 取得にフォールバックする）
 3. **context.md の書き出し** — 雛形の書式で `{作業Dir}/context.md` を書く（Issue 要件・実装計画要約・`-p` 指示・ブランチ / diff 基準・テスト方針・プロジェクト固有基準）。テスト方針には関連スコープの実行コマンドを具体化して書く。テストが特定できない / フレームワークが不明な場合は、手動確認方針（再現手順・確認すべき画面や API レスポンス等）をユーザーに提示・合意してから書く
@@ -236,7 +240,7 @@ stash する場合は **元ブランチ名・変更内容の概要** をユー�
 
 `{作業Dir}/impl-notes.md` に開発者エージェントが記録した「自分で判断した事項」があれば、ユーザーが把握すべき決定事項として言及する。
 
-「作業ディレクトリ」の行は `{worktree}` = true のときだけテンプレートに含める（false のときは行ごと省く）。`{worktree}` = true の場合、セッションは worktree 内に留まったまま完了する（`ExitWorktree` はユーザーから明示的な指示があるまで本スキルからは呼び出さない）。完了案内には worktree のパスに加えて、元の作業ツリーへ戻るには `ExitWorktree({ action: "keep" })` を使うか新規セッションを開始する旨を明記する。worktree・ブランチの削除（マージ後のクリーンアップ）は `/smart-git-sync` に任せる。
+「作業ディレクトリ」の行は `{worktree}` = true のときだけテンプレートに含める（false のときは行ごと省く）。`{worktree}` = true の場合、セッションは worktree 内に留まったまま完了する（`ExitWorktree` はユーザーから明示的な指示があるまで本スキルからは呼び出さない）。完了案内には worktree のパスに加えて、元の作業ツリーへ戻るには `ExitWorktree({ action: "keep" })` を使うか新規セッションを開始する旨を明記する。この worktree は `EnterWorktree` が作成したものなので、セッション終了時にも keep / remove を尋ねられる — 作業を残すには **keep** を選ぶ必要がある（remove は worktree ディレクトリ**とそのブランチ**を削除するため、`{作業Dir}` の作業ファイルに加えてローカルブランチも失われる。未コミット変更・元ブランチに無いコミットがある場合は `discard_changes` なしでは拒否される）旨も併記する。マージ後のクリーンアップとして worktree・ブランチを削除するのは `/smart-git-sync` に任せる（remove を選ぶとその前にブランチごと消える）。
 
 degraded 実装（Workflow 不能）の場合は「独立 QA・設計整合レビューは未実施（Workflow 不能）」とサマリに明記し、動作確認欄にはメインセッションが実行したテスト / 手動確認の結果を書く（実行していない検証を記載しない）。
 
@@ -325,7 +329,7 @@ Breaker（独立 Sonnet エージェント）× Codex=Judge の二者構造で�
 
 1. **最終 QA ゲート** — 自動コミットの前に独立 QA で最終検証する（claude 系の収束時は雛形 B が内蔵実行。codex 系、および claude 系で打ち切りを選んだ場合は雛形 E を 1 回起動する — 起動前に、変更セットに残った `.breaker-probe.` ファイルを取り除いておく。Workflow 不能な degraded 環境では起動できないため省略し、その旨を完了報告に明記する）。`pass: false` なら自動コミット・PR を**中止**し、QA の指摘を提示してユーザーに相談する。claude モードで雛形 B の返却に `judgeDegraded: true`（敵対で未裁定の反例が残る）・`reviewerDegraded: true`（標準で未探索のレビュー観点グループが残る）・`breakerDegraded: true`（敵対で未探索の攻撃レンズが残る）のいずれかが立っている場合も、収束していても自動コミット前にユーザーへ確認する（[references/agent-orchestration.md](references/agent-orchestration.md) の「返却の扱い」参照）
 2. **コミット** — 変更を Issue の作業単位でコミットする。コミット前に `git status` で、反例検証用テスト（`.breaker-probe.` を含むファイル。採用欠陥の回帰テスト化済みのものを除く）や一時成果物が変更セットに混ざっていないか確認する。機密ファイルの混入チェック・pre-commit hook 失敗への対応などの安全系確認は省略しない。`--no-verify` は使わない
-3. **push・PR 作成** — feature ブランチを push し、PR を作成する。作成者を自動アサインする。タイトル・本文は下記「PR タイトル・本文」に従い、レビュー済み表記を本文に記載する:
+3. **push・PR 作成** — feature ブランチを `git push -u origin HEAD` で push し（`EnterWorktree` が作るブランチには upstream tracking が設定されないため `-u` を付ける）、PR を作成する。作成者を自動アサインする。タイトル・本文は下記「PR タイトル・本文」に従い、レビュー済み表記を本文に記載する:
    - codex 標準・収束時: `🤖 Codex レビュー済み（標準, N ラウンド, 最終ラウンド採用指摘 0 件）`
    - codex 敵対・収束時: `🤖 Codex 敵対的レビュー済み（Breaker=独立 Sonnet×Judge=Codex, N ラウンド, 最終ラウンド採用指摘 0 件）`
    - claude 標準・収束時: `🤖 Claude レビュー済み（標準, Opus/effort high, N ラウンド, 最終ラウンド採用指摘 0 件）`
@@ -384,4 +388,4 @@ behind 時のマージ確認・競合対応は履歴に影響するため、自�
 - コミット・push を行うのはオーケストレーターの「収束後のコミット・PR 作成」経路のみ。各エージェント（設計役・開発者・QA・レビュワー・Breaker・Judge・監査役）にはコミット・push をさせない（プロンプトに内蔵済み）
 - Issue と関係のない変更を混ぜない（混ざった場合は smart-commit 側で分割する旨を案内する）
 - 反例テスト（`.breaker-probe.` 命名）を最終的な変更セットに残さない（採用した欠陥の回帰テストは正規の命名・配置に変換する）
-- `{worktree}` = true の場合、実装は元の作業ツリーとは別の git worktree（`.claude/worktrees/<ブランチ名>`）で完結する。`ExitWorktree` は本スキルからは呼び出さない（ユーザーが明示的に指示したときのみ実行するツールのため — 完了後もセッションは worktree に留まる）。worktree・ブランチの削除（マージ後のクリーンアップ）は `/smart-git-sync` に任せる
+- `{worktree}` = true の場合、実装は元の作業ツリーとは別の git worktree（`.claude/worktrees/<ブランチ名の "/" を "+" に置換した値>`）で完結する。worktree の作成は `EnterWorktree` に任せ、`git worktree add` は使わない（手順 5）。`ExitWorktree` は本スキルからは呼び出さない（ユーザーが明示的に指示したときのみ実行するツールのため — 完了後もセッションは worktree に留まる）。worktree・ブランチの削除（マージ後のクリーンアップ）は `/smart-git-sync` に任せる
